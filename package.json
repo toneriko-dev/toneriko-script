@@ -1,0 +1,44 @@
+{
+	"type": "module",
+	"name": "@syuilo/aiscript",
+	"version": "1.2.1",
+	"description": "AiScript implementation (Misskey fork)",
+	"author": "syuilo <syuilotan@yahoo.co.jp>",
+	"license": "MIT",
+	"private": true,
+	"homepage": "https://aiscript-dev.github.io/",
+	"exports": {
+		".": {
+			"import": "./built/index.js",
+			"types": "./built/index.d.ts"
+		},
+		"./*": {
+			"import": "./built/*",
+			"types": "./built/*"
+		}
+	},
+	"scripts": {
+		"build": "bun ./build.js",
+		"watch": "bun ./build.js --watch",
+		"typecheck": "tsgo --noEmit",
+		"lint": "bun run --bun typecheck",
+		"test": "vitest run",
+		"start": "bun ./scripts/start.mjs",
+		"parse": "bun ./scripts/parse.mjs",
+		"repl": "bun ./scripts/repl.mjs",
+		"gen-pkg": "bun ./scripts/gen-pkg-ts.mjs"
+	},
+	"dependencies": {
+		"uuid": "14.0.1"
+	},
+	"devDependencies": {
+		"@types/node": "26.0.0",
+		"chalk": "5.6.2",
+		"esbuild": "0.28.1",
+		"execa": "9.6.1",
+		"vitest": "4.1.9"
+	},
+	"files": [
+		"built"
+	]
+}

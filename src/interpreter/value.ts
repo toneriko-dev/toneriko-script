@@ -1,0 +1,146 @@
+import type { Expression, Node } from '../node.js';
+import type { Type } from '../type.js';
+import type { Scope } from './scope.js';
+
+export type VNull = {
+	type: 'null';
+};
+
+export type VBool = {
+	type: 'bool';
+	value: boolean;
+};
+
+export type VNum = {
+	type: 'num';
+	value: number;
+};
+
+export type VStr = {
+	type: 'str';
+	value: string;
+};
+
+export type VArr = {
+	type: 'arr';
+	value: Value[];
+};
+
+export type VObj = {
+	type: 'obj';
+	value: Map<string, Value>;
+};
+
+export type VFn = VUserFn | VNativeFn;
+type VFnBase = {
+	type: 'fn';
+};
+export type VUserFn = VFnBase & {
+	native?: undefined; // if (vfn.native) で型アサーション出来るように
+	name?: string;
+	params: VFnParam[];
+	statements: Node[];
+	scope: Scope;
+};
+export type VFnParam = {
+	dest: Expression;
+	type?: Type;
+	default?: Value;
+}
+/**
+ * When your AiScript NATIVE function passes VFn.call to other caller(s) whose error thrown outside the scope, use VFn.topCall instead to keep it under AiScript error control system.
+ */
+export type VNativeFn = VFnBase & {
+	native: (args: (Value | undefined)[], opts: {
+		call: (fn: VFn, args: Value[]) => Promise<Value>;
+		topCall: (fn: VFn, args: Value[]) => Promise<Value>;
+		registerAbortHandler: (handler: () => void) => void;
+		registerPauseHandler: (handler: () => void) => void;
+		registerUnpauseHandler: (handler: () => void) => void;
+		unregisterAbortHandler: (handler: () => void) => void;
+		unregisterPauseHandler: (handler: () => void) => void;
+		unregisterUnpauseHandler: (handler: () => void) => void;
+	}) => Value | Promise<Value> | void;
+	nativeSync?: (args: (Value | undefined)[], opts: {
+		call: (fn: VFn, args: Value[]) => Value;
+		topCall: (fn: VFn, args: Value[]) => Value;
+		registerAbortHandler: (handler: () => void) => void;
+		registerPauseHandler: (handler: () => void) => void;
+		registerUnpauseHandler: (handler: () => void) => void;
+		unregisterAbortHandler: (handler: () => void) => void;
+		unregisterPauseHandler: (handler: () => void) => void;
+		unregisterUnpauseHandler: (handler: () => void) => void;
+	}) => Value | void;
+};
+
+export type VError = {
+	type: 'error';
+	value: string;
+	info?: Value;
+};
+
+export type Attr = {
+	attr?: {
+		name: string;
+		value: Value;
+	}[];
+};
+
+export type Value = (VNull | VBool | VNum | VStr | VArr | VObj | VFn | VError) & Attr;
+
+export const NULL = {
+	type: 'null' as const,
+};
+
+export const TRUE = {
+	type: 'bool' as const,
+	value: true,
+};
+
+export const FALSE = {
+	type: 'bool' as const,
+	value: false,
+};
+
+export const NUM = (num: VNum['value']): VNum => ({
+	type: 'num' as const,
+	value: num,
+});
+
+export const STR = (str: VStr['value']): VStr => ({
+	type: 'str' as const,
+	value: str,
+});
+
+// NULLと同様、TRUE/FALSEシングルトンを再利用する(evalAndSetAttrはmutateせず
+// 新しいオブジェクトを返すため、ここで使い回しても属性の汚染は起きない)
+export const BOOL = (bool: VBool['value']): VBool => bool ? TRUE : FALSE;
+
+export const OBJ = (obj: VObj['value']): VObj => ({
+	type: 'obj' as const,
+	value: obj,
+});
+
+export const ARR = (arr: VArr['value']): VArr => ({
+	type: 'arr' as const,
+	value: arr,
+});
+
+export const FN = (params: VUserFn['params'], statements: VUserFn['statements'], scope: VUserFn['scope']): VUserFn => ({
+	type: 'fn' as const,
+	params: params,
+	statements: statements,
+	scope: scope,
+});
+
+export const FN_NATIVE = (fn: VNativeFn['native'], fnSync?: VNativeFn['nativeSync']): VNativeFn => ({
+	type: 'fn' as const,
+	native: fn,
+	nativeSync: fnSync,
+});
+
+export const ERROR = (name: string, info?: Value): Value => ({
+	type: 'error' as const,
+	value: name,
+	info: info,
+});

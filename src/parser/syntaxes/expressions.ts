@@ -9,8 +9,25 @@ import { parseType, parseTypeParams } from './types.js';
 import type * as Ast from '../../node.js';
 import type { ITokenStream } from '../streams/token-stream.js';
 
+function parseNumberLiteral(s: ITokenStream): number {
+	s.expect(TokenKind.NumberLiteral);
+	const pos = s.getPos();
+	const value = Number(s.getTokenValue());
+	if (!Number.isFinite(value)) {
+		throw new AiScriptSyntaxError('number literal is out of range', pos);
+	}
+	s.next();
+	return value;
+}
+
 export function parseExpr(s: ITokenStream, isStatic: boolean): Ast.Expression {
 	if (isStatic) {
+		if (s.is(TokenKind.Minus)) {
+			const startPos = s.getPos();
+			s.next();
+			const value = -parseNumberLiteral(s);
+			return NODE('num', { value }, startPos, s.getPos());
+		}
 		return parseAtom(s, true);
 	} else {
 		return parsePratt(s, 0);
@@ -265,9 +282,7 @@ function parseAtom(s: ITokenStream, isStatic: boolean): Ast.Expression {
 			return NODE('str', { value }, startPos, s.getPos());
 		}
 		case TokenKind.NumberLiteral: {
-			// TODO: validate number value
-			const value = Number(s.getTokenValue());
-			s.next();
+			const value = parseNumberLiteral(s);
 			return NODE('num', { value }, startPos, s.getPos());
 		}
 		case TokenKind.TrueKeyword:

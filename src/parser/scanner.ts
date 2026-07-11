@@ -522,6 +522,7 @@ export class Scanner implements ITokenStream {
 			wholeNumber += this.stream.char;
 			this.stream.next();
 		}
+		this.validateNumericSeparators(wholeNumber, pos);
 
 		let fractional = '';
 		if (!this.stream.eof && this.stream.char === '.') {
@@ -535,6 +536,7 @@ export class Scanner implements ITokenStream {
 				fractional += this.stream.char;
 				this.stream.next();
 			}
+			this.validateNumericSeparators(fractional, pos);
 		}
 
 		let exponentIndicator = '';
@@ -559,6 +561,7 @@ export class Scanner implements ITokenStream {
 				exponentAbsolute += this.stream.char;
 				this.stream.next();
 			}
+			this.validateNumericSeparators(exponentAbsolute, pos);
 		}
 
 		let value = wholeNumber.replaceAll('_', '');
@@ -577,11 +580,18 @@ export class Scanner implements ITokenStream {
 			raw += this.stream.char;
 			this.stream.next();
 		}
+		this.validateNumericSeparators(raw, pos);
 		const value = raw.replaceAll('_', '');
 		if (value.length === 0) {
 			throw new AiScriptSyntaxError(`${radixName} digit expected`, pos);
 		}
 		return value;
+	}
+
+	private validateNumericSeparators(value: string, pos: TokenPosition): void {
+		if (value.startsWith('_') || value.endsWith('_') || value.includes('__')) {
+			throw new AiScriptSyntaxError('numeric separator must be placed between digits', pos);
+		}
 	}
 
 	private readStringLiteral(hasLeftSpacing: boolean): Token {

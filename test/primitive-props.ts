@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import { NUM, STR, NULL, ARR, OBJ, BOOL, TRUE, FALSE, ERROR ,FN_NATIVE } from '../src/interpreter/value';
+import { AiScriptRuntimeError } from '../src/error';
 import { exe, eq } from './testutils';
 
 
@@ -12,19 +13,26 @@ describe('num', () => {
 		eq(res, STR('123'));
 	});
 	test.concurrent('to_hex', async () => {
-		// TODO -0, 巨大数, 無限小数, Infinity等入力時の結果は未定義
 		const res = await exe(`
 		<: [
-			0, 10, 16,
+			0, -0, 10, 16,
 			-10, -16,
-			0.5,
+			0.5, 1 / 3,
+			2 ^ 1023,
 		].map(@(v){v.to_hex()})
 		`);
 		eq(res, ARR([
-			STR('0'), STR('a'), STR('10'),
+			STR('0'), STR('0'), STR('a'), STR('10'),
 			STR('-a'), STR('-10'),
-			STR('0.8'),
+			STR('0.8'), STR((1 / 3).toString(16)),
+			STR((2 ** 1023).toString(16)),
 		]));
+	});
+
+	test.concurrent('to_hex rejects non-finite numbers', async () => {
+		for (const value of ['Math:Infinity', '-Math:Infinity', '0 / 0']) {
+			await expect(exe(`<: (${value}).to_hex()`)).rejects.toThrow(AiScriptRuntimeError);
+		}
 	});
 });
 

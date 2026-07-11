@@ -1,4 +1,5 @@
 import { AiScriptRuntimeError } from '../error.js';
+import type { TypeParam } from '../node.js';
 import type { Value } from './value.js';
 import type { Variable } from './variable.js';
 import type { LogObject } from './index.js';
@@ -13,7 +14,7 @@ export class Scope {
 	} = {};
 	public nsName?: string;
 
-	constructor(states: Map<string, Variable> = new Map(), parent?: Scope, name?: Scope['name'], nsName?: string) {
+	constructor(states: Map<string, Variable> = new Map(), parent?: Scope, name?: Scope['name'], nsName?: string, private typeParams: readonly TypeParam[] = []) {
 		this.states = states;
 		this.parent = parent;
 		this.name = name || (parent == null ? '<root>' : '<anonymous>');
@@ -36,12 +37,16 @@ export class Scope {
 		}
 	}
 
-	public createChildScope(states: Map<string, Variable> = new Map(), name?: Scope['name']): Scope {
-		return new Scope(states, this, name);
+	public createChildScope(states: Map<string, Variable> = new Map(), name?: Scope['name'], typeParams: readonly TypeParam[] = []): Scope {
+		return new Scope(states, this, name, undefined, typeParams);
 	}
 
 	public createChildNamespaceScope(nsName: string, states: Map<string, Variable> = new Map(), name?: Scope['name']): Scope {
 		return new Scope(states, this, name, nsName);
+	}
+
+	public getTypeParams(): TypeParam[] {
+		return [...this.typeParams, ...(this.parent?.getTypeParams() ?? [])];
 	}
 
 	/**

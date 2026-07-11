@@ -89,6 +89,12 @@ describe('literal', () => {
 		eq(res, NUM(0.0012));
 	});
 
+	test.concurrent('number (overflow)', async () => {
+		await assert.rejects(() => exe(`
+		<: 1e309
+		`), AiScriptSyntaxError);
+	});
+
 	test.concurrent('number (missing exponent)', async () => {
 		await assert.rejects(() => exe(`
 		<: 1.2e+
@@ -124,9 +130,30 @@ describe('literal', () => {
 
 	test.concurrent('number (underscore separator)', async () => {
 		const res = await exe(`
-		<: [1_000_000, 0x1_F, 0b10_10, 3.14_15]
+		<: [1_000_000, 0x1_F, 0b10_10, 0o1_7, 3.14_15, 1.2e1_0]
 		`);
-		eq(res, ARR([NUM(1000000), NUM(31), NUM(10), NUM(3.1415)]));
+		eq(res, ARR([NUM(1000000), NUM(31), NUM(10), NUM(15), NUM(3.1415), NUM(12000000000)]));
+	});
+
+	test.concurrent('number (invalid underscore separator)', async () => {
+		for (const literal of [
+			'1_',
+			'1__2',
+			'1_.2',
+			'1.2_',
+			'1.2__3',
+			'1_e2',
+			'1e2_',
+			'1e2__3',
+			'0x_1',
+			'0x1_',
+			'0b_1',
+			'0b1_',
+			'0o_1',
+			'0o1_',
+		]) {
+			await assert.rejects(() => exe(`<: ${literal}`), AiScriptSyntaxError);
+		}
 	});
 
 	test.concurrent('arr (separated by comma)', async () => {
@@ -382,4 +409,3 @@ describe('Template syntax', () => {
 		eq(res, STR('Hello'));
 	});
 });
-

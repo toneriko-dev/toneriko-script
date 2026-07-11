@@ -8,12 +8,9 @@ export function nodeToJs(node: Ast.Node): JsValue {
 		case 'null': return null;
 		case 'num': return node.value;
 		case 'obj': {
-			const obj: { [keys: string]: JsValue } = {};
-			for (const [k, v] of node.value.entries()) {
-				// TODO: keyが__proto__とかじゃないかチェック
-				obj[k] = nodeToJs(v);
-			}
-			return obj;
+			return Object.fromEntries(
+				[...node.value.entries()].map(([key, value]) => [key, nodeToJs(value)]),
+			);
 		}
 		case 'str': return node.value;
 		default: return undefined;

@@ -1,6 +1,7 @@
 import * as assert from 'assert';
 import { describe, expect, test } from 'vitest';
-import { utils } from '../src';
+import { Interpreter, Parser, utils } from '../src';
+import { T_FN, T_GENERIC, T_PARAM, T_SIMPLE, T_UNION } from '../src/type';
 import { NUM, STR, NULL, ARR, OBJ, BOOL, TRUE, FALSE, ERROR ,FN_NATIVE } from '../src/interpreter/value';
 import { AiScriptRuntimeError, AiScriptSyntaxError } from '../src/error';
 import { exe, getMeta, eq } from './testutils';
@@ -12,6 +13,60 @@ describe('function types', () => {
 		<: f('abc', 123)
 		`);
 		eq(res, TRUE);
+	});
+
+	test.concurrent('preserves parameter types on function values', async () => {
+		const parser = new Parser();
+		const interpreter = new Interpreter({});
+		await interpreter.exec(parser.parse(`
+		@outer<T>(value: T, items: arr<T>, mapper: @(T) => str, untyped) {
+			@inner<U>(nested: T | U) {}
+			inner
+		}
+		let inner = outer(1, [], @(value) { value.to_str() }, null)
+		@with_default<T>(callback = @(value: T) { value }) { callback }
+		let default_callback = with_default()
+		`));
+
+		const outer = interpreter.scope.get('outer');
+		assert.ok(outer.type === 'fn' && outer.native == null);
+		expect(outer.params.map(param => param.type)).toStrictEqual([
+			T_PARAM('T'),
+			T_GENERIC('arr', [T_PARAM('T')]),
+			T_FN([T_PARAM('T')], T_SIMPLE('str')),
+			undefined,
+		]);
+		expect(outer.typeParams).toStrictEqual([{ name: 'T' }]);
+
+		const inner = interpreter.scope.get('inner');
+		assert.ok(inner.type === 'fn' && inner.native == null);
+		expect(inner.params[0]?.type).toStrictEqual(T_UNION([T_PARAM('T'), T_PARAM('U')]));
+		expect(inner.typeParams).toStrictEqual([{ name: 'U' }]);
+
+		const defaultCallback = interpreter.scope.get('default_callback');
+		assert.ok(defaultCallback.type === 'fn' && defaultCallback.native == null);
+		expect(defaultCallback.params[0]?.type).toStrictEqual(T_PARAM('T'));
+	});
+
+	test.concurrent('preserves parameter types in synchronous execution', async () => {
+		const parser = new Parser();
+		const interpreter = new Interpreter({});
+		interpreter.execSync(parser.parse('@f(value: num) {}'));
+
+		const fn = interpreter.scope.get('f');
+		assert.ok(fn.type === 'fn' && fn.native == null);
+		expect(fn.params[0]?.type).toStrictEqual(T_SIMPLE('num'));
+	});
+
+	test.concurrent('reports unknown composite types with source-like names', async () => {
+		for (const [source, expectedType] of [
+			['unknown<num | str>', 'unknown<num | str>'],
+			['unknown<@(num) => str>', 'unknown<@(num) => str>'],
+		]) {
+			await expect(() => exe(`let value: ${source} = null`)).rejects.toThrow(
+				`Unknown type: '${expectedType}'`,
+			);
+		}
 	});
 });
 

@@ -5,6 +5,7 @@
 import { autobind } from '../utils/mini-autobind.js';
 import { AiScriptError, NonAiScriptError, AiScriptNamespaceError, AiScriptIndexOutOfRangeError, AiScriptRuntimeError, AiScriptHostsideError } from '../error.js';
 import * as Ast from '../node.js';
+import { getTypeBySource } from '../type.js';
 import { nodeToJs } from '../utils/node-to-js.js';
 import { Scope } from './scope.js';
 import { std } from './lib/std.js';
@@ -364,7 +365,7 @@ export class Interpreter {
 			// eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
 			return result ?? NULL;
 		} else {
-			const fnScope = fn.scope!.createChildScope();
+			const fnScope = fn.scope.createChildScope(new Map(), undefined, fn.typeParams);
 			for (const [i, param] of fn.params.entries()) {
 				const arg = args[i];
 				if (!param.default) expectAny(arg);
@@ -405,7 +406,7 @@ export class Interpreter {
 			// eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
 			return result ?? NULL;
 		} else {
-			const fnScope = fn.scope!.createChildScope();
+			const fnScope = fn.scope.createChildScope(new Map(), undefined, fn.typeParams);
 			for (const [i, param] of fn.params.entries()) {
 				const arg = args[i];
 				if (!param.default) expectAny(arg);
@@ -891,14 +892,18 @@ export class Interpreter {
 			}
 
 			case 'fn': {
+				const typeParams = [...node.typeParams, ...scope.getTypeParams()];
+				const defaultScope = node.typeParams.length > 0
+					? scope.createChildScope(new Map(), undefined, node.typeParams)
+					: scope;
 				const params = await Promise.all(node.params.map(async (param) => {
 					return {
 						dest: param.dest,
 						default:
-							param.default ? await this._eval(param.default, scope, callStack) :
+							param.default ? await this._eval(param.default, defaultScope, callStack) :
 							param.optional ? NULL :
 							undefined,
-						// type: (TODO)
+						type: param.argType ? getTypeBySource(param.argType, typeParams) : undefined,
 					};
 				}));
 				const control = params
@@ -912,6 +917,7 @@ export class Interpreter {
 					params as VUserFn['params'],
 					node.children,
 					scope,
+					node.typeParams,
 				);
 			}
 
@@ -1475,14 +1481,18 @@ export class Interpreter {
 			}
 
 			case 'fn': {
+				const typeParams = [...node.typeParams, ...scope.getTypeParams()];
+				const defaultScope = node.typeParams.length > 0
+					? scope.createChildScope(new Map(), undefined, node.typeParams)
+					: scope;
 				const params = node.params.map((param) => {
 					return {
 						dest: param.dest,
 						default:
-							param.default ? this._evalSync(param.default, scope, callStack) :
+							param.default ? this._evalSync(param.default, defaultScope, callStack) :
 							param.optional ? NULL :
 							undefined,
-						// type: (TODO)
+						type: param.argType ? getTypeBySource(param.argType, typeParams) : undefined,
 					};
 				});
 				const control = params
@@ -1496,6 +1506,7 @@ export class Interpreter {
 					params as VUserFn['params'],
 					node.children,
 					scope,
+					node.typeParams,
 				);
 			}
 

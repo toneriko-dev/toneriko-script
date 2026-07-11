@@ -82,10 +82,10 @@ export function getTypeNameBySource(typeSource: Ast.TypeSource): string {
 		case 'fnTypeSource': {
 			const params = typeSource.params.map(param => getTypeNameBySource(param)).join(', ');
 			const result = getTypeNameBySource(typeSource.result);
-			return `@(${params}) { ${result} }`;
+			return `@(${params}) => ${result}`;
 		}
 		case 'unionTypeSource': {
-			return typeSource.inners.map(inner => getTypeBySource(inner)).join(' | ');
+			return typeSource.inners.map(inner => getTypeNameBySource(inner)).join(' | ');
 		}
 	}
 }

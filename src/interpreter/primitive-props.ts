@@ -32,6 +32,9 @@ const PRIMITIVE_PROPS = {
 		}),
 
 		to_hex: (target: VNum): VFn => FN_NATIVE((_, _opts) => {
+			if (!Number.isFinite(target.value)) {
+				throw new AiScriptRuntimeError('num.to_hex cannot convert a non-finite number');
+			}
 			return STR(target.value.toString(16));
 		}),
 	},

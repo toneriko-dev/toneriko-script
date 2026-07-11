@@ -5,6 +5,15 @@ import { NUM, STR, NULL, ARR, OBJ, BOOL, TRUE, FALSE, ERROR ,FN_NATIVE } from '.
 import { AiScriptRuntimeError, AiScriptSyntaxError } from '../src/error';
 import { exe, getMeta, eq } from './testutils';
 
+function syntaxError(message: string, pos: { line: number; column: number }): (error: unknown) => boolean {
+	return error => {
+		assert.ok(error instanceof AiScriptSyntaxError);
+		assert.strictEqual(error.message, `${message} (Line ${pos.line}, Column ${pos.column})`);
+		assert.deepStrictEqual(error.pos, pos);
+		return true;
+	};
+}
+
 describe('return', () => {
 	test.concurrent('as statement', async () => {
 		const res = await exe(`
@@ -661,35 +670,35 @@ describe('break', () => {
 		#l: for 1 {
 			break #l 1
 		}
-		`), new AiScriptSyntaxError('break corresponding to statement cannot include value', { line: 3, column: 4 }));
+		`), syntaxError('break corresponding to statement cannot include value', { line: 3, column: 4 }));
 	});
 
 	test.concurrent('invalid block', async () => {
 		await assert.rejects(
 			() => exe('#l: if true { continue #l }'),
-			new AiScriptSyntaxError('cannot use continue for if', { line: 1, column: 15 }),
+			syntaxError('cannot use continue for if', { line: 1, column: 15 }),
 		);
 		await assert.rejects(
 			() => exe('#l: match 0 { default => continue #l }'),
-			new AiScriptSyntaxError('cannot use continue for match', { line: 1, column: 26 }),
+			syntaxError('cannot use continue for match', { line: 1, column: 26 }),
 		);
 		await assert.rejects(
 			() => exe('#l: eval { continue #l }'),
-			new AiScriptSyntaxError('cannot use continue for eval', { line: 1, column: 12 }),
+			syntaxError('cannot use continue for eval', { line: 1, column: 12 }),
 		);
 	});
 
 	test.concurrent('break corresponding to each is not allowed in the target', async () => {
 		await assert.rejects(
 			() => exe('#l: each let i, eval { break #l } {}'),
-			new AiScriptSyntaxError('break corresponding to each is not allowed in the target', { line: 1, column: 24 }),
+			syntaxError('break corresponding to each is not allowed in the target', { line: 1, column: 24 }),
 		);
 	});
 
 	test.concurrent('break corresponding to for is not allowed in the count', async () => {
 		await assert.rejects(
 			() => exe('#l: for eval { break #l } {}'),
-			new AiScriptSyntaxError('break corresponding to for is not allowed in the count', { line: 1, column: 16 }),
+			syntaxError('break corresponding to for is not allowed in the count', { line: 1, column: 16 }),
 		);
 	});
 
@@ -697,14 +706,14 @@ describe('break', () => {
 		test.concurrent('from', async () => {
 			await assert.rejects(
 				() => exe('#l: for let i = eval { break #l }, 0 {}'),
-				new AiScriptSyntaxError('break corresponding to for is not allowed in the range', { line: 1, column: 24 }),
+				syntaxError('break corresponding to for is not allowed in the range', { line: 1, column: 24 }),
 			);
 		});
 
 		test.concurrent('to', async () => {
 			await assert.rejects(
 				() => exe('#l: for let i = 0, eval { break #l } {}'),
-				new AiScriptSyntaxError('break corresponding to for is not allowed in the range', { line: 1, column: 27 }),
+				syntaxError('break corresponding to for is not allowed in the range', { line: 1, column: 27 }),
 			);
 		});
 	});
@@ -713,14 +722,14 @@ describe('break', () => {
 		test.concurrent('if', async () => {
 			await assert.rejects(
 				() => exe('#l: if eval { break #l } {}'),
-				new AiScriptSyntaxError('break corresponding to if is not allowed in the condition', { line: 1, column: 15 }),
+				syntaxError('break corresponding to if is not allowed in the condition', { line: 1, column: 15 }),
 			);
 		});
 
 		test.concurrent('elif', async () => {
 			await assert.rejects(
 				() => exe('#l: if false {} elif eval { break #l } {}'),
-				new AiScriptSyntaxError('break corresponding to if is not allowed in the condition', { line: 1, column: 29 }),
+				syntaxError('break corresponding to if is not allowed in the condition', { line: 1, column: 29 }),
 			);
 		});
 	});
@@ -728,14 +737,14 @@ describe('break', () => {
 	test.concurrent('break corresponding to match is not allowed in the target', async () => {
 		await assert.rejects(
 			() => exe('#l: match eval { break #l } {}'),
-			new AiScriptSyntaxError('break corresponding to match is not allowed in the target', { line: 1, column: 18 }),
+			syntaxError('break corresponding to match is not allowed in the target', { line: 1, column: 18 }),
 		);
 	});
 
 	test.concurrent('break corresponding to match is not allowed in the pattern', async () => {
 		await assert.rejects(
 			() => exe('#l: match 0 { case eval { break #l } => 1 }'),
-			new AiScriptSyntaxError('break corresponding to match is not allowed in the pattern', { line: 1, column: 27 }),
+			syntaxError('break corresponding to match is not allowed in the pattern', { line: 1, column: 27 }),
 		);
 	});
 
@@ -1364,14 +1373,14 @@ describe('continue', () => {
 	test.concurrent('continue corresponding to each is not allowed in the target', async () => {
 		await assert.rejects(
 			() => exe('#l: each let i, eval { continue #l } {}'),
-			new AiScriptSyntaxError('continue corresponding to each is not allowed in the target', { line: 1, column: 24 }),
+			syntaxError('continue corresponding to each is not allowed in the target', { line: 1, column: 24 }),
 		);
 	});
 
 	test.concurrent('continue corresponding to for is not allowed in the count', async () => {
 		await assert.rejects(
 			() => exe('#l: for eval { continue #l } {}'),
-			new AiScriptSyntaxError('continue corresponding to for is not allowed in the count', { line: 1, column: 16 }),
+			syntaxError('continue corresponding to for is not allowed in the count', { line: 1, column: 16 }),
 		);
 	});
 
@@ -1379,14 +1388,14 @@ describe('continue', () => {
 		test.concurrent('from', async () => {
 			await assert.rejects(
 				() => exe('#l: for let i = eval { continue #l }, 0 {}'),
-				new AiScriptSyntaxError('continue corresponding to for is not allowed in the range', { line: 1, column: 24 }),
+				syntaxError('continue corresponding to for is not allowed in the range', { line: 1, column: 24 }),
 			);
 		});
 
 		test.concurrent('to', async () => {
 			await assert.rejects(
 				() => exe('#l: for let i = 0, eval { continue #l } {}'),
-				new AiScriptSyntaxError('continue corresponding to for is not allowed in the range', { line: 1, column: 27 }),
+				syntaxError('continue corresponding to for is not allowed in the range', { line: 1, column: 27 }),
 			);
 		});
 	});
@@ -1550,25 +1559,25 @@ describe('label', () => {
 	test.concurrent('invalid statement', async () => {
 		await assert.rejects(
 			() => exe('#l: null'),
-			new AiScriptSyntaxError('cannot use label for statement other than eval / if / match / for / each / while / do-while / loop', { line: 1, column: 5 }),
+			syntaxError('cannot use label for statement other than eval / if / match / for / each / while / do-while / loop', { line: 1, column: 5 }),
 		);
 	});
 
 	test.concurrent('invalid expression', async () => {
 		await assert.rejects(
 			() => exe('let a = #l: null'),
-			new AiScriptSyntaxError('cannot use label for expression other than eval / if / match', { line: 1, column: 13 }),
+			syntaxError('cannot use label for expression other than eval / if / match', { line: 1, column: 13 }),
 		);
 	});
 
 	test.concurrent('invalid space', async () => {
 		await assert.rejects(
 			() => exe('# l: eval { null }'),
-			new AiScriptSyntaxError('cannot use spaces in a label', { line: 1, column: 3 }),
+			syntaxError('cannot use spaces in a label', { line: 1, column: 3 }),
 		);
 		await assert.rejects(
 			() => exe('#l: eval { break # l }'),
-			new AiScriptSyntaxError('cannot use spaces in a label', { line: 1, column: 20 }),
+			syntaxError('cannot use spaces in a label', { line: 1, column: 20 }),
 		);
 	});
 });

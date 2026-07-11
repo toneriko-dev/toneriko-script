@@ -1,10 +1,109 @@
 import * as assert from 'assert';
 import { describe, expect, test, vi, beforeEach, afterEach } from 'vitest';
 import { Parser, Interpreter, values, errors, utils, Ast } from '../src';
-import { FALSE, NUM, OBJ, STR, TRUE, Value } from '../src/interpreter/value';
+import { ARR, ERROR, FALSE, NUM, OBJ, STR, TRUE, Value } from '../src/interpreter/value';
 
 let { FN_NATIVE } = values;
 let { AiScriptRuntimeError, AiScriptIndexOutOfRangeError, AiScriptHostsideError } = errors;
+
+describe('value conversion', () => {
+	test.concurrent('special object keys do not alter the prototype', () => {
+		const value = OBJ(new Map([
+			['__proto__', OBJ(new Map([['polluted', TRUE]]))],
+		]));
+		const result = utils.valToJs(value);
+
+		expect(Object.getPrototypeOf(result)).toBe(Object.prototype);
+		expect(Object.hasOwn(result as object, '__proto__')).toBe(true);
+		expect((result as Record<string, unknown>).polluted).toBeUndefined();
+		expect((result as Record<string, unknown>).__proto__).toEqual({ polluted: true });
+	});
+
+	test.concurrent('preserves circular and shared references when converting to JavaScript', () => {
+		const source = OBJ(new Map());
+		const shared = ARR([STR('shared')]);
+		source.value.set('self', source);
+		source.value.set('first', shared);
+		source.value.set('second', shared);
+
+		const result = utils.valToJs(source) as Record<string, unknown>;
+
+		expect(result.self).toBe(result);
+		expect(result.first).toBe(result.second);
+	});
+
+	test.concurrent('preserves circular and shared references when converting from JavaScript', () => {
+		const shared = ['shared'];
+		const sparse: unknown[] = [];
+		sparse.length = 2;
+		const source: Record<string, unknown> = { first: shared, second: shared, sparse };
+		source.self = source;
+
+		const result = utils.jsToVal(source);
+
+		expect(result.type).toBe('obj');
+		if (result.type !== 'obj') return;
+		expect(result.value.get('self')).toBe(result);
+		expect(result.value.get('first')).toBe(result.value.get('second'));
+		const convertedSparse = result.value.get('sparse');
+		expect(convertedSparse).toStrictEqual(ARR([values.NULL, values.NULL]));
+	});
+
+	test.concurrent('distinguishes circular references from repeated values in string representations', () => {
+		const shared = ARR([NUM(1)]);
+		const repeated = ARR([shared, shared]);
+		const circular = ARR([]);
+		circular.value.push(circular);
+
+		expect(utils.reprValue(repeated)).toBe('[ [ 1 ], [ 1 ] ]');
+		expect(utils.reprValue(circular)).toBe('[ ... ]');
+		expect(utils.valToString(repeated, true)).toBe('[[1], [1]]');
+		expect(utils.valToString(circular, true)).toBe('[...]');
+
+		const sparse = ARR([]);
+		sparse.value.length = 2;
+		expect(utils.valToJs(sparse)).toEqual([null, null]);
+		expect(utils.reprValue(sparse)).toBe('[ null, null ]');
+		expect(utils.valToString(sparse, true)).toBe('[(null), (null)]');
+	});
+
+	test.concurrent('converts and displays error values', () => {
+		const info = OBJ(new Map());
+		const error = ERROR('oops', info);
+		info.value.set('error', error);
+
+		const result = utils.valToJs(error) as Record<string, unknown>;
+
+		expect(result.name).toBe('oops');
+		expect((result.info as Record<string, unknown>).error).toBe(result);
+		expect(utils.valToString(error)).toBe('error<oops>');
+		expect(utils.reprValue(error)).toBe('error<oops>');
+	});
+
+	test.concurrent('uses stable labels for every value kind', () => {
+		expect(utils.valToString(NUM(1))).toBe('num<1>');
+		expect(utils.valToString(TRUE)).toBe('bool<true>');
+		expect(utils.valToString(STR('ai'))).toBe('str<"ai">');
+		expect(utils.valToString(ARR([]))).toBe('arr<...>');
+		expect(utils.valToString(OBJ(new Map()))).toBe('obj<...>');
+		expect(utils.valToString(ERROR('oops'))).toBe('error<oops>');
+		expect(utils.valToString(values.FN_NATIVE(() => {}))).toBe('fn<...>');
+		expect(utils.valToString(values.NULL)).toBe('null<>');
+	});
+
+	test.concurrent('escapes strings used in value representations', () => {
+		const text = 'line 1\nline 2\t"quote"\\slash\0';
+		const literal = JSON.stringify(text);
+
+		expect(utils.valToString(STR(text))).toBe(`str<${literal}>`);
+		expect(utils.valToString(STR(text), true)).toBe(literal);
+		expect(utils.reprValue(ARR([STR(text)]))).toBe(`[ ${literal} ]`);
+		expect(utils.reprValue(OBJ(new Map([
+			['foo-bar', STR(text)],
+			['normal', NUM(1)],
+		])))).toBe(`{ "foo-bar": ${literal}, normal: 1 }`);
+	});
+});
 
 describe('Scope', () => {
 	test.concurrent('getAll', async () => {
@@ -349,6 +448,14 @@ describe('Attribute', () => {
 		@f() {}
 		`);
 		expect(attr).toStrictEqual([{ name: 'x', value: NUM(42) }]);
+	});
+
+	test.concurrent('attribute with a negative number', async () => {
+		const attr = await getAttr('f', `
+		#[x -42]
+		@f() {}
+		`);
+		expect(attr).toStrictEqual([{ name: 'x', value: NUM(-42) }]);
 	});
 
 	test.concurrent('multiple attributes', async () => {

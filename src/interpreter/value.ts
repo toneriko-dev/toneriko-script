@@ -1,4 +1,4 @@
-import type { Expression, Node } from '../node.js';
+import type { Expression, Node, TypeParam } from '../node.js';
 import type { Type } from '../type.js';
 import type { Scope } from './scope.js';
 
@@ -39,6 +39,7 @@ export type VUserFn = VFnBase & {
 	native?: undefined; // if (vfn.native) で型アサーション出来るように
 	name?: string;
 	params: VFnParam[];
+	typeParams: readonly TypeParam[];
 	statements: Node[];
 	scope: Scope;
 };
@@ -126,9 +127,10 @@ export const ARR = (arr: VArr['value']): VArr => ({
 	value: arr,
 });
 
-export const FN = (params: VUserFn['params'], statements: VUserFn['statements'], scope: VUserFn['scope']): VUserFn => ({
+export const FN = (params: VUserFn['params'], statements: VUserFn['statements'], scope: VUserFn['scope'], typeParams: VUserFn['typeParams'] = []): VUserFn => ({
 	type: 'fn' as const,
 	params: params,
+	typeParams,
 	statements: statements,
 	scope: scope,
 });
@@ -139,7 +141,7 @@ export const FN_NATIVE = (fn: VNativeFn['native'], fnSync?: VNativeFn['nativeSyn
 	nativeSync: fnSync,
 });
 
-export const ERROR = (name: string, info?: Value): Value => ({
+export const ERROR = (name: string, info?: Value): VError => ({
 	type: 'error' as const,
 	value: name,
 	info: info,

@@ -310,13 +310,20 @@ describe('Json', () => {
 		eq(res, STR('"<function>"'));
 	});
 
+	test.concurrent('stringify: error', async () => {
+		const res = await exe(`
+		<: Json:stringify(Error:create('oops', { code: 42 }))
+		`);
+		eq(res, STR('{"name":"oops","info":{"code":42}}'));
+	});
+
 	test.concurrent('parsable', async () => {
-		[
+		for (const str of [
 			'null',
 			'"hoge"',
 			'[]',
 			'{}',
-		].forEach(async (str) => {
+		]) {
 			const res = await exe(`
 				<: [
 					Json:parsable('${str}')
@@ -324,14 +331,14 @@ describe('Json', () => {
 				]
 			`);
 			eq(res, ARR([TRUE, STR(str)]));
-		});
+		}
 	});
 	test.concurrent('unparsable', async () => {
-		[
+		for (const str of [
 			'',
 			'hoge',
 			'[',
-		].forEach(async (str) => {
+		]) {
 			const res = await exe(`
 				<: [
 					Json:parsable('${str}')
@@ -339,7 +346,7 @@ describe('Json', () => {
 				]
 			`);
 			eq(res, ARR([FALSE, ERROR('not_json')]));
-		});
+		}
 	});
 });
 

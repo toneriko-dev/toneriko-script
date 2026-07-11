@@ -4,7 +4,7 @@
 import { nodeToJs } from '../utils/node-to-js.js';
 import { Scanner } from './scanner.js';
 import { parseAiSonTopLevel } from './syntaxes/aison.js';
-import { jsToVal } from '../interpreter/util.js';
+import { jsToVal, stringifyObjectKey } from '../interpreter/util.js';
 import type { JsValue } from '../interpreter/util.js';
 import type { Value } from '../interpreter/value.js';
 
@@ -16,32 +16,52 @@ export class AiSON {
 		return nodeToJs(ast);
 	}
 
-	private static stringifyWalk(value: Value, indent: string | null, currentIndent = ''): string {
+	private static stringifyWalk(value: Value, indent: string | null, currentIndent = '', processingObjects = new Set<object>()): string {
 		switch (value.type) {
 			case 'bool': return value.value ? 'true' : 'false';
 			case 'null': return 'null';
-			case 'num': return value.value.toString();
+			case 'num': {
+				if (!Number.isFinite(value.value)) throw new TypeError('Cannot stringify non-finite number as AiSON.');
+				return Object.is(value.value, -0) ? '-0' : value.value.toString();
+			}
 			case 'str': return JSON.stringify(value.value);
 			case 'arr': {
 				if (value.value.length === 0) return '[]';
-				const items = value.value.map(item => this.stringifyWalk(item, indent, currentIndent + (indent ?? '')));
-				if (indent != null && indent !== '') {
-					return `[\n${currentIndent + indent}${items.join(`,\n${currentIndent + indent}`)}\n${currentIndent}]`;
-				} else {
-					return `[${items.join(', ')}]`;
+				if (processingObjects.has(value.value)) throw new TypeError('Cannot stringify circular AiSON value.');
+				processingObjects.add(value.value);
+				try {
+					const items = Array.from({ length: value.value.length }, (_, index) => {
+						const item = value.value[index];
+						return item === undefined
+							? 'null'
+							: this.stringifyWalk(item, indent, currentIndent + (indent ?? ''), processingObjects);
+					});
+					if (indent != null && indent !== '') {
+						return `[\n${currentIndent + indent}${items.join(`,\n${currentIndent + indent}`)}\n${currentIndent}]`;
+					} else {
+						return `[${items.join(', ')}]`;
+					}
+				} finally {
+					processingObjects.delete(value.value);
 				}
 			}
 			case 'obj': {
 				const keys = [...value.value.keys()];
 				if (keys.length === 0) return '{}';
-				const items = keys.map(key => {
-					const val = value.value.get(key)!;
-					return `${key}: ${this.stringifyWalk(val, indent, currentIndent + (indent ?? ''))}`;
-				});
-				if (indent != null && indent !== '') {
-					return `{\n${currentIndent + indent}${items.join(`,\n${currentIndent + indent}`)}\n${currentIndent}}`;
-				} else {
-					return `{${items.join(', ')}}`;
+				if (processingObjects.has(value.value)) throw new TypeError('Cannot stringify circular AiSON value.');
+				processingObjects.add(value.value);
+				try {
+					const items = keys.map(key => {
+						const val = value.value.get(key)!;
+						return `${stringifyObjectKey(key)}: ${this.stringifyWalk(val, indent, currentIndent + (indent ?? ''), processingObjects)}`;
+					});
+					if (indent != null && indent !== '') {
+						return `{\n${currentIndent + indent}${items.join(`,\n${currentIndent + indent}`)}\n${currentIndent}}`;
+					} else {
+						return `{${items.join(', ')}}`;
+					}
+				} finally {
+					processingObjects.delete(value.value);
 				}
 			}
 			default:
@@ -52,11 +72,15 @@ export class AiSON {
 	public static stringify(value: JsValue, _unused = null, indent: number | string = 0): string {
 		let _indent: string | null = null;
 		if (typeof indent === 'number') {
-			if (indent > 0) {
-				_indent = ' '.repeat(indent);
+			const width = Math.min(10, Math.max(0, Math.trunc(indent)));
+			if (width > 0) {
+				_indent = ' '.repeat(width);
 			}
-		} else if (indent.length > 0) {
-			_indent = indent;
+		} else {
+			const normalizedIndent = indent.slice(0, 10);
+			if (normalizedIndent.length > 0) {
+				_indent = normalizedIndent;
+			}
 		}
 
 		const aisValue = jsToVal(value);

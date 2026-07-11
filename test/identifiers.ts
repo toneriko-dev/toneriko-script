@@ -342,13 +342,13 @@ describe('identifier validation on obj key', () => {
 			eq(res, NUM(1));
 		});
 
-		test.concurrent.each(
+		test.concurrent.for(
 			identifierCases
-		)('%s is allowed: %s', async (word, allowed) => {
+		)('%s is allowed: %s', async ([word, allowed], { expect }) => {
 			expect.hasAssertions();
 			if (allowed) {
 				const res = await exe(code(word, word));
-				eq(res, NUM(1));
+				eq(res, NUM(1), expect);
 			} else {
 				expect(() => parser.parse(code(word, word))).toThrow(AiScriptSyntaxError);
 				await Promise.resolve(); // https://github.com/vitest-dev/vitest/issues/4750

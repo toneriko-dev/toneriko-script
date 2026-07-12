@@ -3,6 +3,7 @@ import { describe, test } from 'vitest';
 import { utils } from '../src';
 import { NUM, STR, NULL, ARR, OBJ, BOOL, TRUE, FALSE, ERROR ,FN_NATIVE } from '../src/interpreter/value';
 import { exe, eq } from './testutils';
+import { MAX_NATIVE_VALUE_SIZE } from '../src/constants';
 
 
 describe('Core', () => {
@@ -10,6 +11,10 @@ describe('Core', () => {
 		eq(await exe('<: Core:range(1, 10)'), ARR([NUM(1), NUM(2), NUM(3), NUM(4), NUM(5), NUM(6), NUM(7), NUM(8), NUM(9), NUM(10)]));
 		eq(await exe('<: Core:range(1, 1)'), ARR([NUM(1)]));
 		eq(await exe('<: Core:range(9, 7)'), ARR([NUM(9), NUM(8), NUM(7)]));
+	});
+
+	test('range size limit', async () => {
+		await assert.rejects(exe(`<: Core:range(0, ${MAX_NATIVE_VALUE_SIZE})`), /Core:range size must not exceed/);
 	});
 
 	test.concurrent('to_str', async () => {
@@ -46,6 +51,11 @@ describe('Arr', () => {
 		eq(await exe("<: Arr:create(0)"), ARR([]));
 		eq(await exe("<: Arr:create(3)"), ARR([NULL, NULL, NULL]));
 		eq(await exe("<: Arr:create(3, 1)"), ARR([NUM(1), NUM(1), NUM(1)]));
+	});
+
+	test('create size limit', async () => {
+		eq(await exe(`<: Arr:create(${MAX_NATIVE_VALUE_SIZE}).len`), NUM(MAX_NATIVE_VALUE_SIZE));
+		await assert.rejects(exe(`Arr:create(${MAX_NATIVE_VALUE_SIZE + 1})`), /Arr:create size must not exceed/);
 	});
 });
 

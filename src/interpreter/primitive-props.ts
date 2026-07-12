@@ -2,6 +2,7 @@
 import { substring, length, indexOf, toArray } from '../utils/graphemes.js';
 import { AiScriptRuntimeError } from '../error.js';
 import { textEncoder } from '../const.js';
+import { MAX_ARRAY_FLAT_DEPTH, MAX_NATIVE_VALUE_SIZE } from '../constants.js';
 import { assertArray, assertBoolean, assertFunction, assertNumber, assertString, expectAny, eq, isArray } from './util.js';
 import { ARR, FALSE, FN_NATIVE, NULL, NUM, STR, TRUE } from './value.js';
 import type { Value, VArr, VFn, VNum, VStr, VError } from './value.js';
@@ -176,6 +177,7 @@ const PRIMITIVE_PROPS = {
 		pad_start: (target: VStr): VFn => FN_NATIVE(([width, pad], _) => {
 			assertNumber(width);
 			const s = (pad) ? (assertString(pad), pad.value) : ' ';
+			if (width.value > MAX_NATIVE_VALUE_SIZE) throw new AiScriptRuntimeError(`str.pad_start width must not exceed ${MAX_NATIVE_VALUE_SIZE}`);
 
 			return STR(target.value.padStart(width.value, s));
 		}),
@@ -183,6 +185,7 @@ const PRIMITIVE_PROPS = {
 		pad_end: (target: VStr): VFn => FN_NATIVE(([width, pad], _) => {
 			assertNumber(width);
 			const s = (pad) ? (assertString(pad), pad.value) : ' ';
+			if (width.value > MAX_NATIVE_VALUE_SIZE) throw new AiScriptRuntimeError(`str.pad_end width must not exceed ${MAX_NATIVE_VALUE_SIZE}`);
 
 			return STR(target.value.padEnd(width.value, s));
 		}),
@@ -410,13 +413,11 @@ const PRIMITIVE_PROPS = {
 
 		repeat: (target: VArr): VFn => FN_NATIVE(([times], opts) => {
 			assertNumber(times);
-			try {
-				return ARR(Array(times.value).fill(target.value).flat());
-			} catch (e) {
-				if (times.value < 0) throw new AiScriptRuntimeError('arr.repeat expected non-negative number, got negative');
-				if (!Number.isInteger(times.value)) throw new AiScriptRuntimeError('arr.repeat expected integer, got non-integer');
-				throw e;
-			}
+			if (times.value < 0) throw new AiScriptRuntimeError('arr.repeat expected non-negative number, got negative');
+			if (!Number.isInteger(times.value)) throw new AiScriptRuntimeError('arr.repeat expected integer, got non-integer');
+			if (target.value.length === 0) return ARR([]);
+			if (target.value.length * times.value > MAX_NATIVE_VALUE_SIZE) throw new AiScriptRuntimeError(`arr.repeat size must not exceed ${MAX_NATIVE_VALUE_SIZE}`);
+			return ARR(Array(times.value).fill(target.value).flat());
 		}),
 		
 		splice: (target: VArr): VFn => FN_NATIVE(([idx, rc, vs], opts) => {
@@ -440,8 +441,10 @@ const PRIMITIVE_PROPS = {
 			assertNumber(depth);
 			if (!Number.isInteger(depth.value)) throw new AiScriptRuntimeError('arr.flat expected integer, got non-integer');
 			if (depth.value < 0) throw new AiScriptRuntimeError('arr.flat expected non-negative number, got negative');
+			if (depth.value > MAX_ARRAY_FLAT_DEPTH) throw new AiScriptRuntimeError(`arr.flat depth must not exceed ${MAX_ARRAY_FLAT_DEPTH}`);
 			const flat = (arr: Value[], depth: number, result: Value[]) => {
 				if (depth === 0) {
+					if (result.length + arr.length > MAX_NATIVE_VALUE_SIZE) throw new AiScriptRuntimeError(`arr.flat size must not exceed ${MAX_NATIVE_VALUE_SIZE}`);
 					result.push(...arr);
 					return;
 				}
@@ -449,6 +452,7 @@ const PRIMITIVE_PROPS = {
 					if (isArray(v)) {
 						flat(v.value, depth - 1, result);
 					} else {
+						if (result.length >= MAX_NATIVE_VALUE_SIZE) throw new AiScriptRuntimeError(`arr.flat size must not exceed ${MAX_NATIVE_VALUE_SIZE}`);
 						result.push(v);
 					}
 				}

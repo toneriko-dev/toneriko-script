@@ -6,6 +6,13 @@ import { ARR, ERROR, FALSE, NUM, OBJ, STR, TRUE, Value } from '../src/interprete
 let { FN_NATIVE } = values;
 let { AiScriptRuntimeError, AiScriptIndexOutOfRangeError, AiScriptHostsideError } = errors;
 
+test('maxStep is applied per top-level execution', async () => {
+	const parser = new Parser();
+	const interpreter = new Interpreter({}, { maxStep: 10 });
+	const script = parser.parse('<: 1');
+	for (let i = 0; i < 20; i++) await interpreter.exec(script);
+});
+
 describe('value conversion', () => {
 	test.concurrent('special object keys do not alter the prototype', () => {
 		const value = OBJ(new Map([

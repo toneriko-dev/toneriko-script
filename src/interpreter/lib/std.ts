@@ -3,7 +3,7 @@ import { v4 as uuid } from 'uuid';
 import { NUM, STR, FN_NATIVE, FALSE, TRUE, ARR, NULL, BOOL, OBJ, ERROR } from '../value.js';
 import { assertNumber, assertString, assertBoolean, valToJs, jsToVal, assertFunction, assertObject, eq, expectAny, assertArray, reprValue } from '../util.js';
 import { AiScriptRuntimeError, AiScriptUserError } from '../../error.js';
-import { AISCRIPT_VERSION } from '../../constants.js';
+import { AISCRIPT_VERSION, MAX_NATIVE_VALUE_SIZE } from '../../constants.js';
 import { textDecoder } from '../../const.js';
 import { stdMath } from './math.js';
 import type { Value } from '../value.js';
@@ -125,6 +125,9 @@ export const std: Record<string, Value> = {
 	'Core:range': FN_NATIVE(([a, b]) => {
 		assertNumber(a);
 		assertNumber(b);
+		const length = Math.abs(b.value - a.value) + 1;
+		if (!Number.isSafeInteger(length)) throw new AiScriptRuntimeError('Core:range expected safe integer bounds');
+		if (length > MAX_NATIVE_VALUE_SIZE) throw new AiScriptRuntimeError(`Core:range size must not exceed ${MAX_NATIVE_VALUE_SIZE}`);
 		if (a.value < b.value) {
 			return ARR(Array.from({ length: (b.value - a.value) + 1 }, (_, i) => NUM(i + a.value)));
 		} else if (a.value > b.value) {
@@ -339,13 +342,10 @@ export const std: Record<string, Value> = {
 	//#region Arr
 	'Arr:create': FN_NATIVE(([length, initial]) => {
 		assertNumber(length);
-		try {
-			return ARR(Array(length.value).fill(initial ?? NULL));
-		} catch (e) {
-			if (length.value < 0) throw new AiScriptRuntimeError('Arr:create expected non-negative number, got negative');
-			if (!Number.isInteger(length.value)) throw new AiScriptRuntimeError('Arr:create expected integer, got non-integer');
-			throw e;
-		}
+		if (length.value < 0) throw new AiScriptRuntimeError('Arr:create expected non-negative number, got negative');
+		if (!Number.isInteger(length.value)) throw new AiScriptRuntimeError('Arr:create expected integer, got non-integer');
+		if (length.value > MAX_NATIVE_VALUE_SIZE) throw new AiScriptRuntimeError(`Arr:create size must not exceed ${MAX_NATIVE_VALUE_SIZE}`);
+		return ARR(Array(length.value).fill(initial ?? NULL));
 	}),
 	//#endregion
 

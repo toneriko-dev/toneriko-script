@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'vitest';
 import { NUM, STR, NULL, ARR, OBJ, BOOL, TRUE, FALSE, ERROR ,FN_NATIVE } from '../src/interpreter/value';
 import { AiScriptRuntimeError } from '../src/error';
+import { MAX_ARRAY_FLAT_DEPTH, MAX_NATIVE_VALUE_SIZE } from '../src/constants';
 import { exe, eq } from './testutils';
 
 
@@ -308,6 +309,11 @@ describe('str', () => {
 		]));
 	});
 
+	test('pad_start size limit', async () => {
+		eq(await exe(`<: "x".pad_start(${MAX_NATIVE_VALUE_SIZE}).len`), NUM(MAX_NATIVE_VALUE_SIZE));
+		await expect(exe(`"x".pad_start(${MAX_NATIVE_VALUE_SIZE + 1})`)).rejects.toThrow('str.pad_start width must not exceed');
+	});
+
 	test.concurrent("pad_end", async () => {
 		const res = await exe(`
 		let str = "abc"
@@ -322,6 +328,11 @@ describe('str', () => {
 			STR("abc"), STR("abc"), STR("abc"), STR("abc"), STR("abc0"), STR("abc00"),
 			STR("abc"), STR("abc"), STR("abc"), STR("abc"), STR("abc0"), STR("abc01"),
 		]));
+	});
+
+	test('pad_end size limit', async () => {
+		eq(await exe(`<: "x".pad_end(${MAX_NATIVE_VALUE_SIZE}).len`), NUM(MAX_NATIVE_VALUE_SIZE));
+		await expect(exe(`"x".pad_end(${MAX_NATIVE_VALUE_SIZE + 1})`)).rejects.toThrow('str.pad_end width must not exceed');
 	});
 });
 
@@ -612,6 +623,12 @@ describe('arr', () => {
 		]));
 	});
 
+	test('repeat size limit', async () => {
+		eq(await exe(`<: [0].repeat(${MAX_NATIVE_VALUE_SIZE}).len`), NUM(MAX_NATIVE_VALUE_SIZE));
+		eq(await exe(`<: [].repeat(${MAX_NATIVE_VALUE_SIZE + 1}).len`), NUM(0));
+		await expect(exe(`[0, 1].repeat(${(MAX_NATIVE_VALUE_SIZE / 2) + 1})`)).rejects.toThrow('arr.repeat size must not exceed');
+	});
+
 	test.concurrent('splice (full)', async () => {
 		const res = await exe(`
 				let arr1 = [0, 1, 2, 3]
@@ -681,6 +698,11 @@ describe('arr', () => {
 				NUM(4), NUM(5), NUM(6),
 			]),
 		]));
+	});
+
+	test('flat depth limit', async () => {
+		eq(await exe(`<: [1].flat(${MAX_ARRAY_FLAT_DEPTH})`), ARR([NUM(1)]));
+		await expect(exe(`[1].flat(${MAX_ARRAY_FLAT_DEPTH + 1})`)).rejects.toThrow('arr.flat depth must not exceed');
 	});
 	
 	test.concurrent('flat_map', async () => {

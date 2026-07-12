@@ -31,12 +31,17 @@ type CallInfo = {
 
 // 呼び出し深さごとに配列全体をコピーせずに済むよう、連結リストとしてcallStackを表現する。
 // スタックトレース文字列を組み立てるときだけ配列へ変換する(callStackToArray)。
-type CallStack = { info: CallInfo; parent: CallStack } | null;
+type ExecutionState = { stepCount: number };
+type CallStack = { info: CallInfo; parent: CallStack; execution: ExecutionState } | null;
+
+function createCallStack(info: CallInfo, parent: CallStack): NonNullable<CallStack> {
+	return { info, parent, execution: parent?.execution ?? { stepCount: 0 } };
+}
 
 function callStackToArray(callStack: CallStack): CallInfo[] {
 	const arr: CallInfo[] = [];
 	for (let node = callStack; node != null; node = node.parent) {
-		arr.push(node.info);
+		if (node.parent != null || node.info.pos != null) arr.push(node.info);
 	}
 	arr.reverse();
 	return arr;
@@ -122,7 +127,7 @@ export class Interpreter {
 		if (script == null || script.length === 0) return;
 		try {
 			await this.collectNs(script);
-			const result = await this._run(script, this.scope, null);
+			const result = await this._run(script, this.scope, createCallStack({ name: '<root>', pos: undefined }, null));
 			assertValue(result);
 			this.log('end', { val: result });
 		} catch (e) {
@@ -134,7 +139,7 @@ export class Interpreter {
 	public execSync(script?: Ast.Node[]): Value | undefined {
 		if (script == null || script.length === 0) return;
 		this.collectNsSync(script);
-		const result = this._runSync(script, this.scope, null);
+		const result = this._runSync(script, this.scope, createCallStack({ name: '<root>', pos: undefined }, null));
 		assertValue(result);
 		return result;
 	}
@@ -149,7 +154,7 @@ export class Interpreter {
 	 */
 	@autobind
 	public async execFn(fn: VFn, args: Value[]): Promise<Value> {
-		return await this._fn(fn, args, null)
+		return await this._fn(fn, args, createCallStack({ name: '<root>', pos: undefined }, null))
 			.catch(e => {
 				this.handleError(e);
 				return ERROR('func_failed');
@@ -166,7 +171,7 @@ export class Interpreter {
 	 */
 	@autobind
 	public execFnSync(fn: VFn, args: Value[]): Value {
-		return this._fnSync(fn, args, null);
+		return this._fnSync(fn, args, createCallStack({ name: '<root>', pos: undefined }, null));
 	}
 
 	/**
@@ -177,7 +182,7 @@ export class Interpreter {
 	 */
 	@autobind
 	public execFnSimple(fn: VFn, args: Value[]): Promise<Value> {
-		return this._fn(fn, args, null);
+		return this._fn(fn, args, createCallStack({ name: '<root>', pos: undefined }, null));
 	}
 
 	@autobind
@@ -353,7 +358,7 @@ export class Interpreter {
 		if (fn.native) {
 			const info: CallInfo = { name: '<native>', pos };
 			const result = fn.native(args, {
-				call: (fn, args) => this._fn(fn, args, { info, parent: callStack }),
+				call: (fn, args) => this._fn(fn, args, createCallStack(info, callStack)),
 				topCall: this.execFn,
 				registerAbortHandler: this.registerAbortHandler,
 				registerPauseHandler: this.registerPauseHandler,
@@ -373,7 +378,7 @@ export class Interpreter {
 			}
 
 			const info: CallInfo = { name: fn.name ?? '<anonymous>', pos };
-			return unWrapRet(await this._run(fn.statements!, fnScope, { info, parent: callStack }));
+			return unWrapRet(await this._run(fn.statements!, fnScope, createCallStack(info, callStack)));
 		}
 	}
 
@@ -382,7 +387,7 @@ export class Interpreter {
 		if (fn.native) {
 			const info: CallInfo = { name: '<native>', pos };
 			const result = fn.nativeSync ? fn.nativeSync(args, {
-				call: (fn, args) => this._fnSync(fn, args, { info, parent: callStack }),
+				call: (fn, args) => this._fnSync(fn, args, createCallStack(info, callStack)),
 				topCall: this.execFnSync,
 				registerAbortHandler: this.registerAbortHandler,
 				registerPauseHandler: this.registerPauseHandler,
@@ -391,7 +396,7 @@ export class Interpreter {
 				unregisterPauseHandler: this.unregisterPauseHandler,
 				unregisterUnpauseHandler: this.unregisterUnpauseHandler,
 			}) : fn.native(args, {
-				call: (fn, args) => this._fn(fn, args, { info, parent: callStack }),
+				call: (fn, args) => this._fn(fn, args, createCallStack(info, callStack)),
 				topCall: this.execFn,
 				registerAbortHandler: this.registerAbortHandler,
 				registerPauseHandler: this.registerPauseHandler,
@@ -414,7 +419,7 @@ export class Interpreter {
 			}
 
 			const info: CallInfo = { name: fn.name ?? '<anonymous>', pos };
-			return unWrapRet(this._runSync(fn.statements!, fnScope, { info, parent: callStack }));
+			return unWrapRet(this._runSync(fn.statements!, fnScope, createCallStack(info, callStack)));
 		}
 	}
 
@@ -494,7 +499,8 @@ export class Interpreter {
 			await this.irqSleep();
 		}
 		this.stepCount++;
-		if (this.opts.maxStep && this.stepCount > this.opts.maxStep) {
+		if (callStack != null) callStack.execution.stepCount++;
+		if (this.opts.maxStep && (callStack?.execution.stepCount ?? this.stepCount) > this.opts.maxStep) {
 			throw new AiScriptRuntimeError('max step exceeded');
 		}
 
@@ -1085,7 +1091,8 @@ export class Interpreter {
 		if (this.stop) return NULL;
 
 		this.stepCount++;
-		if (this.opts.maxStep && this.stepCount > this.opts.maxStep) {
+		if (callStack != null) callStack.execution.stepCount++;
+		if (this.opts.maxStep && (callStack?.execution.stepCount ?? this.stepCount) > this.opts.maxStep) {
 			throw new AiScriptRuntimeError('max step exceeded');
 		}
 

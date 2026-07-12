@@ -5,7 +5,10 @@
 		"noImplicitAny": true,
 		"noImplicitReturns": true,
 		"noFallthroughCasesInSwitch": true,
+		"noImplicitOverride": true,
+		"noPropertyAccessFromIndexSignature": true,
 		"noUncheckedIndexedAccess": true,
+		"noUnusedLocals": true,
 		"experimentalDecorators": true,
 		"sourceMap": false,
 		"target": "ES2022",
@@ -16,6 +19,7 @@
 		"resolveJsonModule": true,
 		"rootDir": "./src",
 		"outDir": "./built",
+		"strict": true,
 		"strictNullChecks": true,
 		"types": ["node"]
 	},

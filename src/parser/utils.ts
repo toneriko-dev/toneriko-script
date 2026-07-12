@@ -16,7 +16,7 @@ export function NODE<T extends Ast.Node['type']>(
 			node[key] = params[key as Key];
 		}
 	}
-	node.loc = { start, end };
+	node['loc'] = { start, end };
 	return node as Extract<Ast.Node, { type: T }>;
 }
 

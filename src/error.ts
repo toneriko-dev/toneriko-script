@@ -2,7 +2,7 @@ import type { Pos } from './node.js';
 
 export abstract class AiScriptError extends Error {
 	// name is read by Error.prototype.toString
-	public name = 'AiScript';
+	public override name = 'AiScript';
 	public info: unknown;
 	public pos?: Pos;
 
@@ -22,7 +22,7 @@ export abstract class AiScriptError extends Error {
  * Wrapper for non-AiScript errors.
  */
 export class NonAiScriptError extends AiScriptError {
-	public name = 'Internal';
+	public override name = 'Internal';
 	constructor(error: unknown) {
 		const message = String(
 			(error as { message?: unknown } | null | undefined)?.message ?? error,
@@ -35,8 +35,8 @@ export class NonAiScriptError extends AiScriptError {
  * Parse-time errors.
  */
 export class AiScriptSyntaxError extends AiScriptError {
-	public name = 'Syntax';
-	constructor(message: string, public pos: Pos, info?: unknown) {
+	public override name = 'Syntax';
+	constructor(message: string, public override pos: Pos, info?: unknown) {
 		super(`${message} (Line ${pos.line}, Column ${pos.column})`, info);
 	}
 }
@@ -54,8 +54,8 @@ export class AiScriptUnexpectedEOFError extends AiScriptSyntaxError {
  * Namespace collection errors.
  */
 export class AiScriptNamespaceError extends AiScriptError {
-	public name = 'Namespace';
-	constructor(message: string, public pos: Pos, info?: unknown) {
+	public override name = 'Namespace';
+	constructor(message: string, public override pos: Pos, info?: unknown) {
 		super(`${message} (Line ${pos.line}, Column ${pos.column})`, info);
 	}
 }
@@ -64,7 +64,7 @@ export class AiScriptNamespaceError extends AiScriptError {
  * Interpret-time errors.
  */
 export class AiScriptRuntimeError extends AiScriptError {
-	public name = 'Runtime';
+	public override name = 'Runtime';
 }
 /**
  * RuntimeError for illegal access to arrays.
@@ -75,11 +75,11 @@ export class AiScriptIndexOutOfRangeError extends AiScriptRuntimeError {
  * Errors thrown by users.
  */
 export class AiScriptUserError extends AiScriptRuntimeError {
-	public name = '';
+	public override name = '';
 }
 /**
  * Host side configuration errors.
  */
 export class AiScriptHostsideError extends AiScriptError {
-	public name = 'Host';
+	public override name = 'Host';
 }

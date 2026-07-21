@@ -1,4 +1,3 @@
-/* eslint-disable prefer-const */
 
 import * as assert from 'assert';
 import { describe, test } from 'vitest';

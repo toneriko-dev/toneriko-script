@@ -367,7 +367,6 @@ export class Interpreter {
 				unregisterPauseHandler: this.unregisterPauseHandler,
 				unregisterUnpauseHandler: this.unregisterUnpauseHandler,
 			});
-			// eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
 			return result ?? NULL;
 		} else {
 			const fnScope = fn.scope.createChildScope(new Map(), undefined, fn.typeParams);
@@ -408,7 +407,6 @@ export class Interpreter {
 			if (result instanceof Promise) {
 				throw new AiScriptHostsideError('Native function must not return a Promise in sync mode.');
 			}
-			// eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
 			return result ?? NULL;
 		} else {
 			const fnScope = fn.scope.createChildScope(new Map(), undefined, fn.typeParams);
@@ -578,7 +576,6 @@ export class Interpreter {
 			}
 
 			case 'loop': {
-				// eslint-disable-next-line no-constant-condition
 				while (true) {
 					const v = await this._run(node.statements, scope.createChildScope(), callStack);
 					if (v.type === 'break') {
@@ -1170,7 +1167,6 @@ export class Interpreter {
 			}
 
 			case 'loop': {
-				// eslint-disable-next-line no-constant-condition
 				while (true) {
 					const v = this._runSync(node.statements, scope.createChildScope(), callStack);
 					if (v.type === 'break') {

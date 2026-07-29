@@ -1,7 +1,3 @@
-// api-extractor not support yet
-//export * from './interpreter/index';
-//export * as utils from './interpreter/util';
-//export * as values from './interpreter/value';
 import { Interpreter } from './interpreter/index.js';
 import { Scope } from './interpreter/scope.js';
 import * as utils from './interpreter/util.js';

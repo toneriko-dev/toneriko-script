@@ -60,7 +60,6 @@ export function parseParams(s: ITokenStream): Ast.Fn['params'] {
 
 		items.push({ dest, optional, default: defaultExpr, argType: type });
 
-		// separator
 		switch (s.getTokenKind()) {
 			case TokenKind.NewLine: {
 				s.next();
@@ -108,7 +107,6 @@ export function parseBlock(s: ITokenStream): (Ast.Statement | Ast.Expression)[] 
 	while (!s.is(TokenKind.CloseBrace)) {
 		steps.push(parseStatement(s));
 
-		// terminator
 		switch (s.getTokenKind()) {
 			case TokenKind.NewLine:
 			case TokenKind.SemiColon: {

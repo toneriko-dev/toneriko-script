@@ -222,7 +222,7 @@ export const std: Record<string, Value> = {
 	'Date:parse': FN_NATIVE(([v]) => {
 		assertString(v);
 		const res = new Date(v.value).getTime();
-		// NaN doesn't equal to itself
+		// NaN は自身とも一致しないため、自己比較で妥当性を判定する。
 		return (res === res) ? NUM(res) : ERROR('not_date');
 	}),
 
@@ -464,7 +464,6 @@ export const std: Record<string, Value> = {
 
 		start();
 
-		// stopper
 		return FN_NATIVE(([], opts) => {
 			abort();
 		});
@@ -505,7 +504,6 @@ export const std: Record<string, Value> = {
 
 		start();
 
-		// stopper
 		return FN_NATIVE(([], opts) => {
 			abort();
 		});

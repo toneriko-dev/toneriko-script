@@ -609,7 +609,7 @@ describe('arr', () => {
 			<: [arr1, arr2, arr3, arr4, arr5]
 		`);
 		eq(res, ARR([
-			ARR([NUM(3), NUM(3), NUM(3)]), //target changed
+			ARR([NUM(3), NUM(3), NUM(3)]), // 対象配列が変更される
 			ARR([NUM(3), NUM(3), NUM(3)]),
 			ARR([NUM(0), NUM(3), NUM(3)]),
 			ARR([NUM(0), NUM(3), NUM(2)]),
@@ -625,7 +625,7 @@ describe('arr', () => {
 			<: [arr1, arr2, arr3]
 		`);
 		eq(res, ARR([
-			ARR([NUM(0), NUM(1), NUM(2)]), // target not changed
+			ARR([NUM(0), NUM(1), NUM(2)]), // 対象配列は変更されない
 			ARR([
 				NUM(0), NUM(1), NUM(2),
 				NUM(0), NUM(1), NUM(2),
@@ -700,7 +700,7 @@ describe('arr', () => {
 			ARR([
 				NUM(0), ARR([NUM(1)]), ARR([NUM(2), NUM(3)]),
 				ARR([NUM(4), ARR([NUM(5), NUM(6)])])
-			]), // target not changed
+			]), // 対象配列は変更されない
 			ARR([
 				NUM(0), NUM(1), NUM(2), NUM(3),
 				NUM(4), ARR([NUM(5), NUM(6)]),
@@ -725,7 +725,7 @@ describe('arr', () => {
 			<: [arr1, arr3]
 		`);
 		eq(res, ARR([
-			ARR([NUM(0), NUM(1), NUM(2)]), // target not changed
+			ARR([NUM(0), NUM(1), NUM(2)]), // 対象配列は変更されない
 			ARR([
 				ARR([NUM(0), STR("a")]),
 				ARR([NUM(0), STR("b")]),
@@ -746,7 +746,7 @@ describe('arr', () => {
 			<: [arr1, res1, res2, res3]
 		`);
 		eq(res, ARR([
-			ARR([NUM(0), NUM(1), NUM(2), NUM(3)]), // target not changed
+			ARR([NUM(0), NUM(1), NUM(2), NUM(3)]), // 対象配列は変更されない
 			TRUE,
 			FALSE,
 			TRUE,
@@ -761,7 +761,7 @@ describe('arr', () => {
 			<: [arr1, res1, res2]
 		`);
 		eq(res, ARR([
-			ARR([NUM(0), NUM(1), NUM(2), NUM(3)]), // target not changed
+			ARR([NUM(0), NUM(1), NUM(2), NUM(3)]), // 対象配列は変更されない
 			TRUE,
 			FALSE,
 		]));

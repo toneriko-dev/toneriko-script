@@ -36,7 +36,7 @@ type VFnBase = {
 	type: 'fn';
 };
 export type VUserFn = VFnBase & {
-	native?: undefined; // if (vfn.native) で型アサーション出来るように
+	native?: undefined; // vfn.native の存在確認でユーザー関数へ絞り込めるようにする。
 	name?: string;
 	params: VFnParam[];
 	typeParams: readonly TypeParam[];
@@ -48,9 +48,7 @@ export type VFnParam = {
 	type?: Type;
 	default?: Value;
 }
-/**
- * When your AiScript NATIVE function passes VFn.call to other caller(s) whose error thrown outside the scope, use VFn.topCall instead to keep it under AiScript error control system.
- */
+// AiScript のエラー制御対象外で呼び出す関数には topCall を使う。
 export type VNativeFn = VFnBase & {
 	native: (args: (Value | undefined)[], opts: {
 		call: (fn: VFn, args: Value[]) => Promise<Value>;

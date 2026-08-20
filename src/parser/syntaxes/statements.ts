@@ -15,7 +15,6 @@ export function parseStatement(s: ITokenStream): Ast.Statement | Ast.Expression 
 			return parseVarDef(s);
 		}
 		case TokenKind.At: {
-			// 識別子が続く場合はFnDef、そうでなければFnExpr
 			if (s.lookahead(1).kind === TokenKind.Identifier) {
 				return parseFnDef(s);
 			}
@@ -300,7 +299,6 @@ function parseFor(s: ITokenStream): Ast.For {
 	}
 
 	if (s.is(TokenKind.LetKeyword)) {
-		// range syntax
 		s.next();
 
 		const identPos = s.getPos();
@@ -346,8 +344,6 @@ function parseFor(s: ITokenStream): Ast.For {
 			for: body,
 		}, startPos, s.getPos());
 	} else {
-		// times syntax
-
 		const times = parseExpr(s, false);
 
 		if (hasParen) {
@@ -556,7 +552,6 @@ function parseContinue(s: ITokenStream): Ast.Continue {
 function tryParseAssign(s: ITokenStream, dest: Ast.Expression): Ast.Statement | undefined {
 	const startPos = s.getPos();
 
-	// Assign
 	switch (s.getTokenKind()) {
 		case TokenKind.Eq: {
 			s.next();

@@ -35,7 +35,6 @@ export function parseTopLevel(s: ITokenStream): Ast.Node[] {
 			}
 		}
 
-		// terminator
 		switch (s.getTokenKind()) {
 			case TokenKind.NewLine:
 			case TokenKind.SemiColon: {
@@ -97,7 +96,6 @@ export function parseNamespace(s: ITokenStream): Ast.Namespace {
 			}
 		}
 
-		// terminator
 		switch (s.getTokenKind()) {
 			case TokenKind.NewLine:
 			case TokenKind.SemiColon: {

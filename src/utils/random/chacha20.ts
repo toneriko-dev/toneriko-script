@@ -1,6 +1,6 @@
 import { RandomBase, readBigUintLittleEndian } from './randomBase.js';
 
-// translated from https://github.com/skeeto/chacha-js/blob/master/chacha.js
+// https://github.com/skeeto/chacha-js/blob/master/chacha.js
 const chacha20BlockSize = 64;
 const CHACHA_ROUNDS = 20;
 const CHACHA_KEYSIZE = 32;

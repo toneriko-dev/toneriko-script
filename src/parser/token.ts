@@ -3,16 +3,13 @@ export enum TokenKind {
 	NewLine,
 	Identifier,
 
-	// literal
 	NumberLiteral,
 	StringLiteral,
 
-	// template string
 	Template,
 	TemplateStringElement,
 	TemplateExprElement,
 
-	// keyword
 	NullKeyword,
 	TrueKeyword,
 	FalseKeyword,
@@ -122,17 +119,11 @@ export class Token {
 		public kind: TokenKind,
 		public pos: TokenPosition,
 		public hasLeftSpacing = false,
-		/** for number literal, string literal */
 		public value?: string,
-		/** for template syntax */
 		public children?: Token[],
 	) { }
 }
 
-/**
- * - opts.value: for number literal, string literal
- * - opts.children: for template syntax
-*/
 export function TOKEN(kind: TokenKind, pos: TokenPosition, opts?: { hasLeftSpacing?: boolean, value?: Token['value'], children?: Token['children'] }): Token {
 	return new Token(kind, pos, opts?.hasLeftSpacing, opts?.value, opts?.children);
 }
@@ -191,7 +182,6 @@ export function keywordTokenKindToString(token: KeywordTokenKind): string {
 		case TokenKind.LetKeyword: return 'let';
 		case TokenKind.ExistsKeyword: return 'exists';
 		default: {
-			// exhaustiveness check
 			const _token: never = token;
 			throw new TypeError(`Unknown keyword token kind ${_token}`);
 		}

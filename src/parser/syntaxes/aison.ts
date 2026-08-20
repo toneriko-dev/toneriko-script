@@ -18,7 +18,6 @@ export function parseAiSonTopLevel(s: ITokenStream): Ast.Node {
 			throw new AiScriptSyntaxError('AiSON only supports one top-level expression.', s.getPos());
 		}
 		
-		// terminator
 		switch (s.getTokenKind()) {
 			case TokenKind.NewLine:
 			case TokenKind.SemiColon: {

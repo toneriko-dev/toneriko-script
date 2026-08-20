@@ -22,7 +22,6 @@ export type CContinue = {
 
 export type Control = CReturn | CBreak | CContinue;
 
-// Return文で値が返されたことを示すためのラッパー
 export const RETURN = (v: CReturn['value']): CReturn => ({
 	type: 'return' as const,
 	value: v,
@@ -40,9 +39,6 @@ export const CONTINUE = (label?: string): CContinue => ({
 	value: null,
 });
 
-/**
- * 値がbreakで、ラベルが一致する場合のみ、その中身を取り出します。
- */
 export function unWrapLabeledBreak(v: Value | Control, label: string | undefined): Value | Control {
 	if (v.type === 'break' && v.label != null && v.label === label) {
 		return v.value ?? NULL;
@@ -91,7 +87,6 @@ export function isControl(v: Value | Control | Reference): v is Control {
 		case 'continue':
 			return true;
 	}
-	// exhaustive check
 	v satisfies never;
 	throw new TypeError('expected value or control');
 }

@@ -237,9 +237,6 @@ export function getLangVersion(input: string): string | null {
 	return (match != null) ? match[1]! : null;
 }
 
-/**
- * @param literalLike - `true` なら出力をリテラルに似せる
- */
 export function reprValue(value: Value, literalLike = false, processingObjects = new Set<object>()): string {
 	if ((value.type === 'arr' || value.type === 'obj') && processingObjects.has(value.value)) {
 		return '...';
@@ -275,7 +272,6 @@ export function reprValue(value: Value, literalLike = false, processingObjects =
 	if (value.type === 'error') return `error<${value.value}>`;
 	if (value.type === 'fn') {
 		if (value.native) {
-			// そのうちネイティブ関数の引数も表示できるようにしたいが、ホスト向けの破壊的変更を伴うと思われる
 			return '@( ?? ) { native code }';
 		} else {
 			return `@( ${(value.params.map(v => v.dest.type === 'identifier' ? v.dest.name : '?')).join(', ')} ) { ... }`;

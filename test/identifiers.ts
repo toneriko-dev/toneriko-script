@@ -5,7 +5,6 @@ import { eq, exe } from './testutils';
 import { NULL, NUM, STR, Value } from '../src/interpreter/value';
 
 const reservedWords = [
-	// 使用中の語
 	'null',
 	'true',
 	'false',
@@ -28,7 +27,6 @@ const reservedWords = [
 	'let',
 	'exists',
 
-	// 使用予定の語
 	// 文脈キーワードは識別子に利用できるため除外
 	'as',
 	'async',

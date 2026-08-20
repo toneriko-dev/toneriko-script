@@ -2,12 +2,10 @@ import { AiScriptSyntaxError } from '../../error.js';
 import { visitNode } from '../visit.js';
 import type * as Ast from '../../node.js';
 
-// 予約語となっている識別子があるかを確認する。
-// - キーワードは字句解析の段階でそれぞれのKeywordトークンとなるが、エスケープシーケンスを含む場合はIdentifierトークンとなるので検証を行う。
-// - 文脈キーワードは識別子に利用できるため除外
+// 字句解析で Identifier になるエスケープ形式も予約語として拒否する。
+// 文脈キーワードは識別子に使えるため、この一覧から除外する。
 
 const reservedWord = [
-	// 使用中の語
 	'null',
 	'true',
 	'false',
@@ -30,7 +28,6 @@ const reservedWord = [
 	'let',
 	'exists',
 
-	// 使用予定の語
 	'as',
 	'async',
 	'attr',

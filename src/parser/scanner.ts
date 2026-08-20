@@ -19,9 +19,6 @@ const identifierPart = /^[A-Za-z0-9_]$/u;
 const hexDigit = /^[0-9a-fA-F]$/;
 const exponentIndicatorPattern = /^[eE]$/;
 
-/**
- * 入力文字列からトークンを読み取るクラス
-*/
 export class Scanner implements ITokenStream {
 	private stream: CharStream;
 	private _tokens: Token[] = [];
@@ -37,46 +34,27 @@ export class Scanner implements ITokenStream {
 		this._tokens.push(this.readToken());
 	}
 
-	/**
-	 * カーソル位置にあるトークンを取得します。
-	*/
 	public getToken(): Token {
 		return this._tokens[0]!;
 	}
 
-	/**
-	 * カーソル位置にあるトークンの種類が指定したトークンの種類と一致するかどうかを示す値を取得します。
-	*/
 	public is(kind: TokenKind): boolean {
 		return this.getTokenKind() === kind;
 	}
 
-	/**
-	 * カーソル位置にあるトークンの種類を取得します。
-	*/
 	public getTokenKind(): TokenKind {
 		return this.getToken().kind;
 	}
 
-	/**
-	 * カーソル位置にあるトークンに含まれる値を取得します。
-	*/
 	public getTokenValue(): string {
 		return this.getToken().value!;
 	}
 
-	/**
-	 * カーソル位置にあるトークンの位置情報を取得します。
-	*/
 	public getPos(): TokenPosition {
 		return this.getToken().pos;
 	}
 
-	/**
-	 * カーソル位置を次のトークンへ進めます。
-	*/
 	public next(): void {
-		// 現在のトークンがEOFだったら次のトークンに進まない
 		if (this._tokens[0]!.kind === TokenKind.EOF) {
 			return;
 		}
@@ -88,9 +66,6 @@ export class Scanner implements ITokenStream {
 		}
 	}
 
-	/**
-	 * トークンの先読みを行います。カーソル位置は移動されません。
-	*/
 	public lookahead(offset: number): Token {
 		while (this._tokens.length <= offset) {
 			this._tokens.push(this.readToken());
@@ -99,10 +74,6 @@ export class Scanner implements ITokenStream {
 		return this._tokens[offset]!;
 	}
 
-	/**
-	 * カーソル位置にあるトークンの種類が指定したトークンの種類と一致することを確認します。
-	 * 一致しなかった場合には文法エラーを発生させます。
-	*/
 	public expect(kind: TokenKind): void {
 		if (!this.is(kind)) {
 			throw unexpectedTokenError(this.getTokenKind(), this.getPos());
@@ -116,14 +87,12 @@ export class Scanner implements ITokenStream {
 			if (this.stream.eof) {
 				return TOKEN(TokenKind.EOF, this.stream.getPos(), { hasLeftSpacing });
 			}
-			// skip spasing
 			if (spaceChars.includes(this.stream.char)) {
 				this.stream.next();
 				hasLeftSpacing = true;
 				continue;
 			}
 
-			// トークン位置を記憶
 			const pos = this.stream.getPos();
 
 			if (lineBreakChars.includes(this.stream.char)) {
@@ -131,8 +100,7 @@ export class Scanner implements ITokenStream {
 				return TOKEN(TokenKind.NewLine, pos, { hasLeftSpacing });
 			}
 
-			// noFallthroughCasesInSwitchと関数の返り値の型を利用し、全ての場合分けがreturnかcontinueで適切に処理されることを強制している
-			// その都合上、break文の使用ないしこのswitch文の後に処理を書くことは極力避けてほしい
+			// 各分岐を return または continue で完結させると、noFallthroughCasesInSwitch と戻り値型の検査で未処理の分岐を検出できる。
 			switch (this.stream.char) {
 				case '!': {
 					this.stream.next();
@@ -338,12 +306,9 @@ export class Scanner implements ITokenStream {
 				}
 			}
 		}
-		// Use `return` or `continue` before reaching this line.
-		// Do not add any more code here. This line should be unreachable.
 	}
 
 	private tryReadWord(hasLeftSpacing: boolean): Token | undefined {
-		// read a word
 		if (this.stream.eof) {
 			return;
 		}
@@ -367,7 +332,6 @@ export class Scanner implements ITokenStream {
 			throw new AiScriptSyntaxError(`Invalid identifier: "${rawValue}"`, pos);
 		}
 
-		// check word kind
 		switch (value) {
 			case 'null': {
 				return TOKEN(TokenKind.NullKeyword, pos, { hasLeftSpacing });
@@ -491,7 +455,6 @@ export class Scanner implements ITokenStream {
 	private tryReadDigits(hasLeftSpacing: boolean): Token | undefined {
 		const pos = this.stream.getPos();
 
-		// 0x, 0b, 0o プレフィックス付きの基数付きリテラル
 		if (!this.stream.eof && this.stream.char === '0') {
 			this.stream.next();
 			if (!this.stream.eof && ((this.stream.char as string) === 'x' || (this.stream.char as string) === 'X')) {
@@ -675,17 +638,14 @@ export class Scanner implements ITokenStream {
 		while (state !== 'finish') {
 			switch (state) {
 				case 'string': {
-					// テンプレートの終了が無いままEOFに達した
 					if (this.stream.eof) {
 						throw new AiScriptUnexpectedEOFError(pos);
 					}
-					// エスケープ
 					if (this.stream.char === '\\') {
 						this.stream.next();
 						state = 'escape';
 						break;
 					}
-					// テンプレートの終了
 					if (this.stream.char === '`') {
 						this.stream.next();
 						if (buf.length > 0) {
@@ -694,14 +654,12 @@ export class Scanner implements ITokenStream {
 						state = 'finish';
 						break;
 					}
-					// 埋め込み式の開始
 					if (this.stream.char === '{') {
 						this.stream.next();
 						if (buf.length > 0) {
 							elements.push(TOKEN(TokenKind.TemplateStringElement, elementPos, { hasLeftSpacing, value: buf }));
 							buf = '';
 						}
-						// ここから式エレメントになるので位置を更新
 						elementPos = this.stream.getPos();
 						state = 'expr';
 						break;
@@ -711,18 +669,14 @@ export class Scanner implements ITokenStream {
 					break;
 				}
 				case 'escape': {
-					// デコードしたエスケープシーケンスを取り込む
 					buf += this.readEscapeSequence(pos);
-					// 通常の文字列に戻る
 					state = 'string';
 					break;
 				}
 				case 'expr': {
-					// 埋め込み式の終端記号が無いままEOFに達した
 					if (this.stream.eof) {
 						throw new AiScriptUnexpectedEOFError(pos);
 					}
-					// skip spasing
 					if (spaceChars.includes(this.stream.char)) {
 						this.stream.next();
 						continue;
@@ -731,12 +685,10 @@ export class Scanner implements ITokenStream {
 						exprBracketDepth++;
 					}
 					if ((this.stream.char as string) === '}') {
-						// 埋め込み式の終了
 						if (exprBracketDepth === 0) {
 							elements.push(TOKEN(TokenKind.TemplateExprElement, elementPos, { hasLeftSpacing, children: tokenBuf }));
-							// ここから文字列エレメントになるので位置を更新
 							elementPos = this.stream.getPos();
-							// TemplateExprElementトークンの終了位置をTokenStreamが取得するためのEOFトークンを追加
+							// 埋め込み式の解析終了を検証できるよう、Scanner が生成したトークン列に EOF を付加する。
 							tokenBuf.push(TOKEN(TokenKind.EOF, elementPos));
 							tokenBuf = [];
 							state = 'string';
@@ -757,7 +709,6 @@ export class Scanner implements ITokenStream {
 
 	private skipEmptyLines(): void {
 		while (!this.stream.eof) {
-			// skip spacing
 			if (spaceChars.includes(this.stream.char) || lineBreakChars.includes(this.stream.char)) {
 				this.stream.next();
 				continue;

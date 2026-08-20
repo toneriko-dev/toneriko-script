@@ -236,7 +236,7 @@ const PRIMITIVE_PROPS = {
 				return await opts.call(fn, [item, NUM(i)]);
 			});
 			return ARR(await Promise.all(vals));
-		}, ([fn], opts) => { // sync version
+		}, ([fn], opts) => {
 			assertFunction(fn);
 			const vals = target.value.map((item, i) => {
 				return opts.call(fn, [item, NUM(i)]);
@@ -254,7 +254,7 @@ const PRIMITIVE_PROPS = {
 				if (res.value) vals.push(item);
 			}
 			return ARR(vals);
-		}, ([fn], opts) => { // sync version
+		}, ([fn], opts) => {
 			assertFunction(fn);
 			const vals = [] as Value[];
 			for (let i = 0; i < target.value.length; i++) {
@@ -276,7 +276,7 @@ const PRIMITIVE_PROPS = {
 				accumulator = await opts.call(fn, [accumulator, item, NUM(i)]);
 			}
 			return accumulator;
-		}, ([fn, initialValue], opts) => { // sync version
+		}, ([fn, initialValue], opts) => {
 			assertFunction(fn);
 			const withInitialValue = initialValue != null;
 			if (!withInitialValue && (target.value.length === 0)) throw new AiScriptRuntimeError('Reduce of empty array without initial value');
@@ -297,7 +297,7 @@ const PRIMITIVE_PROPS = {
 				if (res.value) return item;
 			}
 			return NULL;
-		}, ([fn], opts) => { // sync version
+		}, ([fn], opts) => {
 			assertFunction(fn);
 			for (let i = 0; i < target.value.length; i++) {
 				const item = target.value[i]!;
@@ -369,7 +369,7 @@ const PRIMITIVE_PROPS = {
 			assertArray(target);
 			target.value = await mergeSort(target.value, comp);
 			return target;
-		}, ([comp], opts) => { // sync version
+		}, ([comp], opts) => {
 			const mergeSort = (arr: Value[], comp: VFn): Value[] => {
 				if (arr.length <= 1) return arr;
 				const mid = Math.floor(arr.length / 2);
@@ -470,7 +470,7 @@ const PRIMITIVE_PROPS = {
 			});
 			const mapped_vals = await Promise.all(vals);
 			return ARR(mapped_vals.flat());
-		}, ([fn], opts) => { // sync version
+		}, ([fn], opts) => {
 			assertFunction(fn);
 			const vals = target.value.map((item, i) => {
 				const result = opts.call(fn, [item, NUM(i)]);
@@ -489,7 +489,7 @@ const PRIMITIVE_PROPS = {
 				if (!res.value) return FALSE;
 			}
 			return TRUE;
-		}, ([fn], opts) => { // sync version
+		}, ([fn], opts) => {
 			assertFunction(fn);
 			for (let i = 0; i < target.value.length; i++) {
 				const item = target.value[i]!;
@@ -509,7 +509,7 @@ const PRIMITIVE_PROPS = {
 				if (res.value) return TRUE;
 			}
 			return FALSE;
-		}, ([fn], opts) => { // sync version
+		}, ([fn], opts) => {
 			assertFunction(fn);
 			for (let i = 0; i < target.value.length; i++) {
 				const item = target.value[i]!;

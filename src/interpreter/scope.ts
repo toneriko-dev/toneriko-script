@@ -49,10 +49,6 @@ export class Scope {
 		return [...this.typeParams, ...(this.parent?.getTypeParams() ?? [])];
 	}
 
-	/**
-	 * 指定した名前の変数を取得します
-	 * @param name - 変数名
-	 */
 	public get(name: string): Value {
 		let variable = this.states.get(name);
 		for (let layer = this.parent; variable == null && layer != null; layer = layer.parent) {
@@ -68,18 +64,11 @@ export class Scope {
 			{ scope: this.getLayerdStates() });
 	}
 
-	/**
-	 * 名前空間名を取得します。
-	 */
 	public getNsPrefix(): string {
 		if (this.parent == null || this.nsName == null) return '';
 		return this.parent.getNsPrefix() + this.nsName + ':';
 	}
 
-	/**
-	 * 指定した名前の変数が存在するか判定します
-	 * @param name - 変数名
-	 */
 	public exists(name: string): boolean {
 		let found = this.states.has(name);
 		for (let layer = this.parent; !found && layer != null; layer = layer.parent) {
@@ -94,9 +83,6 @@ export class Scope {
 		return false;
 	}
 
-	/**
-	 * 現在のスコープに存在する全ての変数を取得します
-	 */
 	public getAll(): Map<string, Variable> {
 		const vars = new Map<string, Variable>();
 		for (const [key, variable] of this.states) {
@@ -110,11 +96,6 @@ export class Scope {
 		return vars;
 	}
 
-	/**
-	 * 指定した名前の変数を現在のスコープに追加します。名前空間である場合は接頭辞を付して親のスコープにも追加します
-	 * @param name - 変数名
-	 * @param val - 初期値
-	 */
 	public add(name: string, variable: Variable): void {
 		this.log('add', { var: name, val: variable });
 		if (this.states.has(name)) {
@@ -127,11 +108,6 @@ export class Scope {
 		else if (this.nsName != null) this.parent.add(this.nsName + ':' + name, variable);
 	}
 
-	/**
-	 * 指定した名前の変数に値を再代入します
-	 * @param name - 変数名
-	 * @param val - 値
-	 */
 	public assign(name: string, val: Value): void {
 		const own = this.states.get(name);
 		if (own != null) {
@@ -163,12 +139,7 @@ export class Scope {
 			{ scope: this.getLayerdStates() });
 	}
 
-	/**
-	 * 指定した名前の変数を1回のスコープ探索で取得・更新します(get()してからassign()すると
-	 * 同じ変数を2回探索することになるため、+=/-=のような複合代入で使います)
-	 * @param name - 変数名
-	 * @param updater - 現在値を受け取り新しい値を返す関数(不正な現在値なら例外を投げてよい)
-	 */
+	// get() と assign() の二重探索を避け、複合代入を1回のスコープ探索で処理する。
 	public update(name: string, updater: (current: Value) => Value): void {
 		const own = this.states.get(name);
 		if (own != null) {
@@ -203,9 +174,7 @@ export class Scope {
 			{ scope: this.getLayerdStates() });
 	}
 
-	/**
-	 * エラー情報用に、自身から祖先方向へ辿った各レイヤーのMapを配列として構築します(ホットパスの get/exists/assign では使いません)
-	 */
+	// エラー情報の構築専用。get/exists/assign のホットパスでは呼び出さない。
 	private getLayerdStates(): Map<string, Variable>[] {
 		const layers: Map<string, Variable>[] = [this.states];
 		for (let layer = this.parent; layer != null; layer = layer.parent) {

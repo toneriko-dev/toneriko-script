@@ -55,12 +55,10 @@ export class Parser {
 		const scanner = new Scanner(input);
 		nodes = parseTopLevel(scanner);
 
-		// validate the node tree
 		for (const plugin of this.plugins.validate) {
 			nodes = plugin(nodes);
 		}
 
-		// transform the node tree
 		for (const plugin of this.plugins.transform) {
 			nodes = plugin(nodes);
 		}

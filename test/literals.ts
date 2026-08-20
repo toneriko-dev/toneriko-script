@@ -261,7 +261,7 @@ describe('literal', () => {
 			['let'],
 			['exists'],
 
-			// unused keywords
+			// 予約語として扱う未使用の語
 			['as'],
 			['async'],
 			['attr'],

@@ -1,7 +1,3 @@
-/**
- * AiScript interpreter
- */
-
 import { autobind } from '../utils/mini-autobind.js';
 import { AiScriptError, NonAiScriptError, AiScriptNamespaceError, AiScriptRuntimeError, AiScriptHostsideError } from '../error.js';
 import * as Ast from '../node.js';
@@ -145,12 +141,8 @@ export class Interpreter {
 	}
 
 	/**
-	 * Executes AiScript Function.
-	 * When it fails,
-	 * (i)If error callback is registered via constructor, this.abort is called and the callback executed, then returns ERROR('func_failed').
-	 * (ii)Otherwise, just throws a error.
-	 *
-	 * @remarks This is the same function as that passed to AiScript NATIVE functions as opts.topCall.
+	 * AiScript 関数を実行する。err が設定されていれば abortOnError に応じて abort を実行し、
+	 * err を呼び出して `error<func_failed>` を返す。未設定なら例外を送出する。
 	 */
 	@autobind
 	public async execFn(fn: VFn, args: Value[]): Promise<Value> {
@@ -161,25 +153,12 @@ export class Interpreter {
 			});
 	}
 
-	/**
-	 * Executes AiScript Function.
-	 * When it fails,
-	 * (i)If error callback is registered via constructor, this.abort is called and the callback executed, then returns ERROR('func_failed').
-	 * (ii)Otherwise, just throws a error.
-	 *
-	 * @remarks This is the same function as that passed to AiScript NATIVE functions as opts.topCall.
-	 */
 	@autobind
 	public execFnSync(fn: VFn, args: Value[]): Value {
 		return this._fnSync(fn, args, createCallStack({ name: '<root>', pos: undefined }, null));
 	}
 
-	/**
-	 * Executes AiScript Function.
-	 * Almost same as execFn but when error occurs this always throws and never calls callback.
-	 *
-	 * @remarks This is the same function as that passed to AiScript NATIVE functions as opts.call.
-	 */
+	/** AiScript 関数を実行し、エラー時に err や abort を呼ばず例外をそのまま送出する。 */
 	@autobind
 	public execFnSimple(fn: VFn, args: Value[]): Promise<Value> {
 		return this._fn(fn, args, createCallStack({ name: '<root>', pos: undefined }, null));
@@ -199,7 +178,6 @@ export class Interpreter {
 				}
 
 				default: {
-					// nop
 				}
 			}
 		}
@@ -211,7 +189,7 @@ export class Interpreter {
 	private handleError(e: unknown): void {
 		if (!this.opts.err) throw e;
 		if (this.opts.abortOnError) {
-			// when abortOnError is true, error handler should be called only once
+					// abortOnError 有効時は、エラーハンドラーを1回だけ呼び出す。
 			if (this.stop) return;
 			this.abort();
 		}
@@ -237,7 +215,6 @@ export class Interpreter {
 				}
 
 				default: {
-					// nop
 				}
 			}
 		}
@@ -253,7 +230,6 @@ export class Interpreter {
 				}
 
 				default: {
-					// nop
 				}
 			}
 		}
@@ -293,11 +269,10 @@ export class Interpreter {
 				}
 
 				case 'ns': {
-					break; // nop
+					break;
 				}
 
 				default: {
-					// exhaustiveness check
 					const n: never = node;
 					const nd = n as Ast.Node;
 					throw new AiScriptNamespaceError('invalid ns member type: ' + nd.type, nd.loc.start);
@@ -340,11 +315,10 @@ export class Interpreter {
 				}
 
 				case 'ns': {
-					break; // nop
+					break;
 				}
 
 				default: {
-					// exhaustiveness check
 					const n: never = node;
 					const nd = n as Ast.Node;
 					throw new AiScriptNamespaceError('invalid ns member type: ' + nd.type, nd.loc.start);
@@ -973,11 +947,11 @@ export class Interpreter {
 			}
 
 			case 'ns': {
-				return NULL; // nop
+				return NULL;
 			}
 
 			case 'meta': {
-				return NULL; // nop
+				return NULL;
 			}
 
 			case 'pow': {
@@ -1559,11 +1533,11 @@ export class Interpreter {
 			}
 
 			case 'ns': {
-				return NULL; // nop
+				return NULL;
 			}
 
 			case 'meta': {
-				return NULL; // nop
+				return NULL;
 			}
 
 			case 'pow': {

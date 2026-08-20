@@ -98,7 +98,7 @@ describe('Math', () => {
 		eq(await exe("<: Math:max(-2, -3)"), NUM(-2));
 	});
 	
-	/* flaky
+	/*
 	test.concurrent('rnd', async () => {
 		const steps = 512;
 
@@ -139,7 +139,6 @@ describe('Math', () => {
 	});
 
 	test.concurrent('gen_rng', async () => {
-		// 2つのシード値から1~maxの乱数をn回生成して一致率を見る
 		const res = await exe(`
 		@test(seed1, seed2) {
 			let n = 100

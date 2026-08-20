@@ -23,19 +23,6 @@ const interpreter = new Interpreter({}, {
 		console.log(chalk.red(`${e}`));
 	},
 	log(type, params) {
-		/*
-		switch (type) {
-			case 'node': console.log(chalk.gray(`\t\t${nodeToString(params.node)}`)); break;
-			case 'var:add': console.log(chalk.greenBright(`\t\t\t+ #${params.var} = ${valToString(params.val)}`)); break;
-			case 'var:read': console.log(chalk.cyan(`\t\t\tREAD #${params.var} : ${valToString(params.val)}`)); break;
-			case 'var:write': console.log(chalk.yellow(`\t\t\tWRITE #${params.var} = ${valToString(params.val)}`)); break;
-			case 'block:enter': console.log(`\t-> ${params.scope}`); break;
-			case 'block:return': console.log(`\t<< ${params.scope}: ${valToString(params.val)}`); break;
-			case 'block:leave': console.log(`\t<- ${params.scope}: ${valToString(params.val)}`); break;
-			case 'end': console.log(`\t= ${valToString(params.val)}`); break;
-			default: break;
-		}
-		*/
 	}
 });
 

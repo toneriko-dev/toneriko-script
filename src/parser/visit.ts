@@ -8,7 +8,6 @@ function visitNodeInner(node: Ast.Node, fn: (node: Ast.Node, ancestors: Ast.Node
 	const result = fn(node, ancestors);
 	ancestors.push(node);
 
-	// nested nodes
 	switch (result.type) {
 		case 'def': {
 			if (result.varType != null) {
@@ -242,11 +241,10 @@ function visitNodeInner(node: Ast.Node, fn: (node: Ast.Node, ancestors: Ast.Node
 		case 'attr':
 		case 'continue':
 		case 'meta': {
-			break; // nop
+			break;
 		}
 
 		default: {
-			// exhaustiveness check
 			result satisfies never;
 			throw new Error('invalid node type');
 		}

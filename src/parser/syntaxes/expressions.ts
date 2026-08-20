@@ -34,8 +34,8 @@ export function parseExpr(s: ITokenStream, isStatic: boolean): Ast.Expression {
 	}
 }
 
-// NOTE: infix(中置演算子)ではlbpを大きくすると右結合、rbpを大きくすると左結合の演算子になります。
-// この値は演算子が左と右に対してどのくらい結合力があるかを表わしています。詳細はpratt parsingの説明ページを参照してください。
+// 中置演算子では lbp が大きいほど右結合、rbp が大きいほど左結合になる。
+// これらの値は演算子の左右に対する結合力を表す。
 
 const operators: OpInfo[] = [
 	{ opKind: 'postfix', kind: TokenKind.OpenParen, bp: 20 },
@@ -76,7 +76,6 @@ function parsePrefix(s: ITokenStream, minBp: number): Ast.Expression {
 	const op = s.getTokenKind();
 	s.next();
 
-	// 改行のエスケープ
 	if (s.is(TokenKind.BackSlash)) {
 		s.next();
 		s.expect(TokenKind.NewLine);
@@ -114,7 +113,6 @@ function parseInfix(s: ITokenStream, left: Ast.Expression, minBp: number): Ast.E
 	const op = s.getTokenKind();
 	s.next();
 
-	// 改行のエスケープ
 	if (s.is(TokenKind.BackSlash)) {
 		s.next();
 		s.expect(TokenKind.NewLine);
@@ -248,13 +246,13 @@ function parseAtom(s: ITokenStream, isStatic: boolean): Ast.Expression {
 			for (const [i, element] of s.getToken().children!.entries()) {
 				switch (element.kind) {
 					case TokenKind.TemplateStringElement: {
-						// トークンの終了位置を取得するために先読み
+						// 次の要素の位置が文字列ノードの終了位置になるため、ここで先読みする。
 						const nextToken = s.getToken().children![i + 1] ?? s.lookahead(1);
 						values.push(NODE('str', { value: element.value! }, element.pos, nextToken.pos));
 						break;
 					}
 					case TokenKind.TemplateExprElement: {
-						// スキャナで埋め込み式として事前に読み取っておいたトークン列をパースする
+						// 埋め込み式のトークン列は Scanner が事前生成するため、専用のストリームで解析する。
 						const exprStream: ITokenStream = new TokenStream(element.children!);
 						if (exprStream.is(TokenKind.NewLine)) {
 							exprStream.next();
@@ -337,7 +335,6 @@ function parseCall(s: ITokenStream, target: Ast.Expression): Ast.Call {
 	while (!s.is(TokenKind.CloseParen)) {
 		items.push(parseExpr(s, false));
 
-		// separator
 		switch (s.getTokenKind()) {
 			case TokenKind.NewLine: {
 				s.next();
@@ -632,7 +629,6 @@ function parseObject(s: ITokenStream, isStatic: boolean): Ast.Obj {
 
 		map.set(k, v);
 
-		// separator
 		switch (s.getTokenKind()) {
 			case TokenKind.NewLine:
 			case TokenKind.Comma: {
@@ -702,7 +698,6 @@ function parseArray(s: ITokenStream, isStatic: boolean): Ast.Arr {
 	while (!s.is(TokenKind.CloseBracket)) {
 		value.push(parseExpr(s, isStatic));
 
-		// separator
 		switch (s.getTokenKind()) {
 			case TokenKind.NewLine:
 			case TokenKind.Comma: {
@@ -738,8 +733,7 @@ type PostfixInfo = { opKind: 'postfix', kind: TokenKind, bp: number };
 type OpInfo = PrefixInfo | InfixInfo | PostfixInfo;
 
 function parsePratt(s: ITokenStream, minBp: number): Ast.Expression {
-	// pratt parsing
-	// https://matklad.github.io/2020/04/13/simple-but-powerful-pratt-parsing.html
+// https://matklad.github.io/2020/04/13/simple-but-powerful-pratt-parsing.html
 
 	let left: Ast.Expression;
 
@@ -752,7 +746,6 @@ function parsePratt(s: ITokenStream, minBp: number): Ast.Expression {
 	}
 
 	while (true) {
-		// 改行のエスケープ
 		if (s.is(TokenKind.BackSlash)) {
 			s.next();
 			s.expect(TokenKind.NewLine);

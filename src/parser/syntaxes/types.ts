@@ -163,7 +163,6 @@ function parseNamedType(s: ITokenStream): Ast.TypeSource {
 		name = 'null';
 	}
 
-	// inner type
 	let inner: Ast.TypeSource | undefined;
 	if (s.is(TokenKind.Lt)) {
 		s.next();

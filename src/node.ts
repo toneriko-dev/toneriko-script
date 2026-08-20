@@ -1,7 +1,3 @@
-/**
- * ASTノード
-*/
-
 export type Pos = {
 	line: number;
 	column: number;
@@ -15,22 +11,20 @@ export type Loc = {
 export type Node = Namespace | Meta | Statement | Expression | TypeSource | Attribute;
 
 type NodeBase = {
-	loc: Loc; // コード位置
+	loc: Loc;
 };
 
 export type Namespace = NodeBase & {
-	type: 'ns'; // 名前空間
-	name: string; // 空間名
-	members: (Definition | Namespace)[]; // メンバー
+	type: 'ns';
+	name: string;
+	members: (Definition | Namespace)[];
 };
 
 export type Meta = NodeBase & {
-	type: 'meta'; // メタデータ定義
-	name: string | null; // 名
-	value: Expression; // 値
+	type: 'meta';
+	name: string | null;
+	value: Expression;
 };
-
-// statement
 
 export type Statement =
 	Definition |
@@ -52,80 +46,78 @@ export function isStatement(x: Node): x is Statement {
 }
 
 export type Definition = NodeBase & {
-	type: 'def'; // 変数宣言文
-	dest: Expression; // 宣言式
-	varType?: TypeSource; // 変数の型
-	expr: Expression; // 式
-	mut: boolean; // ミュータブルか否か
-	attr: Attribute[]; // 付加された属性
+	type: 'def';
+	dest: Expression;
+	varType?: TypeSource;
+	expr: Expression;
+	mut: boolean;
+	attr: Attribute[];
 };
 
 export type Attribute = NodeBase & {
-	type: 'attr'; // 属性
-	name: string; // 属性名
-	value: Expression; // 値
+	type: 'attr';
+	name: string;
+	value: Expression;
 };
 
 export type Return = NodeBase & {
-	type: 'return'; // return文
-	expr: Expression; // 式
+	type: 'return';
+	expr: Expression;
 };
 
 export type Each = NodeBase & {
-	type: 'each'; // each文
-	label?: string; // ラベル
-	var: Expression; // イテレータ宣言
-	items: Expression; // 配列
-	for: Statement | Expression; // 本体処理
+	type: 'each';
+	label?: string;
+	var: Expression;
+	items: Expression;
+	for: Statement | Expression;
 };
 
 export type For = NodeBase & {
-	type: 'for'; // for文
-	label?: string; // ラベル
-	var?: string; // イテレータ変数名
-	from?: Expression; // 開始値
-	to?: Expression; // 終値
-	step?: Expression; // 1反復ごとの増分(未指定なら1)
-	times?: Expression; // 回数
-	for: Statement | Expression; // 本体処理
+	type: 'for';
+	label?: string;
+	var?: string;
+	from?: Expression;
+	to?: Expression;
+	step?: Expression;
+	times?: Expression;
+	for: Statement | Expression;
 };
 
 export type Loop = NodeBase & {
-	type: 'loop'; // loop文
-	label?: string; // ラベル
-	statements: (Statement | Expression)[]; // 処理
+	type: 'loop';
+	label?: string;
+	statements: (Statement | Expression)[];
 };
 
 export type Break = NodeBase & {
-	type: 'break'; // break文
-	label?: string; // ラベル
-	expr?: Expression; // 式
+	type: 'break';
+	label?: string;
+	expr?: Expression;
 };
 
 export type Continue = NodeBase & {
-	type: 'continue'; // continue文
-	label?: string; // ラベル
+	type: 'continue';
+	label?: string;
 };
 
 export type AddAssign = NodeBase & {
-	type: 'addAssign'; // 加算代入文
-	dest: Expression; // 代入先
-	expr: Expression; // 式
+	type: 'addAssign';
+	dest: Expression;
+	expr: Expression;
 };
 
 export type SubAssign = NodeBase & {
-	type: 'subAssign'; // 減算代入文
-	dest: Expression; // 代入先
-	expr: Expression; // 式
+	type: 'subAssign';
+	dest: Expression;
+	expr: Expression;
 };
 
 export type Assign = NodeBase & {
-	type: 'assign'; // 代入文
-	dest: Expression; // 代入先
-	expr: Expression; // 式
+	type: 'assign';
+	dest: Expression;
+	expr: Expression;
 };
-
-// expressions
 
 export type Expression =
 	If |
@@ -163,18 +155,18 @@ export type Expression =
 	Prop;
 
 export type Plus = NodeBase & {
-	type: 'plus'; // 正号
-	expr: Expression; // 式
+	type: 'plus';
+	expr: Expression;
 };
 
 export type Minus = NodeBase & {
-	type: 'minus'; // 負号
-	expr: Expression; // 式
+	type: 'minus';
+	expr: Expression;
 };
 
 export type Not = NodeBase & {
-	type: 'not'; // 否定
-	expr: Expression; // 式
+	type: 'not';
+	expr: Expression;
 };
 
 export type Pow = NodeBase & {
@@ -262,135 +254,130 @@ export type Or = NodeBase & {
 }
 
 export type If = NodeBase & {
-	type: 'if'; // if式
-	label?: string; // ラベル
-	cond: Expression; // 条件式
-	then: Statement | Expression; // then節
+	type: 'if';
+	label?: string;
+	cond: Expression;
+	then: Statement | Expression;
 	elseif: {
-		cond: Expression; // elifの条件式
-		then: Statement | Expression;// elif節
+		cond: Expression;
+		then: Statement | Expression;
 	}[];
-	else?: Statement | Expression; // else節
+	else?: Statement | Expression;
 };
 
 export type Fn = NodeBase & {
-	type: 'fn'; // 関数
-	typeParams: TypeParam[]; // 型パラメータ
+	type: 'fn';
+	typeParams: TypeParam[];
 	params: {
-		dest: Expression; // 引数名
+		dest: Expression;
 		optional: boolean;
-		default?: Expression; // 引数の初期値
-		argType?: TypeSource; // 引数の型
+		default?: Expression;
+		argType?: TypeSource;
 	}[];
-	retType?: TypeSource; // 戻り値の型
-	children: (Statement | Expression)[]; // 本体処理
+	retType?: TypeSource;
+	children: (Statement | Expression)[];
 };
 
 export type Match = NodeBase & {
-	type: 'match'; // パターンマッチ
-	label?: string; // ラベル
-	about: Expression; // 対象
+	type: 'match';
+	label?: string;
+	about: Expression;
 	qs: {
-		q: Expression; // 条件
-		guard?: Expression; // ガード条件(case Q if Guard => A)
-		a: Statement | Expression; // 結果
+		q: Expression;
+		guard?: Expression;
+		a: Statement | Expression;
 	}[];
-	default?: Statement | Expression; // デフォルト値
+	default?: Statement | Expression;
 };
 
 export type Block = NodeBase & {
-	type: 'block'; // ブロックまたはeval式
-	label?: string; // ラベル
-	statements: (Statement | Expression)[]; // 処理
+	type: 'block';
+	label?: string;
+	statements: (Statement | Expression)[];
 };
 
 export type Exists = NodeBase & {
-	type: 'exists'; // 変数の存在判定
-	identifier: Identifier; // 変数名
+	type: 'exists';
+	identifier: Identifier;
 };
 
 export type Tmpl = NodeBase & {
-	type: 'tmpl'; // テンプレート
-	tmpl: Expression[]; // 処理
+	type: 'tmpl';
+	tmpl: Expression[];
 };
 
 export type Str = NodeBase & {
-	type: 'str'; // 文字列リテラル
-	value: string; // 文字列
+	type: 'str';
+	value: string;
 };
 
 export type Num = NodeBase & {
-	type: 'num'; // 数値リテラル
-	value: number; // 数値
+	type: 'num';
+	value: number;
 };
 
 export type Bool = NodeBase & {
-	type: 'bool'; // 真理値リテラル
-	value: boolean; // 真理値
+	type: 'bool';
+	value: boolean;
 };
 
 export type Null = NodeBase & {
-	type: 'null'; // nullリテラル
+	type: 'null';
 };
 
 export type Obj = NodeBase & {
-	type: 'obj'; // オブジェクト
-	value: Map<string, Expression>; // プロパティ
+	type: 'obj';
+	value: Map<string, Expression>;
 };
 
 export type Arr = NodeBase & {
-	type: 'arr'; // 配列
-	value: Expression[]; // アイテム
+	type: 'arr';
+	value: Expression[];
 };
 
 export type Identifier = NodeBase & {
-	type: 'identifier'; // 変数などの識別子
-	name: string; // 変数名
+	type: 'identifier';
+	name: string;
 };
 
 export type Call = NodeBase & {
-	type: 'call'; // 関数呼び出し
-	target: Expression; // 対象
-	args: Expression[]; // 引数
+	type: 'call';
+	target: Expression;
+	args: Expression[];
 };
 
 export type Index = NodeBase & {
-	type: 'index'; // 配列要素アクセス
-	target: Expression; // 対象
-	index: Expression; // インデックス
+	type: 'index';
+	target: Expression;
+	index: Expression;
 };
 
 export type Prop = NodeBase & {
-	type: 'prop'; // プロパティアクセス
-	target: Expression; // 対象
-	name: string; // プロパティ名
+	type: 'prop';
+	target: Expression;
+	name: string;
 };
-
-// Type source
 
 export type TypeSource = NamedTypeSource | FnTypeSource | UnionTypeSource;
 
 export type NamedTypeSource = NodeBase & {
-	type: 'namedTypeSource'; // 名前付き型
-	name: string; // 型名
-	inner?: TypeSource; // 内側の型
+	type: 'namedTypeSource';
+	name: string;
+	inner?: TypeSource;
 };
 
 export type FnTypeSource = NodeBase & {
-	type: 'fnTypeSource'; // 関数の型
-	typeParams: TypeParam[]; // 型パラメータ
-	params: TypeSource[]; // 引数の型
-	result: TypeSource; // 戻り値の型
+	type: 'fnTypeSource';
+	typeParams: TypeParam[];
+	params: TypeSource[];
+	result: TypeSource;
 };
 
 export type UnionTypeSource = NodeBase & {
-	type: 'unionTypeSource'; // ユニオン型
-	inners: TypeSource[]; // 含まれる型
+	type: 'unionTypeSource';
+	inners: TypeSource[];
 };
 
-/**
- * 型パラメータ
- */
 export type TypeParam = {
-	name: string; // パラメータ名
+	name: string;
 }

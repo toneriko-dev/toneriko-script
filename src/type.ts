@@ -1,8 +1,6 @@
 import { AiScriptSyntaxError } from './error.js';
 import type * as Ast from './node.js';
 
-// Type (Semantic analyzed)
-
 export type TSimple<N extends string = string> = {
 	type: 'simple';
 	name: N;
@@ -98,7 +96,6 @@ export function getTypeBySource(typeSource: Ast.TypeSource, typeParams?: readonl
 		}
 
 		switch (typeSource.name) {
-			// simple types
 			case 'null':
 			case 'bool':
 			case 'num':
@@ -112,7 +109,6 @@ export function getTypeBySource(typeSource: Ast.TypeSource, typeParams?: readonl
 				}
 				break;
 			}
-			// alias for Generic types
 			case 'arr':
 			case 'obj': {
 				let innerType: Type;

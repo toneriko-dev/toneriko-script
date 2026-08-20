@@ -5,9 +5,6 @@ import { NUM, STR, NULL, ARR, OBJ, BOOL, TRUE, FALSE, ERROR ,FN_NATIVE } from '.
 import { AiScriptRuntimeError, AiScriptSyntaxError, AiScriptUnexpectedEOFError } from '../src/error';
 import { exe, getMeta, eq } from './testutils';
 
-/*
- * General
- */
 describe('terminator', () => {
 	describe('top-level', () => {
 		test.concurrent('newline', async () => {
@@ -652,9 +649,6 @@ describe('lang version', () => {
 	});
 });
 
-/*
- * Statements
- */
 describe('Cannot put multiple statements in a line', () => {
 	test.concurrent('var def', async () => {
 		try {
@@ -1088,9 +1082,6 @@ describe('loop', () => {
 	});
 });
 
-/*
- * Global statements
- */
 describe('meta', () => {
 	test.concurrent('default meta', async () => {
 		const res = getMeta(`
@@ -1510,7 +1501,7 @@ describe('operators', () => {
 
 	test.concurrent('negative numbers', async () => {
 		eq(await exe('<: 1+-1'), NUM(0));
-		eq(await exe('<: 1--1'), NUM(2));//反直観的、禁止される可能性がある？
+		eq(await exe('<: 1--1'), NUM(2));
 		eq(await exe('<: -1*-1'), NUM(1));
 		eq(await exe('<: -1==-1'), BOOL(true));
 		eq(await exe('<: 1>-1'), BOOL(true));

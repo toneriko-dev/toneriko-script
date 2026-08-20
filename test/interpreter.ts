@@ -150,7 +150,7 @@ describe('error handler', () => {
 				};
 			}),
 		}, {
-			err(e) { /*console.log(e.toString());*/ errCount++ },
+			err(e) { errCount++ },
 		});
 		await aiscript.exec(Parser.parse(`
 		genOutsideCaller(emitError)
@@ -325,7 +325,7 @@ describe('IRQ', () => {
 			let count = 0;
 			const interpreter = new Interpreter({}, {
 				irqRate,
-				// It's safe only when no massive loop occurs
+				// 大規模なループを実行しないテストでのみ安全に使える。
 				irqSleep: async () => count++,
 			});
 			await interpreter.exec(Parser.parse(`
@@ -360,7 +360,7 @@ describe('IRQ', () => {
 	});
 
 	describe('irqSleep is number', () => {
-		// This function does IRQ 10 times so takes 10 * irqSleep milliseconds in sum when executed.
+		// この関数はIRQを10回実行するため、合計で10 * irqSleepミリ秒かかる。
 		async function countSleeps(irqSleep: number): Promise<void> {
 			const interpreter = new Interpreter({}, {
 				irqRate: 1,
@@ -417,7 +417,7 @@ describe('pause', () => {
 			count: values.FN_NATIVE(() => { count++; }),
 		}, {});
 
-		// await to catch errors
+		// await で非同期実行時のエラーを捕捉する。
 		await interpreter.exec(Parser.parse(
 			`Async:interval(100, @() { count() })`
 		));

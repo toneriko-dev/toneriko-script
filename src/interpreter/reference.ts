@@ -12,6 +12,12 @@ export interface Reference {
 	set(value: Value): void;
 }
 
+export function assertArrayIndex(index: number, length: number): void {
+	if (!Number.isInteger(index) || index < 0 || length <= index) {
+		throw new AiScriptIndexOutOfRangeError(`Index out of range. index: ${index} max: ${length - 1}`);
+	}
+}
+
 export const Reference = {
 	variable(name: string, scope: Scope): Reference {
 		return new VariableReference(name, scope);
@@ -68,10 +74,7 @@ class IndexReference implements Reference {
 	}
 
 	private assertIndexInRange(): void {
-		const index = this.index;
-		if (index < 0 || this.target.length <= index) {
-			throw new AiScriptIndexOutOfRangeError(`Index out of range. index: ${this.index} max: ${this.target.length - 1}`);
-		}
+		assertArrayIndex(this.index, this.target.length);
 	}
 }
 

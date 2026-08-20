@@ -3,7 +3,7 @@
  */
 
 import { autobind } from '../utils/mini-autobind.js';
-import { AiScriptError, NonAiScriptError, AiScriptNamespaceError, AiScriptIndexOutOfRangeError, AiScriptRuntimeError, AiScriptHostsideError } from '../error.js';
+import { AiScriptError, NonAiScriptError, AiScriptNamespaceError, AiScriptRuntimeError, AiScriptHostsideError } from '../error.js';
 import * as Ast from '../node.js';
 import { getTypeBySource } from '../type.js';
 import { nodeToJs } from '../utils/node-to-js.js';
@@ -14,7 +14,7 @@ import { assertNumber, assertString, assertFunction, assertBoolean, assertObject
 import { NULL, FN_NATIVE, BOOL, NUM, STR, ARR, OBJ, FN, ERROR } from './value.js';
 import { getPrimProp } from './primitive-props.js';
 import { Variable } from './variable.js';
-import { Reference } from './reference.js';
+import { Reference, assertArrayIndex } from './reference.js';
 import type { JsValue } from './util.js';
 import type { Value, VFn, VUserFn } from './value.js';
 
@@ -850,11 +850,8 @@ export class Interpreter {
 				}
 				if (isArray(target)) {
 					assertNumber(i);
-					const item = target.value[i.value];
-					if (item === undefined) {
-						throw new AiScriptIndexOutOfRangeError(`Index out of range. index: ${i.value} max: ${target.value.length - 1}`);
-					}
-					return item;
+					assertArrayIndex(i.value, target.value.length);
+					return target.value[i.value]!;
 				} else if (isObject(target)) {
 					assertString(i);
 					if (target.value.has(i.value)) {
@@ -1439,11 +1436,8 @@ export class Interpreter {
 				}
 				if (isArray(target)) {
 					assertNumber(i);
-					const item = target.value[i.value];
-					if (item === undefined) {
-						throw new AiScriptIndexOutOfRangeError(`Index out of range. index: ${i.value} max: ${target.value.length - 1}`);
-					}
-					return item;
+					assertArrayIndex(i.value, target.value.length);
+					return target.value[i.value]!;
 				} else if (isObject(target)) {
 					assertString(i);
 					if (target.value.has(i.value)) {

@@ -172,6 +172,53 @@ describe('error handler', () => {
 	});
 });
 
+describe('Async timers', () => {
+	beforeEach(() => {
+		vi.useFakeTimers();
+	});
+
+	afterEach(() => {
+		vi.restoreAllMocks();
+	});
+
+	test.each([
+		['interval callback', 'Async:interval(100, @() { mark(); Core:abort("failure") })', 100],
+		['immediate interval callback', 'Async:interval(100, @() { mark(); Core:abort("failure") }, true)', 0],
+		['timeout callback', 'Async:timeout(100, @() { mark(); Core:abort("failure") })', 100],
+	])('consumes rejection from %s', async (_name, source, delay) => {
+		const mark = vi.fn();
+		const interpreter = new Interpreter({
+			mark: FN_NATIVE(mark),
+		});
+
+		await interpreter.exec(Parser.parse(source));
+		await vi.advanceTimersByTimeAsync(delay);
+		interpreter.abort();
+
+		expect(mark).toHaveBeenCalledOnce();
+	});
+
+	test.each([
+		['interval', 'Async:interval(100, @() { count() })'],
+		['timeout', 'Async:timeout(100, @() { count() })'],
+	])('does not restart a paused %s after abort', async (_name, source) => {
+		const count = vi.fn();
+		const interpreter = new Interpreter({
+			count: FN_NATIVE(count),
+		});
+
+		await interpreter.exec(Parser.parse(source));
+		expect(vi.getTimerCount()).toBe(1);
+		interpreter.pause();
+		expect(vi.getTimerCount()).toBe(0);
+		interpreter.abort();
+		interpreter.unpause();
+		expect(vi.getTimerCount()).toBe(0);
+		await vi.advanceTimersByTimeAsync(500);
+		expect(count).not.toHaveBeenCalled();
+	});
+});
+
 describe('error location', () => {
 	const exeAndGetErrPos = (src: string): Promise<Ast.Pos|undefined> => new Promise((ok, ng) => {
 		const aiscript = new Interpreter({

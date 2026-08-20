@@ -432,66 +432,82 @@ export const std: Record<string, Value> = {
 	'Async:interval': FN_NATIVE(async ([interval, callback, immediate], opts) => {
 		assertNumber(interval);
 		assertFunction(callback);
+		const callCallback = (): void => {
+			void opts.topCall(callback, []).catch(() => {});
+		};
 		if (immediate) {
 			assertBoolean(immediate);
-			if (immediate.value) opts.call(callback, []);
+			if (immediate.value) callCallback();
 		}
 
 		let id: ReturnType<typeof setInterval>;
 
 		const start = (): void => {
-			id = setInterval(() => {
-				opts.topCall(callback, []);
-			}, interval.value);
-			opts.registerAbortHandler(stop);
-			opts.registerPauseHandler(stop);
 			opts.unregisterUnpauseHandler(start);
+			opts.unregisterAbortHandler(abort);
+			opts.unregisterPauseHandler(pause);
+			id = setInterval(callCallback, interval.value);
+			opts.registerAbortHandler(abort);
+			opts.registerPauseHandler(pause);
 		};
-		const stop = (): void => {
+		const pause = (): void => {
 			clearInterval(id);
-			opts.unregisterAbortHandler(stop);
-			opts.unregisterPauseHandler(stop);
+			opts.unregisterPauseHandler(pause);
 			opts.registerUnpauseHandler(start);
+		};
+		const abort = (): void => {
+			clearInterval(id);
+			opts.unregisterAbortHandler(abort);
+			opts.unregisterPauseHandler(pause);
+			opts.unregisterUnpauseHandler(start);
 		};
 
 		start();
 
 		// stopper
 		return FN_NATIVE(([], opts) => {
-			stop();
-			opts.unregisterUnpauseHandler(start);
+			abort();
 		});
 	}),
 
 	'Async:timeout': FN_NATIVE(async ([delay, callback], opts) => {
 		assertNumber(delay);
 		assertFunction(callback);
+		const callCallback = (): void => {
+			void opts.topCall(callback, []).catch(() => {});
+		};
 
-		let id: ReturnType<typeof setInterval>;
+		let id: ReturnType<typeof setTimeout>;
 
 		const start = (): void => {
-			id = setTimeout(() => {
-				opts.topCall(callback, []);
-				opts.unregisterAbortHandler(stop);
-				opts.unregisterPauseHandler(stop);
-			}, delay.value);
-			opts.registerAbortHandler(stop);
-			opts.registerPauseHandler(stop);
 			opts.unregisterUnpauseHandler(start);
+			opts.unregisterAbortHandler(abort);
+			opts.unregisterPauseHandler(pause);
+			id = setTimeout(() => {
+				opts.unregisterAbortHandler(abort);
+				opts.unregisterPauseHandler(pause);
+				callCallback();
+			}, delay.value);
+			opts.registerAbortHandler(abort);
+			opts.registerPauseHandler(pause);
 		};
-		const stop = (): void => {
+		const pause = (): void => {
 			clearTimeout(id);
-			opts.unregisterAbortHandler(stop);
-			opts.unregisterPauseHandler(stop);
+			opts.unregisterPauseHandler(pause);
 			opts.registerUnpauseHandler(start);
+		};
+		const abort = (): void => {
+			clearTimeout(id);
+			opts.unregisterAbortHandler(abort);
+			opts.unregisterPauseHandler(pause);
+			opts.unregisterUnpauseHandler(start);
 		};
 
 		start();
 
 		// stopper
 		return FN_NATIVE(([], opts) => {
-			stop();
-			opts.unregisterUnpauseHandler(start);
+			abort();
 		});
 	}),
 	//#endregion

@@ -85,7 +85,7 @@ const PRIMITIVE_PROPS = {
 		index_of: (target: VStr): VFn => FN_NATIVE(([search, fromI], _opts) => {
 			assertString(search);
 			if (fromI) assertNumber(fromI);
-			const pos = fromI ? (fromI.value < 0 ? target.value.length + fromI.value : fromI.value) : undefined;
+			const pos = fromI ? (fromI.value < 0 ? length(target.value) + fromI.value : fromI.value) : undefined;
 			return NUM(indexOf(target.value, search.value, pos));
 		}),
 

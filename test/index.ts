@@ -308,6 +308,16 @@ describe('Array', () => {
 		}
 		assert.fail();
 	});
+
+	test.each([
+		['fractional', '0.5'],
+		['NaN', '0 / 0'],
+		['positive infinity', 'Math:Infinity'],
+		['negative infinity', '-Math:Infinity'],
+	])('rejects %s array indices for access and assignment', async (_name, index) => {
+		await expect(exe(`<: [1, 2][${index}]`)).rejects.toThrow(AiScriptIndexOutOfRangeError);
+		await expect(exe(`var arr = [1, 2]; arr[${index}] = 3`)).rejects.toThrow(AiScriptIndexOutOfRangeError);
+	});
 });
 
 describe('chain', () => {

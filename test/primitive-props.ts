@@ -103,6 +103,18 @@ describe('str', () => {
 		eq(res, STR('11111111'));
 	});
 
+	test.concurrent('index_of uses grapheme positions for negative offsets', async () => {
+		const res = await exe(`
+		let str = 'a👨‍👩‍👧‍👦b👨‍👩‍👧‍👦c'
+		<: [
+			str.index_of('👨‍👩‍👧‍👦', -2),
+			str.index_of('👨‍👩‍👧‍👦', -3),
+			str.index_of('👨‍👩‍👧‍👦', -4),
+		]
+		`);
+		eq(res, ARR([NUM(3), NUM(3), NUM(1)]));
+	});
+
 	test.concurrent('incl', async () => {
 		const res = await exe(`
 		let str = "hello"

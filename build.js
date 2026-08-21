@@ -3,7 +3,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname } from 'node:path';
 import * as esbuild from 'esbuild';
 import { build } from 'esbuild';
-import { execa } from 'execa';
+import { spawnChecked } from '../../scripts/spawn-checked.mjs';
 
 const _filename = fileURLToPath(import.meta.url);
 const _dirname = dirname(_filename);
@@ -56,26 +56,20 @@ async function buildSrc() {
 }
 
 function buildDts() {
-	return execa(
-		'bun',
-		[
-			'run',
-			'--bun',
-			'tsgo',
-			'--project',
-			'tsconfig.json',
-			'--outDir',
-			'built',
-			'--declaration',
-			'true',
-			'--emitDeclarationOnly',
-			'true',
-		],
-		{
-			stdout: process.stdout,
-			stderr: process.stderr,
-		},
-	);
+	return spawnChecked([
+		process.execPath,
+		'run',
+		'--bun',
+		'tsgo',
+		'--project',
+		'tsconfig.json',
+		'--outDir',
+		'built',
+		'--declaration',
+		'true',
+		'--emitDeclarationOnly',
+		'true',
+	]);
 }
 
 async function watchSrc() {

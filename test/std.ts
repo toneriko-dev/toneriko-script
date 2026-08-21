@@ -46,6 +46,16 @@ describe('Core', () => {
 	});
 });
 
+describe('Util', () => {
+	test.concurrent('uuid', async () => {
+		const result = await exe('<: Util:uuid()');
+		assert.equal(result.type, 'str');
+		if (result.type === 'str') {
+			assert.match(result.value, /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+		}
+	});
+});
+
 describe('Arr', () => {
 	test.concurrent('create', async () => {
 		eq(await exe("<: Arr:create(0)"), ARR([]));

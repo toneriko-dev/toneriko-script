@@ -1,5 +1,4 @@
 /* eslint-disable no-empty-pattern */
-import { v4 as uuid } from 'uuid';
 import { NUM, STR, FN_NATIVE, FALSE, TRUE, ARR, NULL, BOOL, OBJ, ERROR } from '../value.js';
 import { assertNumber, assertString, assertBoolean, valToJs, jsToVal, assertFunction, assertObject, eq, expectAny, assertArray, reprValue } from '../util.js';
 import { AiScriptRuntimeError, AiScriptUserError } from '../../error.js';
@@ -149,7 +148,7 @@ export const std: Record<string, Value> = {
 
 	//#region Util
 	'Util:uuid': FN_NATIVE(() => {
-		return STR(uuid());
+		return STR(crypto.randomUUID());
 	}),
 	//#endregion
 

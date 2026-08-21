@@ -28,9 +28,6 @@
 		"repl": "bun ./scripts/repl.mjs",
 		"gen-pkg": "bun ./scripts/gen-pkg-ts.mjs"
 	},
-	"dependencies": {
-		"uuid": "14.0.1"
-	},
 	"devDependencies": {
 		"@types/node": "26.0.1",
 		"chalk": "5.6.2",

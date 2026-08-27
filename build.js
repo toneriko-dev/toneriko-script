@@ -8,6 +8,7 @@ import { spawnChecked } from '../../scripts/spawn-checked.mjs';
 const _filename = fileURLToPath(import.meta.url);
 const _dirname = dirname(_filename);
 const _package = JSON.parse(fs.readFileSync(_dirname + '/package.json', 'utf-8'));
+const tscNative = fileURLToPath(new URL('../../scripts/tsc-native.mjs', import.meta.url));
 
 const entryPoints = fs.globSync('./src/**/**.ts');
 
@@ -60,7 +61,7 @@ function buildDts() {
 		process.execPath,
 		'run',
 		'--bun',
-		'tsgo',
+		tscNative,
 		'--project',
 		'tsconfig.json',
 		'--outDir',

@@ -4,12 +4,12 @@ import { describe, expect, test } from 'vitest';
 describe('isHighSurrogate', () => {
 	const cases: [string, boolean][] = [
 		['', false],
-		['\ud7ff', false],
-		['\ud800', true],
-		['\udbff', true],
-		['\udc00', false],
-		['\udfff', false],
-		['\ue000', false],
+		['\uD7FF', false],
+		['\uD800', true],
+		['\uDBFF', true],
+		['\uDC00', false],
+		['\uDFFF', false],
+		['\uE000', false],
 	];
 
 	test.concurrent.each(cases)('"%s" -> %s', (input, expected) => {
@@ -24,12 +24,12 @@ describe('isHighSurrogate', () => {
 describe('isLowSurrogate', () => {
 	const cases: [string, boolean][] = [
 		['', false],
-		['\ud7ff', false],
-		['\ud800', false],
-		['\udbff', false],
-		['\udc00', true],
-		['\udfff', true],
-		['\ue000', false],
+		['\uD7FF', false],
+		['\uD800', false],
+		['\uDBFF', false],
+		['\uDC00', true],
+		['\uDFFF', true],
+		['\uE000', false],
 	];
 
 	test.concurrent.each(cases)('"%s" -> %s', (input, expected) => {
@@ -43,14 +43,14 @@ describe('isLowSurrogate', () => {
 
 describe('isSurrogatePair', () => {
 	const cases: [string, boolean][] = [
-		['\ud842\udfb7', true],
-		['\ud83e\udd2f', true],
+		['\uD842\uDFB7', true],
+		['\uD83E\uDD2F', true],
 		['a', false],
-		['\u85cd', false],
-		['\ud842', false],
-		['\ud8000', false],
-		['0\udc00', false],
-		['_\ud842\udfb7', false],
+		['\u85CD', false],
+		['\uD842', false],
+		['\uD8000', false],
+		['0\uDC00', false],
+		['_\uD842\uDFB7', false],
 	];
 
 	test.concurrent.each(cases)('"%s" -> %s', (input, expected) => {
@@ -58,7 +58,7 @@ describe('isSurrogatePair', () => {
 	});
 
 	test.concurrent.each(cases)('start given', () => {
-		expect(isSurrogatePair('_\ud842\udfb7', 1)).toBe(true);
+		expect(isSurrogatePair('_\uD842\uDFB7', 1)).toBe(true);
 	});
 });
 

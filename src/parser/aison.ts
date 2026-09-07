@@ -13,18 +13,32 @@ export class AiSON {
 		return nodeToJs(ast);
 	}
 
-	private static stringifyWalk(value: Value, indent: string | null, currentIndent = '', processingObjects = new Set<object>()): string {
+	private static stringifyWalk(
+		value: Value,
+		indent: string | null,
+		currentIndent = '',
+		processingObjects = new Set<object>(),
+	): string {
 		switch (value.type) {
-			case 'bool': return value.value ? 'true' : 'false';
-			case 'null': return 'null';
+			case 'bool':
+				return value.value ? 'true' : 'false';
+			case 'null':
+				return 'null';
 			case 'num': {
-				if (!Number.isFinite(value.value)) throw new TypeError('Cannot stringify non-finite number as AiSON.');
+				if (!Number.isFinite(value.value)) {
+					throw new TypeError('Cannot stringify non-finite number as AiSON.');
+				}
 				return Object.is(value.value, -0) ? '-0' : value.value.toString();
 			}
-			case 'str': return JSON.stringify(value.value);
+			case 'str':
+				return JSON.stringify(value.value);
 			case 'arr': {
-				if (value.value.length === 0) return '[]';
-				if (processingObjects.has(value.value)) throw new TypeError('Cannot stringify circular AiSON value.');
+				if (value.value.length === 0) {
+					return '[]';
+				}
+				if (processingObjects.has(value.value)) {
+					throw new TypeError('Cannot stringify circular AiSON value.');
+				}
 				processingObjects.add(value.value);
 				try {
 					const items = Array.from({ length: value.value.length }, (_, index) => {
@@ -35,28 +49,30 @@ export class AiSON {
 					});
 					if (indent != null && indent !== '') {
 						return `[\n${currentIndent + indent}${items.join(`,\n${currentIndent + indent}`)}\n${currentIndent}]`;
-					} else {
-						return `[${items.join(', ')}]`;
 					}
+					return `[${items.join(', ')}]`;
 				} finally {
 					processingObjects.delete(value.value);
 				}
 			}
 			case 'obj': {
 				const keys = [...value.value.keys()];
-				if (keys.length === 0) return '{}';
-				if (processingObjects.has(value.value)) throw new TypeError('Cannot stringify circular AiSON value.');
+				if (keys.length === 0) {
+					return '{}';
+				}
+				if (processingObjects.has(value.value)) {
+					throw new TypeError('Cannot stringify circular AiSON value.');
+				}
 				processingObjects.add(value.value);
 				try {
-					const items = keys.map(key => {
+					const items = keys.map((key) => {
 						const val = value.value.get(key)!;
 						return `${stringifyObjectKey(key)}: ${this.stringifyWalk(val, indent, currentIndent + (indent ?? ''), processingObjects)}`;
 					});
 					if (indent != null && indent !== '') {
 						return `{\n${currentIndent + indent}${items.join(`,\n${currentIndent + indent}`)}\n${currentIndent}}`;
-					} else {
-						return `{${items.join(', ')}}`;
 					}
+					return `{${items.join(', ')}}`;
 				} finally {
 					processingObjects.delete(value.value);
 				}

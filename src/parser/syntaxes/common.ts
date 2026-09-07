@@ -12,7 +12,7 @@ import type * as Ast from '../../node.js';
  * ```abnf
  * Dest = IDENT / Expr
  * ```
-*/
+ */
 export function parseDest(s: ITokenStream): Ast.Expression {
 	// 全部parseExprに任せるとparseReferenceが型注釈を巻き込んでパースしてしまうためIdentifierのみ個別に処理。
 	if (s.is(TokenKind.Identifier)) {
@@ -20,16 +20,15 @@ export function parseDest(s: ITokenStream): Ast.Expression {
 		const name = s.getTokenValue();
 		s.next();
 		return NODE('identifier', { name }, nameStartPos, s.getPos());
-	} else {
-		return parseExpr(s, false);
 	}
+	return parseExpr(s, false);
 }
 
 /**
  * ```abnf
  * Params = "(" [Dest [":" Type] *(SEP Dest [":" Type])] ")"
  * ```
-*/
+ */
 export function parseParams(s: ITokenStream): Ast.Fn['params'] {
 	const items: Ast.Fn['params'] = [];
 
@@ -94,7 +93,7 @@ export function parseParams(s: ITokenStream): Ast.Fn['params'] {
  * ```abnf
  * Block = "{" *Statement "}"
  * ```
-*/
+ */
 export function parseBlock(s: ITokenStream): (Ast.Statement | Ast.Expression)[] {
 	s.expect(TokenKind.OpenBrace);
 	s.next();
@@ -137,7 +136,7 @@ export function parseBlock(s: ITokenStream): (Ast.Statement | Ast.Expression)[] 
  * ```abnf
  * Label = "#" IDENT
  * ```
-*/
+ */
 export function parseLabel(s: ITokenStream): string {
 	s.expect(TokenKind.Sharp);
 	s.next();
@@ -156,7 +155,7 @@ export function parseLabel(s: ITokenStream): string {
  * ```abnf
  * OptionalSeparator = [SEP]
  * ```
-*/
+ */
 export function parseOptionalSeparator(s: ITokenStream): boolean {
 	switch (s.getTokenKind()) {
 		case TokenKind.NewLine: {

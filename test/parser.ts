@@ -69,17 +69,17 @@ describe('CharStream', () => {
 		});
 
 		test.concurrent('surrogate pair', async () => {
-			const source = '\ud83e\udd2f';
+			const source = '\uD83E\uDD2F';
 			const stream = new CharStream(source);
-			assert.strictEqual('\ud83e\udd2f', stream.char);
+			assert.strictEqual('\uD83E\uDD2F', stream.char);
 			stream.next();
 			assert.strictEqual(true, stream.eof);
 			stream.prev();
-			assert.strictEqual('\ud83e\udd2f', stream.char);
+			assert.strictEqual('\uD83E\uDD2F', stream.char);
 		});
 
 		test.concurrent('column is based on UTF-16 code unit', async () => {
-			const source = '\ud83e\udd2f!';
+			const source = '\uD83E\uDD2F!';
 			const stream = new CharStream(source);
 			stream.next();
 			stream.next();
@@ -89,7 +89,7 @@ describe('CharStream', () => {
 		});
 
 		test.concurrent('column is based on UTF-16 code unit, line break', async () => {
-			const source = '\ud83e\udd2f\n';
+			const source = '\uD83E\uDD2F\n';
 			const stream = new CharStream(source);
 			stream.next();
 			stream.next();
@@ -136,15 +136,15 @@ describe('CharStream', () => {
 	});
 
 	test.concurrent('surrogate pair', async () => {
-		const source = '\ud83e\udd2f';
+		const source = '\uD83E\uDD2F';
 		const stream = new CharStream(source);
-		assert.strictEqual('\ud83e\udd2f', stream.char);
+		assert.strictEqual('\uD83E\uDD2F', stream.char);
 		stream.next();
 		assert.strictEqual(true, stream.eof);
 	});
 
 	test.concurrent('column is based on UTF-16 code unit', async () => {
-		const source = '\ud83e\udd2f';
+		const source = '\uD83E\uDD2F';
 		const stream = new CharStream(source);
 		stream.next();
 		assert.deepStrictEqual(stream.getPos(), { line: 1, column: 3 });
@@ -156,7 +156,12 @@ describe('Scanner', () => {
 		const stream = new Scanner(source);
 		return stream;
 	}
-	function next(stream: Scanner, kind: TokenKind, pos: TokenPosition, opts: { hasLeftSpacing?: boolean, value?: string }) {
+	function next(
+		stream: Scanner,
+		kind: TokenKind,
+		pos: TokenPosition,
+		opts: { hasLeftSpacing?: boolean; value?: string },
+	) {
 		assert.deepStrictEqual(stream.getToken(), TOKEN(kind, pos, opts));
 		stream.next();
 	}
@@ -164,20 +169,20 @@ describe('Scanner', () => {
 	test.concurrent('eof', async () => {
 		const source = '';
 		const stream = init(source);
-		next(stream, TokenKind.EOF, { line: 1, column: 1 }, { });
-		next(stream, TokenKind.EOF, { line: 1, column: 1 }, { });
+		next(stream, TokenKind.EOF, { line: 1, column: 1 }, {});
+		next(stream, TokenKind.EOF, { line: 1, column: 1 }, {});
 	});
 	test.concurrent('keyword', async () => {
 		const source = 'if';
 		const stream = init(source);
-		next(stream, TokenKind.IfKeyword, { line: 1, column: 1 }, { });
-		next(stream, TokenKind.EOF, { line: 1, column: 3 }, { });
+		next(stream, TokenKind.IfKeyword, { line: 1, column: 1 }, {});
+		next(stream, TokenKind.EOF, { line: 1, column: 3 }, {});
 	});
 	test.concurrent('identifier', async () => {
 		const source = 'xyz';
 		const stream = init(source);
 		next(stream, TokenKind.Identifier, { line: 1, column: 1 }, { value: 'xyz' });
-		next(stream, TokenKind.EOF, { line: 1, column: 4 }, { });
+		next(stream, TokenKind.EOF, { line: 1, column: 4 }, {});
 	});
 	test.concurrent('invalid token', async () => {
 		const source = '~';
@@ -193,43 +198,43 @@ describe('Scanner', () => {
 		const stream = init(source);
 		next(stream, TokenKind.Identifier, { line: 1, column: 1 }, { value: 'abc' });
 		next(stream, TokenKind.Identifier, { line: 1, column: 5 }, { hasLeftSpacing: true, value: 'xyz' });
-		next(stream, TokenKind.EOF, { line: 1, column: 8 }, { });
+		next(stream, TokenKind.EOF, { line: 1, column: 8 }, {});
 	});
 	test.concurrent('stream', async () => {
 		const source = '@abc() { }';
 		const stream = init(source);
-		next(stream, TokenKind.At, { line: 1, column: 1 }, { });
+		next(stream, TokenKind.At, { line: 1, column: 1 }, {});
 		next(stream, TokenKind.Identifier, { line: 1, column: 2 }, { value: 'abc' });
-		next(stream, TokenKind.OpenParen, { line: 1, column: 5 }, { });
-		next(stream, TokenKind.CloseParen, { line: 1, column: 6 }, { });
+		next(stream, TokenKind.OpenParen, { line: 1, column: 5 }, {});
+		next(stream, TokenKind.CloseParen, { line: 1, column: 6 }, {});
 		next(stream, TokenKind.OpenBrace, { line: 1, column: 8 }, { hasLeftSpacing: true });
 		next(stream, TokenKind.CloseBrace, { line: 1, column: 10 }, { hasLeftSpacing: true });
-		next(stream, TokenKind.EOF, { line: 1, column: 11 }, { });
+		next(stream, TokenKind.EOF, { line: 1, column: 11 }, {});
 	});
 	test.concurrent('multi-lines', async () => {
 		const source = 'aaa\nbbb';
 		const stream = init(source);
 		next(stream, TokenKind.Identifier, { line: 1, column: 1 }, { value: 'aaa' });
-		next(stream, TokenKind.NewLine, { line: 1, column: 4 }, { });
+		next(stream, TokenKind.NewLine, { line: 1, column: 4 }, {});
 		next(stream, TokenKind.Identifier, { line: 2, column: 1 }, { value: 'bbb' });
-		next(stream, TokenKind.EOF, { line: 2, column: 4 }, { });
+		next(stream, TokenKind.EOF, { line: 2, column: 4 }, {});
 	});
 	test.concurrent('lookahead', async () => {
 		const source = '@abc() { }';
 		const stream = init(source);
 		assert.deepStrictEqual(stream.lookahead(1), TOKEN(TokenKind.Identifier, { line: 1, column: 2 }, { value: 'abc' }));
-		next(stream, TokenKind.At, { line: 1, column: 1 }, { });
+		next(stream, TokenKind.At, { line: 1, column: 1 }, {});
 		next(stream, TokenKind.Identifier, { line: 1, column: 2 }, { value: 'abc' });
-		next(stream, TokenKind.OpenParen, { line: 1, column: 5 }, { });
+		next(stream, TokenKind.OpenParen, { line: 1, column: 5 }, {});
 	});
 	test.concurrent('empty lines', async () => {
-		const source = "match 1{\n// comment\n}";
+		const source = 'match 1{\n// comment\n}';
 		const stream = init(source);
-		next(stream, TokenKind.MatchKeyword, { line: 1, column: 1 }, { });
+		next(stream, TokenKind.MatchKeyword, { line: 1, column: 1 }, {});
 		next(stream, TokenKind.NumberLiteral, { line: 1, column: 7 }, { hasLeftSpacing: true, value: '1' });
-		next(stream, TokenKind.OpenBrace, { line: 1, column: 8 }, { });
-		next(stream, TokenKind.NewLine, { line: 1, column: 9 }, { });
-		next(stream, TokenKind.CloseBrace, { line: 3, column: 1 }, { });
-		next(stream, TokenKind.EOF, { line: 3, column: 2 }, { });
+		next(stream, TokenKind.OpenBrace, { line: 1, column: 8 }, {});
+		next(stream, TokenKind.NewLine, { line: 1, column: 9 }, {});
+		next(stream, TokenKind.CloseBrace, { line: 3, column: 1 }, {});
+		next(stream, TokenKind.EOF, { line: 3, column: 2 }, {});
 	});
 });

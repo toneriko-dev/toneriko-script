@@ -210,14 +210,23 @@ export const stdMath: Record<`Math:${string}`, Value> = {
 		expectAny(seed);
 		if (options?.type === 'obj') {
 			const v = options.value.get('algorithm');
-			if (v?.type !== 'str') throw new AiScriptRuntimeError('`options.algorithm` must be string.');
-			if (v.value !== 'chacha20') throw new AiScriptRuntimeError('`options.algorithm` must be `chacha20`.');
-		}
-		else if (options?.type !== undefined) {
+			if (v?.type !== 'str') {
+				throw new AiScriptRuntimeError('`options.algorithm` must be string.');
+			}
+			if (v.value !== 'chacha20') {
+				throw new AiScriptRuntimeError('`options.algorithm` must be `chacha20`.');
+			}
+		} else if (options?.type !== undefined) {
 			throw new AiScriptRuntimeError('`options` must be an object if specified.');
 		}
-		if (seed.type !== 'num' && seed.type !== 'str' && seed.type !== 'null') throw new AiScriptRuntimeError('`seed` must be either number or string if specified.');
-		if (!('subtle' in crypto)) throw new AiScriptRuntimeError('The random algorithm chacha20 cannot be used because `crypto.subtle` is not available. Maybe in non-secure context?');
+		if (seed.type !== 'num' && seed.type !== 'str' && seed.type !== 'null') {
+			throw new AiScriptRuntimeError('`seed` must be either number or string if specified.');
+		}
+		if (!('subtle' in crypto)) {
+			throw new AiScriptRuntimeError(
+				'The random algorithm chacha20 cannot be used because `crypto.subtle` is not available. Maybe in non-secure context?',
+			);
+		}
 		return await GenerateChaCha20Random(seed);
 	}),
 };

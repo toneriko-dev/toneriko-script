@@ -1,12 +1,32 @@
 import { autobind } from '../utils/mini-autobind.js';
-import { AiScriptError, NonAiScriptError, AiScriptNamespaceError, AiScriptRuntimeError, AiScriptHostsideError } from '../error.js';
+import {
+	AiScriptError,
+	NonAiScriptError,
+	AiScriptNamespaceError,
+	AiScriptRuntimeError,
+	AiScriptHostsideError,
+} from '../error.js';
 import * as Ast from '../node.js';
 import { getTypeBySource } from '../type.js';
 import { nodeToJs } from '../utils/node-to-js.js';
 import { Scope } from './scope.js';
 import { std } from './lib/std.js';
-import { RETURN, unWrapRet, BREAK, CONTINUE, assertValue, isControl, type Control, unWrapLabeledBreak } from './control.js';
-import { assertNumber, assertString, assertFunction, assertBoolean, assertObject, assertArray, eq, isObject, isArray, expectAny, reprValue, isFunction } from './util.js';
+import { RETURN, unWrapRet, BREAK, CONTINUE, assertValue, isControl, unWrapLabeledBreak } from './control.js';
+import type { Control } from './control.js';
+import {
+	assertNumber,
+	assertString,
+	assertFunction,
+	assertBoolean,
+	assertObject,
+	assertArray,
+	eq,
+	isObject,
+	isArray,
+	expectAny,
+	reprValue,
+	isFunction,
+} from './util.js';
 import { NULL, FN_NATIVE, BOOL, NUM, STR, ARR, OBJ, FN, ERROR } from './value.js';
 import { getPrimProp } from './primitive-props.js';
 import { Variable } from './variable.js';
@@ -37,7 +57,9 @@ function createCallStack(info: CallInfo, parent: CallStack): NonNullable<CallSta
 function callStackToArray(callStack: CallStack): CallInfo[] {
 	const arr: CallInfo[] = [];
 	for (let node = callStack; node != null; node = node.parent) {
-		if (node.parent != null || node.info.pos != null) arr.push(node.info);
+		if (node.parent != null || node.info.pos != null) {
+			arr.push(node.info);
+		}
 	}
 	arr.reverse();
 	return arr;
@@ -46,7 +68,7 @@ function callStackToArray(callStack: CallStack): CallInfo[] {
 export class Interpreter {
 	public stepCount = 0;
 	private stop = false;
-	private pausing: { promise: Promise<void>, resolve: () => void } | null = null;
+	private pausing: { promise: Promise<void>; resolve: () => void } | null = null;
 	public scope: Scope;
 	private abortHandlers: (() => void)[] = [];
 	private pauseHandlers: (() => void)[] = [];
@@ -71,30 +93,43 @@ export class Interpreter {
 		const io = {
 			print: FN_NATIVE(([v]) => {
 				expectAny(v);
-				if (this.opts.out) this.opts.out(v);
+				if (this.opts.out) {
+					this.opts.out(v);
+				}
 			}),
-			readline: FN_NATIVE(async args => {
+			readline: FN_NATIVE(async (args) => {
 				const q = args[0];
 				assertString(q);
-				if (this.opts.in == null) return NULL;
+				if (this.opts.in == null) {
+					return NULL;
+				}
 				const a = await this.opts.in!(q.value);
 				return STR(a);
 			}),
 		};
 
-		this.vars = Object.fromEntries(Object.entries({
-			...consts,
-			...std,
-			...io,
-		}).map(([k, v]) => [k, Variable.const(v)]));
+		this.vars = Object.fromEntries(
+			Object.entries({
+				...consts,
+				...std,
+				...io,
+			}).map(([k, v]) => [k, Variable.const(v)]),
+		);
 
 		this.scope = new Scope(new Map(Object.entries(this.vars)));
 		this.scope.opts.log = (type, params): void => {
 			switch (type) {
-				case 'add': this.log('var:add', params); break;
-				case 'read': this.log('var:read', params); break;
-				case 'write': this.log('var:write', params); break;
-				default: break;
+				case 'add':
+					this.log('var:add', params);
+					break;
+				case 'read':
+					this.log('var:read', params);
+					break;
+				case 'write':
+					this.log('var:write', params);
+					break;
+				default:
+					break;
 			}
 		};
 
@@ -103,9 +138,7 @@ export class Interpreter {
 		}
 		this.irqRate = this.opts.irqRate ?? 300;
 
-		const sleep = (time: number) => (
-			(): Promise<void> => new Promise(resolve => setTimeout(resolve, time))
-		);
+		const sleep = (time: number) => (): Promise<void> => new Promise((resolve) => setTimeout(resolve, time));
 
 		if (typeof this.opts.irqSleep === 'function') {
 			this.irqSleep = this.opts.irqSleep;
@@ -120,7 +153,9 @@ export class Interpreter {
 
 	@autobind
 	public async exec(script?: Ast.Node[]): Promise<void> {
-		if (script == null || script.length === 0) return;
+		if (script == null || script.length === 0) {
+			return;
+		}
 		try {
 			await this.collectNs(script);
 			const result = await this._run(script, this.scope, createCallStack({ name: '<root>', pos: undefined }, null));
@@ -133,7 +168,9 @@ export class Interpreter {
 
 	@autobind
 	public execSync(script?: Ast.Node[]): Value | undefined {
-		if (script == null || script.length === 0) return;
+		if (script == null || script.length === 0) {
+			return;
+		}
 		this.collectNsSync(script);
 		const result = this._runSync(script, this.scope, createCallStack({ name: '<root>', pos: undefined }, null));
 		assertValue(result);
@@ -146,11 +183,10 @@ export class Interpreter {
 	 */
 	@autobind
 	public async execFn(fn: VFn, args: Value[]): Promise<Value> {
-		return await this._fn(fn, args, createCallStack({ name: '<root>', pos: undefined }, null))
-			.catch(e => {
-				this.handleError(e);
-				return ERROR('func_failed');
-			});
+		return await this._fn(fn, args, createCallStack({ name: '<root>', pos: undefined }, null)).catch((e) => {
+			this.handleError(e);
+			return ERROR('func_failed');
+		});
 	}
 
 	@autobind
@@ -166,7 +202,9 @@ export class Interpreter {
 
 	@autobind
 	public static collectMetadata(script?: Ast.Node[]): Map<string | null, JsValue> | undefined {
-		if (script == null || script.length === 0) return;
+		if (script == null || script.length === 0) {
+			return;
+		}
 
 		const meta = new Map<string | null, JsValue>();
 
@@ -187,10 +225,14 @@ export class Interpreter {
 
 	@autobind
 	private handleError(e: unknown): void {
-		if (!this.opts.err) throw e;
+		if (!this.opts.err) {
+			throw e;
+		}
 		if (this.opts.abortOnError) {
-					// abortOnError 有効時は、エラーハンドラーを1回だけ呼び出す。
-			if (this.stop) return;
+			// abortOnError 有効時は、エラーハンドラーを1回だけ呼び出す。
+			if (this.stop) {
+				return;
+			}
 			this.abort();
 		}
 		if (e instanceof AiScriptError) {
@@ -202,7 +244,9 @@ export class Interpreter {
 
 	@autobind
 	private log(type: string, params: LogObject): void {
-		if (this.opts.log) this.opts.log(type, params);
+		if (this.opts.log) {
+			this.opts.log(type, params);
+		}
 	}
 
 	@autobind
@@ -245,7 +289,10 @@ export class Interpreter {
 			switch (node.type) {
 				case 'def': {
 					if (node.dest.type !== 'identifier') {
-						throw new AiScriptNamespaceError('Destructuring assignment is invalid in namespace declarations.', node.loc.start);
+						throw new AiScriptNamespaceError(
+							'Destructuring assignment is invalid in namespace declarations.',
+							node.loc.start,
+						);
 					}
 					if (node.mut) {
 						throw new AiScriptNamespaceError('No "var" in namespace declaration: ' + node.dest.name, node.loc.start);
@@ -256,11 +303,7 @@ export class Interpreter {
 
 					value = await this.evalAndSetAttr(node.attr, value, scope, null);
 
-					if (
-						node.expr.type === 'fn'
-						&& isFunction(value)
-						&& !value.native
-					) {
+					if (node.expr.type === 'fn' && isFunction(value) && !value.native) {
 						value.name = nsScope.getNsPrefix() + node.dest.name;
 					}
 					this.define(nsScope, node.dest, value, node.mut);
@@ -291,7 +334,10 @@ export class Interpreter {
 			switch (node.type) {
 				case 'def': {
 					if (node.dest.type !== 'identifier') {
-						throw new AiScriptNamespaceError('Destructuring assignment is invalid in namespace declarations.', node.loc.start);
+						throw new AiScriptNamespaceError(
+							'Destructuring assignment is invalid in namespace declarations.',
+							node.loc.start,
+						);
 					}
 					if (node.mut) {
 						throw new AiScriptNamespaceError('No "var" in namespace declaration: ' + node.dest.name, node.loc.start);
@@ -302,11 +348,7 @@ export class Interpreter {
 
 					value = this.evalAndSetAttrSync(node.attr, value, scope, null);
 
-					if (
-						node.expr.type === 'fn'
-						&& isFunction(value)
-						&& !value.native
-					) {
+					if (node.expr.type === 'fn' && isFunction(value) && !value.native) {
 						value.name = nsScope.getNsPrefix() + node.dest.name;
 					}
 					this.define(nsScope, node.dest, value, node.mut);
@@ -342,61 +384,65 @@ export class Interpreter {
 				unregisterUnpauseHandler: this.unregisterUnpauseHandler,
 			});
 			return result ?? NULL;
-		} else {
-			const fnScope = fn.scope.createChildScope(new Map(), undefined, fn.typeParams);
-			for (const [i, param] of fn.params.entries()) {
-				const arg = args[i];
-				if (!param.default) expectAny(arg);
-				this.define(fnScope, param.dest, arg ?? param.default!, true);
-			}
-
-			const info: CallInfo = { name: fn.name ?? '<anonymous>', pos };
-			return unWrapRet(await this._run(fn.statements!, fnScope, createCallStack(info, callStack)));
 		}
+		const fnScope = fn.scope.createChildScope(new Map(), undefined, fn.typeParams);
+		for (const [i, param] of fn.params.entries()) {
+			const arg = args[i];
+			if (!param.default) expectAny(arg);
+			this.define(fnScope, param.dest, arg ?? param.default!, true);
+		}
+
+		const info: CallInfo = { name: fn.name ?? '<anonymous>', pos };
+		return unWrapRet(await this._run(fn.statements!, fnScope, createCallStack(info, callStack)));
 	}
 
 	@autobind
 	private _fnSync(fn: VFn, args: Value[], callStack: CallStack, pos?: Ast.Pos): Value {
 		if (fn.native) {
 			const info: CallInfo = { name: '<native>', pos };
-			const result = fn.nativeSync ? fn.nativeSync(args, {
-				call: (fn, args) => this._fnSync(fn, args, createCallStack(info, callStack)),
-				topCall: this.execFnSync,
-				registerAbortHandler: this.registerAbortHandler,
-				registerPauseHandler: this.registerPauseHandler,
-				registerUnpauseHandler: this.registerUnpauseHandler,
-				unregisterAbortHandler: this.unregisterAbortHandler,
-				unregisterPauseHandler: this.unregisterPauseHandler,
-				unregisterUnpauseHandler: this.unregisterUnpauseHandler,
-			}) : fn.native(args, {
-				call: (fn, args) => this._fn(fn, args, createCallStack(info, callStack)),
-				topCall: this.execFn,
-				registerAbortHandler: this.registerAbortHandler,
-				registerPauseHandler: this.registerPauseHandler,
-				registerUnpauseHandler: this.registerUnpauseHandler,
-				unregisterAbortHandler: this.unregisterAbortHandler,
-				unregisterPauseHandler: this.unregisterPauseHandler,
-				unregisterUnpauseHandler: this.unregisterUnpauseHandler,
-			});
+			const result = fn.nativeSync
+				? fn.nativeSync(args, {
+						call: (fn, args) => this._fnSync(fn, args, createCallStack(info, callStack)),
+						topCall: this.execFnSync,
+						registerAbortHandler: this.registerAbortHandler,
+						registerPauseHandler: this.registerPauseHandler,
+						registerUnpauseHandler: this.registerUnpauseHandler,
+						unregisterAbortHandler: this.unregisterAbortHandler,
+						unregisterPauseHandler: this.unregisterPauseHandler,
+						unregisterUnpauseHandler: this.unregisterUnpauseHandler,
+					})
+				: fn.native(args, {
+						call: (fn, args) => this._fn(fn, args, createCallStack(info, callStack)),
+						topCall: this.execFn,
+						registerAbortHandler: this.registerAbortHandler,
+						registerPauseHandler: this.registerPauseHandler,
+						registerUnpauseHandler: this.registerUnpauseHandler,
+						unregisterAbortHandler: this.unregisterAbortHandler,
+						unregisterPauseHandler: this.unregisterPauseHandler,
+						unregisterUnpauseHandler: this.unregisterUnpauseHandler,
+					});
 			if (result instanceof Promise) {
 				throw new AiScriptHostsideError('Native function must not return a Promise in sync mode.');
 			}
 			return result ?? NULL;
-		} else {
-			const fnScope = fn.scope.createChildScope(new Map(), undefined, fn.typeParams);
-			for (const [i, param] of fn.params.entries()) {
-				const arg = args[i];
-				if (!param.default) expectAny(arg);
-				this.define(fnScope, param.dest, arg ?? param.default!, true);
-			}
-
-			const info: CallInfo = { name: fn.name ?? '<anonymous>', pos };
-			return unWrapRet(this._runSync(fn.statements!, fnScope, createCallStack(info, callStack)));
 		}
+		const fnScope = fn.scope.createChildScope(new Map(), undefined, fn.typeParams);
+		for (const [i, param] of fn.params.entries()) {
+			const arg = args[i];
+			if (!param.default) expectAny(arg);
+			this.define(fnScope, param.dest, arg ?? param.default!, true);
+		}
+
+		const info: CallInfo = { name: fn.name ?? '<anonymous>', pos };
+		return unWrapRet(this._runSync(fn.statements!, fnScope, createCallStack(info, callStack)));
 	}
 
 	@autobind
-	private _evalClause(node: Ast.Statement | Ast.Expression, scope: Scope, callStack: CallStack): Promise<Value | Control> {
+	private _evalClause(
+		node: Ast.Statement | Ast.Expression,
+		scope: Scope,
+		callStack: CallStack,
+	): Promise<Value | Control> {
 		return this._eval(node, Ast.isStatement(node) ? scope.createChildScope() : scope, callStack);
 	}
 
@@ -406,7 +452,13 @@ export class Interpreter {
 	}
 
 	@autobind
-	private async _evalBinaryOperation(op: string, leftExpr: Ast.Expression, rightExpr: Ast.Expression, scope: Scope, callStack: CallStack): Promise<Value | Control> {
+	private async _evalBinaryOperation(
+		op: string,
+		leftExpr: Ast.Expression,
+		rightExpr: Ast.Expression,
+		scope: Scope,
+		callStack: CallStack,
+	): Promise<Value | Control> {
 		const callee = scope.get(op);
 		assertFunction(callee);
 		const left = await this._eval(leftExpr, scope, callStack);
@@ -421,7 +473,13 @@ export class Interpreter {
 	}
 
 	@autobind
-	private _evalBinaryOperationSync(op: string, leftExpr: Ast.Expression, rightExpr: Ast.Expression, scope: Scope, callStack: CallStack): Value | Control {
+	private _evalBinaryOperationSync(
+		op: string,
+		leftExpr: Ast.Expression,
+		rightExpr: Ast.Expression,
+		scope: Scope,
+		callStack: CallStack,
+	): Value | Control {
 		const callee = scope.get(op);
 		assertFunction(callee);
 		const left = this._evalSync(leftExpr, scope, callStack);
@@ -437,20 +495,21 @@ export class Interpreter {
 
 	@autobind
 	private _eval(node: Ast.Node, scope: Scope, callStack: CallStack): Promise<Value | Control> {
-		return this.__eval(node, scope, callStack).catch(e => {
-			if (e.pos) throw e;
-			else {
-				const e2 = (e instanceof AiScriptError) ? e : new NonAiScriptError(e);
+		return this.__eval(node, scope, callStack).catch((e) => {
+			if (e.pos) {
+				throw e;
+			} else {
+				const e2 = e instanceof AiScriptError ? e : new NonAiScriptError(e);
 				e2.pos = node.loc.start;
 				const callStackArray = callStackToArray(callStack);
 				e2.message = [
 					e2.message,
-					...[...callStackArray, { pos: e2.pos }].map(({ pos }, i) => {
-						const name = callStackArray[i - 1]?.name ?? '<root>';
-						return pos
-							? `  at ${name} (Line ${pos.line}, Column ${pos.column})`
-							: `  at ${name}`;
-					}).reverse(),
+					...[...callStackArray, { pos: e2.pos }]
+						.map(({ pos }, i) => {
+							const name = callStackArray[i - 1]?.name ?? '<root>';
+							return pos ? `  at ${name} (Line ${pos.line}, Column ${pos.column})` : `  at ${name}`;
+						})
+						.reverse(),
 				].join('\n');
 				throw e2;
 			}
@@ -464,14 +523,20 @@ export class Interpreter {
 
 	@autobind
 	private async __eval(node: Ast.Node, scope: Scope, callStack: CallStack): Promise<Value | Control> {
-		if (this.stop) return NULL;
-		if (this.pausing) await this.pausing.promise;
+		if (this.stop) {
+			return NULL;
+		}
+		if (this.pausing) {
+			await this.pausing.promise;
+		}
 		// irqRateが小数の場合は不等間隔になる
 		if (this.irqRate !== 0 && this.stepCount % this.irqRate >= this.irqRate - 1) {
 			await this.irqSleep();
 		}
 		this.stepCount++;
-		if (callStack != null) callStack.execution.stepCount++;
+		if (callStack != null) {
+			callStack.execution.stepCount++;
+		}
 		if (this.opts.maxStep && (callStack?.execution.stepCount ?? this.stepCount) > this.opts.maxStep) {
 			throw new AiScriptRuntimeError('max step exceeded');
 		}
@@ -612,12 +677,21 @@ export class Interpreter {
 					}
 					let i = from.value;
 					for (let n = 0; n < to.value; n++, i += step.value) {
-						const v = await this._eval(node.for, scope.createChildScope(new Map([
-							[node.var!, {
-								isMutable: false,
-								value: NUM(i),
-							}],
-						])), callStack);
+						const v = await this._eval(
+							node.for,
+							scope.createChildScope(
+								new Map([
+									[
+										node.var!,
+										{
+											isMutable: false,
+											value: NUM(i),
+										},
+									],
+								]),
+							),
+							callStack,
+						);
 						if (v.type === 'break') {
 							if (v.label != null && v.label !== node.label) {
 								return v;
@@ -646,9 +720,7 @@ export class Interpreter {
 					if (node.var.type === 'identifier') {
 						// 分割代入を伴わない最も一般的なケースは、Scope生成後にadd()するのではなく
 						// 束縛を最初から持たせて生成する(重複チェックと呼び出し1回分を省く)
-						eachScope = scope.createChildScope(new Map([
-							[node.var.name, { isMutable: false, value: item }],
-						]));
+						eachScope = scope.createChildScope(new Map([[node.var.name, { isMutable: false, value: item }]]));
 					} else {
 						eachScope = scope.createChildScope();
 						this.define(eachScope, node.var, item, false);
@@ -676,12 +748,7 @@ export class Interpreter {
 					return value;
 				}
 				value = await this.evalAndSetAttr(node.attr, value, scope, callStack);
-				if (
-					node.expr.type === 'fn'
-					&& node.dest.type === 'identifier'
-					&& isFunction(value)
-					&& !value.native
-				) {
+				if (node.expr.type === 'fn' && node.dest.type === 'identifier' && isFunction(value) && !value.native) {
 					value.name = node.dest.name;
 				}
 				this.define(scope, node.dest, value, node.mut);
@@ -714,7 +781,7 @@ export class Interpreter {
 						return v;
 					}
 					assertNumber(v);
-					scope.update(node.dest.name, current => {
+					scope.update(node.dest.name, (current) => {
 						assertNumber(current);
 						return NUM(current.value + v.value);
 					});
@@ -743,7 +810,7 @@ export class Interpreter {
 						return v;
 					}
 					assertNumber(v);
-					scope.update(node.dest.name, current => {
+					scope.update(node.dest.name, (current) => {
 						assertNumber(current);
 						return NUM(current.value - v.value);
 					});
@@ -765,13 +832,17 @@ export class Interpreter {
 				return NULL;
 			}
 
-			case 'null': return NULL;
+			case 'null':
+				return NULL;
 
-			case 'bool': return BOOL(node.value);
+			case 'bool':
+				return BOOL(node.value);
 
-			case 'num': return NUM(node.value);
+			case 'num':
+				return NUM(node.value);
 
-			case 'str': return STR(node.value);
+			case 'str':
+				return STR(node.value);
 
 			case 'arr': {
 				const value = [];
@@ -805,12 +876,10 @@ export class Interpreter {
 				if (isObject(target)) {
 					if (target.value.has(node.name)) {
 						return target.value.get(node.name)!;
-					} else {
-						return NULL;
 					}
-				} else {
-					return getPrimProp(target, node.name);
+					return NULL;
 				}
+				return getPrimProp(target, node.name);
 			}
 
 			case 'index': {
@@ -830,12 +899,10 @@ export class Interpreter {
 					assertString(i);
 					if (target.value.has(i.value)) {
 						return target.value.get(i.value)!;
-					} else {
-						return NULL;
 					}
-				} else {
-					throw new AiScriptRuntimeError(`Cannot read prop (${reprValue(i)}) of ${target.type}.`);
+					return NULL;
 				}
+				throw new AiScriptRuntimeError(`Cannot read prop (${reprValue(i)}) of ${target.type}.`);
 			}
 
 			case 'plus': {
@@ -867,19 +934,21 @@ export class Interpreter {
 
 			case 'fn': {
 				const typeParams = [...node.typeParams, ...scope.getTypeParams()];
-				const defaultScope = node.typeParams.length > 0
-					? scope.createChildScope(new Map(), undefined, node.typeParams)
-					: scope;
-				const params = await Promise.all(node.params.map(async (param) => {
-					return {
-						dest: param.dest,
-						default:
-							param.default ? await this._eval(param.default, defaultScope, callStack) :
-							param.optional ? NULL :
-							undefined,
-						type: param.argType ? getTypeBySource(param.argType, typeParams) : undefined,
-					};
-				}));
+				const defaultScope =
+					node.typeParams.length > 0 ? scope.createChildScope(new Map(), undefined, node.typeParams) : scope;
+				const params = await Promise.all(
+					node.params.map(async (param) => {
+						return {
+							dest: param.dest,
+							default: param.default
+								? await this._eval(param.default, defaultScope, callStack)
+								: param.optional
+									? NULL
+									: undefined,
+							type: param.argType ? getTypeBySource(param.argType, typeParams) : undefined,
+						};
+					}),
+				);
 				const control = params
 					.map((param) => param.default)
 					.filter((value) => value != null)
@@ -887,12 +956,7 @@ export class Interpreter {
 				if (control != null) {
 					return control;
 				}
-				return FN(
-					params as VUserFn['params'],
-					node.children,
-					scope,
-					node.typeParams,
-				);
+				return FN(params as VUserFn['params'], node.children, scope, node.typeParams);
 			}
 
 			case 'block': {
@@ -1011,14 +1075,13 @@ export class Interpreter {
 
 				if (!leftValue.value) {
 					return leftValue;
-				} else {
-					const rightValue = await this._eval(node.right, scope, callStack);
-					if (isControl(rightValue)) {
-						return rightValue;
-					}
-					assertBoolean(rightValue);
+				}
+				const rightValue = await this._eval(node.right, scope, callStack);
+				if (isControl(rightValue)) {
 					return rightValue;
 				}
+				assertBoolean(rightValue);
+				return rightValue;
 			}
 
 			case 'or': {
@@ -1030,14 +1093,13 @@ export class Interpreter {
 
 				if (leftValue.value) {
 					return leftValue;
-				} else {
-					const rightValue = await this._eval(node.right, scope, callStack);
-					if (isControl(rightValue)) {
-						return rightValue;
-					}
-					assertBoolean(rightValue);
+				}
+				const rightValue = await this._eval(node.right, scope, callStack);
+				if (isControl(rightValue)) {
 					return rightValue;
 				}
+				assertBoolean(rightValue);
+				return rightValue;
 			}
 
 			case 'namedTypeSource':
@@ -1053,13 +1115,17 @@ export class Interpreter {
 			}
 		}
 	}
-	
+
 	@autobind
 	private __evalSync(node: Ast.Node, scope: Scope, callStack: CallStack): Value | Control {
-		if (this.stop) return NULL;
+		if (this.stop) {
+			return NULL;
+		}
 
 		this.stepCount++;
-		if (callStack != null) callStack.execution.stepCount++;
+		if (callStack != null) {
+			callStack.execution.stepCount++;
+		}
 		if (this.opts.maxStep && (callStack?.execution.stepCount ?? this.stepCount) > this.opts.maxStep) {
 			throw new AiScriptRuntimeError('max step exceeded');
 		}
@@ -1200,12 +1266,21 @@ export class Interpreter {
 					}
 					let i = from.value;
 					for (let n = 0; n < to.value; n++, i += step.value) {
-						const v = this._evalSync(node.for, scope.createChildScope(new Map([
-							[node.var!, {
-								isMutable: false,
-								value: NUM(i),
-							}],
-						])), callStack);
+						const v = this._evalSync(
+							node.for,
+							scope.createChildScope(
+								new Map([
+									[
+										node.var!,
+										{
+											isMutable: false,
+											value: NUM(i),
+										},
+									],
+								]),
+							),
+							callStack,
+						);
 						if (v.type === 'break') {
 							if (v.label != null && v.label !== node.label) {
 								return v;
@@ -1232,9 +1307,7 @@ export class Interpreter {
 				for (const item of items.value) {
 					let eachScope: Scope;
 					if (node.var.type === 'identifier') {
-						eachScope = scope.createChildScope(new Map([
-							[node.var.name, { isMutable: false, value: item }],
-						]));
+						eachScope = scope.createChildScope(new Map([[node.var.name, { isMutable: false, value: item }]]));
 					} else {
 						eachScope = scope.createChildScope();
 						this.define(eachScope, node.var, item, false);
@@ -1262,12 +1335,7 @@ export class Interpreter {
 					return value;
 				}
 				value = this.evalAndSetAttrSync(node.attr, value, scope, callStack);
-				if (
-					node.expr.type === 'fn'
-					&& node.dest.type === 'identifier'
-					&& isFunction(value)
-					&& !value.native
-				) {
+				if (node.expr.type === 'fn' && node.dest.type === 'identifier' && isFunction(value) && !value.native) {
 					value.name = node.dest.name;
 				}
 				this.define(scope, node.dest, value, node.mut);
@@ -1300,7 +1368,7 @@ export class Interpreter {
 						return v;
 					}
 					assertNumber(v);
-					scope.update(node.dest.name, current => {
+					scope.update(node.dest.name, (current) => {
 						assertNumber(current);
 						return NUM(current.value + v.value);
 					});
@@ -1329,7 +1397,7 @@ export class Interpreter {
 						return v;
 					}
 					assertNumber(v);
-					scope.update(node.dest.name, current => {
+					scope.update(node.dest.name, (current) => {
 						assertNumber(current);
 						return NUM(current.value - v.value);
 					});
@@ -1351,13 +1419,17 @@ export class Interpreter {
 				return NULL;
 			}
 
-			case 'null': return NULL;
+			case 'null':
+				return NULL;
 
-			case 'bool': return BOOL(node.value);
+			case 'bool':
+				return BOOL(node.value);
 
-			case 'num': return NUM(node.value);
+			case 'num':
+				return NUM(node.value);
 
-			case 'str': return STR(node.value);
+			case 'str':
+				return STR(node.value);
 
 			case 'arr': {
 				const value = [];
@@ -1391,12 +1463,10 @@ export class Interpreter {
 				if (isObject(target)) {
 					if (target.value.has(node.name)) {
 						return target.value.get(node.name)!;
-					} else {
-						return NULL;
 					}
-				} else {
-					return getPrimProp(target, node.name);
+					return NULL;
 				}
+				return getPrimProp(target, node.name);
 			}
 
 			case 'index': {
@@ -1416,12 +1486,10 @@ export class Interpreter {
 					assertString(i);
 					if (target.value.has(i.value)) {
 						return target.value.get(i.value)!;
-					} else {
-						return NULL;
 					}
-				} else {
-					throw new AiScriptRuntimeError(`Cannot read prop (${reprValue(i)}) of ${target.type}.`);
+					return NULL;
 				}
+				throw new AiScriptRuntimeError(`Cannot read prop (${reprValue(i)}) of ${target.type}.`);
 			}
 
 			case 'plus': {
@@ -1453,16 +1521,16 @@ export class Interpreter {
 
 			case 'fn': {
 				const typeParams = [...node.typeParams, ...scope.getTypeParams()];
-				const defaultScope = node.typeParams.length > 0
-					? scope.createChildScope(new Map(), undefined, node.typeParams)
-					: scope;
+				const defaultScope =
+					node.typeParams.length > 0 ? scope.createChildScope(new Map(), undefined, node.typeParams) : scope;
 				const params = node.params.map((param) => {
 					return {
 						dest: param.dest,
-						default:
-							param.default ? this._evalSync(param.default, defaultScope, callStack) :
-							param.optional ? NULL :
-							undefined,
+						default: param.default
+							? this._evalSync(param.default, defaultScope, callStack)
+							: param.optional
+								? NULL
+								: undefined,
 						type: param.argType ? getTypeBySource(param.argType, typeParams) : undefined,
 					};
 				});
@@ -1473,12 +1541,7 @@ export class Interpreter {
 				if (control != null) {
 					return control;
 				}
-				return FN(
-					params as VUserFn['params'],
-					node.children,
-					scope,
-					node.typeParams,
-				);
+				return FN(params as VUserFn['params'], node.children, scope, node.typeParams);
 			}
 
 			case 'block': {
@@ -1597,14 +1660,13 @@ export class Interpreter {
 
 				if (!leftValue.value) {
 					return leftValue;
-				} else {
-					const rightValue = this._evalSync(node.right, scope, callStack);
-					if (isControl(rightValue)) {
-						return rightValue;
-					}
-					assertBoolean(rightValue);
+				}
+				const rightValue = this._evalSync(node.right, scope, callStack);
+				if (isControl(rightValue)) {
 					return rightValue;
 				}
+				assertBoolean(rightValue);
+				return rightValue;
 			}
 
 			case 'or': {
@@ -1616,14 +1678,13 @@ export class Interpreter {
 
 				if (leftValue.value) {
 					return leftValue;
-				} else {
-					const rightValue = this._evalSync(node.right, scope, callStack);
-					if (isControl(rightValue)) {
-						return rightValue;
-					}
-					assertBoolean(rightValue);
+				}
+				const rightValue = this._evalSync(node.right, scope, callStack);
+				if (isControl(rightValue)) {
 					return rightValue;
 				}
+				assertBoolean(rightValue);
+				return rightValue;
 			}
 
 			case 'namedTypeSource':
@@ -1707,15 +1768,15 @@ export class Interpreter {
 
 	@autobind
 	public unregisterAbortHandler(handler: () => void): void {
-		this.abortHandlers = this.abortHandlers.filter(h => h !== handler);
+		this.abortHandlers = this.abortHandlers.filter((h) => h !== handler);
 	}
 	@autobind
 	public unregisterPauseHandler(handler: () => void): void {
-		this.pauseHandlers = this.pauseHandlers.filter(h => h !== handler);
+		this.pauseHandlers = this.pauseHandlers.filter((h) => h !== handler);
 	}
 	@autobind
 	public unregisterUnpauseHandler(handler: () => void): void {
-		this.unpauseHandlers = this.unpauseHandlers.filter(h => h !== handler);
+		this.unpauseHandlers = this.unpauseHandlers.filter((h) => h !== handler);
 	}
 
 	@autobind
@@ -1729,9 +1790,13 @@ export class Interpreter {
 
 	@autobind
 	public pause(): void {
-		if (this.pausing) return;
+		if (this.pausing) {
+			return;
+		}
 		let resolve: () => void;
-		const promise = new Promise<void>(r => { resolve = () => r(); });
+		const promise = new Promise<void>((r) => {
+			resolve = () => r();
+		});
 		this.pausing = { promise, resolve: resolve! };
 		for (const handler of this.pauseHandlers) {
 			handler();
@@ -1741,7 +1806,9 @@ export class Interpreter {
 
 	@autobind
 	public unpause(): void {
-		if (!this.pausing) return;
+		if (!this.pausing) {
+			return;
+		}
 		this.pausing.resolve();
 		this.pausing = null;
 		for (const handler of this.unpauseHandlers) {
@@ -1753,7 +1820,12 @@ export class Interpreter {
 	@autobind
 	// NULL/TRUE/FALSE等は使い回されるシングルトンなので、attrをその場でmutateすると
 	// 無関係な箇所にまで波及してしまう。新しいオブジェクトを作って返す。
-	private async evalAndSetAttr(attr: Ast.Attribute[], value: Value, scope: Scope, callStack: CallStack): Promise<Value> {
+	private async evalAndSetAttr(
+		attr: Ast.Attribute[],
+		value: Value,
+		scope: Scope,
+		callStack: CallStack,
+	): Promise<Value> {
 		if (attr.length > 0) {
 			const attrs: Value['attr'] = [];
 			for (const nAttr of attr) {
@@ -1795,16 +1867,12 @@ export class Interpreter {
 			}
 			case 'arr': {
 				assertArray(value);
-				dest.value.map(
-					(item, index) => this.define(scope, item, value.value[index] ?? NULL, isMutable),
-				);
+				dest.value.map((item, index) => this.define(scope, item, value.value[index] ?? NULL, isMutable));
 				break;
 			}
 			case 'obj': {
 				assertObject(value);
-				[...dest.value].map(
-					([key, item]) => this.define(scope, item, value.value.get(key) ?? NULL, isMutable),
-				);
+				[...dest.value].map(([key, item]) => this.define(scope, item, value.value.get(key) ?? NULL, isMutable));
 				break;
 			}
 			default: {
@@ -1834,9 +1902,8 @@ export class Interpreter {
 				} else if (isObject(assignee)) {
 					assertString(i);
 					return Reference.prop(assignee, i.value);
-				} else {
-					throw new AiScriptRuntimeError(`Cannot read prop (${reprValue(i)}) of ${assignee.type}.`);
 				}
+				throw new AiScriptRuntimeError(`Cannot read prop (${reprValue(i)}) of ${assignee.type}.`);
 			}
 			case 'prop': {
 				const assignee = await this._eval(dest.target, scope, callStack);
@@ -1870,7 +1937,9 @@ export class Interpreter {
 				return Reference.obj(entries);
 			}
 			default: {
-				throw new AiScriptRuntimeError('The left-hand side of an assignment expression must be a variable or a property/index access.');
+				throw new AiScriptRuntimeError(
+					'The left-hand side of an assignment expression must be a variable or a property/index access.',
+				);
 			}
 		}
 	}
@@ -1896,9 +1965,8 @@ export class Interpreter {
 				} else if (isObject(assignee)) {
 					assertString(i);
 					return Reference.prop(assignee, i.value);
-				} else {
-					throw new AiScriptRuntimeError(`Cannot read prop (${reprValue(i)}) of ${assignee.type}.`);
 				}
+				throw new AiScriptRuntimeError(`Cannot read prop (${reprValue(i)}) of ${assignee.type}.`);
 			}
 			case 'prop': {
 				const assignee = this._evalSync(dest.target, scope, callStack);
@@ -1932,7 +2000,9 @@ export class Interpreter {
 				return Reference.obj(entries);
 			}
 			default: {
-				throw new AiScriptRuntimeError('The left-hand side of an assignment expression must be a variable or a property/index access.');
+				throw new AiScriptRuntimeError(
+					'The left-hand side of an assignment expression must be a variable or a property/index access.',
+				);
 			}
 		}
 	}

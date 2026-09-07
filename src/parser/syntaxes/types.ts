@@ -11,7 +11,7 @@ import type { TypeParam } from '../../node.js';
  * ```abnf
  * Type = FnType / NamedType
  * ```
-*/
+ */
 export function parseType(s: ITokenStream): Ast.TypeSource {
 	return parseUnionType(s);
 }
@@ -20,7 +20,7 @@ export function parseType(s: ITokenStream): Ast.TypeSource {
  * ```abnf
  * TypeParams = "<" TypeParam *(SEP TypeParam) [SEP] ">"
  * ```
-*/
+ */
 export function parseTypeParams(s: ITokenStream): TypeParam[] {
 	s.expect(TokenKind.Lt);
 	s.next();
@@ -49,7 +49,7 @@ export function parseTypeParams(s: ITokenStream): TypeParam[] {
  * ```abnf
  * TypeParam = IDENT
  * ```
-*/
+ */
 function parseTypeParam(s: ITokenStream): TypeParam {
 	s.expect(TokenKind.Identifier);
 	const name = s.getTokenValue();
@@ -62,7 +62,7 @@ function parseTypeParam(s: ITokenStream): TypeParam {
  * ```abnf
  * UnionType = UnionTypeInner *("|" UnionTypeInner)
  * ```
-*/
+ */
 function parseUnionType(s: ITokenStream): Ast.TypeSource {
 	const startPos = s.getPos();
 
@@ -84,13 +84,12 @@ function parseUnionType(s: ITokenStream): Ast.TypeSource {
  * ```abnf
  * UnionTypeTerm = FnType / NamedType
  * ```
-*/
+ */
 function parseUnionTypeInner(s: ITokenStream): Ast.TypeSource {
 	if (s.is(TokenKind.At)) {
 		return parseFnType(s);
-	} else {
-		return parseNamedType(s);
 	}
+	return parseNamedType(s);
 }
 
 /**
@@ -98,7 +97,7 @@ function parseUnionTypeInner(s: ITokenStream): Ast.TypeSource {
  * FnType = "@" [TypeParams] "(" ParamTypes ")" "=>" Type
  * ParamTypes = [Type *(SEP Type)]
  * ```
-*/
+ */
 function parseFnType(s: ITokenStream): Ast.TypeSource {
 	const startPos = s.getPos();
 
@@ -149,7 +148,7 @@ function parseFnType(s: ITokenStream): Ast.TypeSource {
  * ```abnf
  * NamedType = IDENT ["<" Type ">"]
  * ```
-*/
+ */
 function parseNamedType(s: ITokenStream): Ast.TypeSource {
 	const startPos = s.getPos();
 

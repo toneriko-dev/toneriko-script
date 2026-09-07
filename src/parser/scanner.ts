@@ -23,8 +23,8 @@ export class Scanner implements ITokenStream {
 	private stream: CharStream;
 	private _tokens: Token[] = [];
 
-	constructor(source: string)
-	constructor(stream: CharStream)
+	constructor(source: string);
+	constructor(stream: CharStream);
 	constructor(x: string | CharStream) {
 		if (typeof x === 'string') {
 			this.stream = new CharStream(x);
@@ -107,12 +107,11 @@ export class Scanner implements ITokenStream {
 					if (!this.stream.eof && (this.stream.char as string) === '=') {
 						this.stream.next();
 						return TOKEN(TokenKind.NotEq, pos, { hasLeftSpacing });
-					} else {
-						return TOKEN(TokenKind.Not, pos, { hasLeftSpacing });
 					}
+					return TOKEN(TokenKind.Not, pos, { hasLeftSpacing });
 				}
 				case '"':
-				case '\'': {
+				case "'": {
 					return this.readStringLiteral(hasLeftSpacing);
 				}
 				case '#': {
@@ -122,9 +121,8 @@ export class Scanner implements ITokenStream {
 						if (!this.stream.eof && (this.stream.char as string) === '#') {
 							this.stream.next();
 							return TOKEN(TokenKind.Sharp3, pos, { hasLeftSpacing });
-						} else {
-							throw new AiScriptSyntaxError('invalid sequence of characters: "##"', pos);
 						}
+						throw new AiScriptSyntaxError('invalid sequence of characters: "##"', pos);
 					} else if (!this.stream.eof && (this.stream.char as string) === '[') {
 						this.stream.next();
 						return TOKEN(TokenKind.OpenSharpBracket, pos, { hasLeftSpacing });
@@ -141,9 +139,8 @@ export class Scanner implements ITokenStream {
 					if (!this.stream.eof && (this.stream.char as string) === '&') {
 						this.stream.next();
 						return TOKEN(TokenKind.And2, pos, { hasLeftSpacing });
-					} else {
-						throw new AiScriptSyntaxError('invalid character: "&"', pos);
 					}
+					throw new AiScriptSyntaxError('invalid character: "&"', pos);
 				}
 				case '(': {
 					this.stream.next();
@@ -162,9 +159,8 @@ export class Scanner implements ITokenStream {
 					if (!this.stream.eof && (this.stream.char as string) === '=') {
 						this.stream.next();
 						return TOKEN(TokenKind.PlusEq, pos, { hasLeftSpacing });
-					} else {
-						return TOKEN(TokenKind.Plus, pos, { hasLeftSpacing });
 					}
+					return TOKEN(TokenKind.Plus, pos, { hasLeftSpacing });
 				}
 				case ',': {
 					this.stream.next();
@@ -175,9 +171,8 @@ export class Scanner implements ITokenStream {
 					if (!this.stream.eof && (this.stream.char as string) === '=') {
 						this.stream.next();
 						return TOKEN(TokenKind.MinusEq, pos, { hasLeftSpacing });
-					} else {
-						return TOKEN(TokenKind.Minus, pos, { hasLeftSpacing });
 					}
+					return TOKEN(TokenKind.Minus, pos, { hasLeftSpacing });
 				}
 				case '.': {
 					this.stream.next();
@@ -202,9 +197,8 @@ export class Scanner implements ITokenStream {
 					if (!this.stream.eof && (this.stream.char as string) === ':') {
 						this.stream.next();
 						return TOKEN(TokenKind.Colon2, pos, { hasLeftSpacing });
-					} else {
-						return TOKEN(TokenKind.Colon, pos, { hasLeftSpacing });
 					}
+					return TOKEN(TokenKind.Colon, pos, { hasLeftSpacing });
 				}
 				case ';': {
 					this.stream.next();
@@ -218,9 +212,8 @@ export class Scanner implements ITokenStream {
 					} else if (!this.stream.eof && (this.stream.char as string) === ':') {
 						this.stream.next();
 						return TOKEN(TokenKind.Out, pos, { hasLeftSpacing });
-					} else {
-						return TOKEN(TokenKind.Lt, pos, { hasLeftSpacing });
 					}
+					return TOKEN(TokenKind.Lt, pos, { hasLeftSpacing });
 				}
 				case '=': {
 					this.stream.next();
@@ -230,18 +223,16 @@ export class Scanner implements ITokenStream {
 					} else if (!this.stream.eof && (this.stream.char as string) === '>') {
 						this.stream.next();
 						return TOKEN(TokenKind.Arrow, pos, { hasLeftSpacing });
-					} else {
-						return TOKEN(TokenKind.Eq, pos, { hasLeftSpacing });
 					}
+					return TOKEN(TokenKind.Eq, pos, { hasLeftSpacing });
 				}
 				case '>': {
 					this.stream.next();
 					if (!this.stream.eof && (this.stream.char as string) === '=') {
 						this.stream.next();
 						return TOKEN(TokenKind.GtEq, pos, { hasLeftSpacing });
-					} else {
-						return TOKEN(TokenKind.Gt, pos, { hasLeftSpacing });
 					}
+					return TOKEN(TokenKind.Gt, pos, { hasLeftSpacing });
 				}
 				case '?': {
 					this.stream.next();
@@ -260,7 +251,9 @@ export class Scanner implements ITokenStream {
 					if (!this.stream.eof && (this.stream.char as string) === 'u') {
 						this.stream.prev();
 						const wordToken = this.tryReadWord(hasLeftSpacing);
-						if (wordToken) return wordToken;
+						if (wordToken) {
+							return wordToken;
+						}
 					}
 					return TOKEN(TokenKind.BackSlash, pos, { hasLeftSpacing });
 				}
@@ -287,9 +280,8 @@ export class Scanner implements ITokenStream {
 					} else if (!this.stream.eof && (this.stream.char as string) === '>') {
 						this.stream.next();
 						return TOKEN(TokenKind.Pipe, pos, { hasLeftSpacing });
-					} else {
-						return TOKEN(TokenKind.Or, pos, { hasLeftSpacing });
 					}
+					return TOKEN(TokenKind.Or, pos, { hasLeftSpacing });
 				}
 				case '}': {
 					this.stream.next();
@@ -297,10 +289,14 @@ export class Scanner implements ITokenStream {
 				}
 				default: {
 					const digitToken = this.tryReadDigits(hasLeftSpacing);
-					if (digitToken) return digitToken;
+					if (digitToken) {
+						return digitToken;
+					}
 
 					const wordToken = this.tryReadWord(hasLeftSpacing);
-					if (wordToken) return wordToken;
+					if (wordToken) {
+						return wordToken;
+					}
 
 					throw new AiScriptSyntaxError(`invalid character: "${this.stream.char}"`, pos);
 				}
@@ -495,7 +491,7 @@ export class Scanner implements ITokenStream {
 			}
 			fractional = this.stream.char as string;
 			this.stream.next();
-			while (!this.stream.eof as boolean && decimalDigitOrUnderscore.test(this.stream.char as string)) {
+			while ((!this.stream.eof as boolean) && decimalDigitOrUnderscore.test(this.stream.char as string)) {
 				fractional += this.stream.char;
 				this.stream.next();
 			}
@@ -598,20 +594,34 @@ export class Scanner implements ITokenStream {
 	/**
 	 * `\`の直後から呼び出し、エスケープシーケンスをデコードして1文字以上の文字列を返します。
 	 * (呼び出し時点で`\`自体は読み飛ばし済みであることが前提)
-	*/
+	 */
 	private readEscapeSequence(literalStartPos: TokenPosition): string {
 		if (this.stream.eof) {
 			throw new AiScriptUnexpectedEOFError(literalStartPos);
 		}
 		const escapeChar = this.stream.char;
 		switch (escapeChar) {
-			case 'n': this.stream.next(); return '\n';
-			case 't': this.stream.next(); return '\t';
-			case 'r': this.stream.next(); return '\r';
-			case '0': this.stream.next(); return '\0';
-			case 'b': this.stream.next(); return '\b';
-			case 'f': this.stream.next(); return '\f';
-			case 'v': this.stream.next(); return '\v';
+			case 'n':
+				this.stream.next();
+				return '\n';
+			case 't':
+				this.stream.next();
+				return '\t';
+			case 'r':
+				this.stream.next();
+				return '\r';
+			case '0':
+				this.stream.next();
+				return '\0';
+			case 'b':
+				this.stream.next();
+				return '\b';
+			case 'f':
+				this.stream.next();
+				return '\f';
+			case 'v':
+				this.stream.next();
+				return '\v';
 			case 'u': {
 				const code = this.readUnicodeEscapeSequence().slice(1);
 				return String.fromCharCode(Number.parseInt(code, 16));

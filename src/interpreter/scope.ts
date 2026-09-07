@@ -14,7 +14,13 @@ export class Scope {
 	} = {};
 	public nsName?: string;
 
-	constructor(states: Map<string, Variable> = new Map(), parent?: Scope, name?: Scope['name'], nsName?: string, private typeParams: readonly TypeParam[] = []) {
+	constructor(
+		states: Map<string, Variable> = new Map(),
+		parent?: Scope,
+		name?: Scope['name'],
+		nsName?: string,
+		private typeParams: readonly TypeParam[] = [],
+	) {
 		this.states = states;
 		this.parent = parent;
 		this.name = name || (parent == null ? '<root>' : '<anonymous>');
@@ -25,7 +31,9 @@ export class Scope {
 		if (this.parent) {
 			this.parent.log(type, params);
 		} else {
-			if (this.opts.log) this.opts.log(type, params);
+			if (this.opts.log) {
+				this.opts.log(type, params);
+			}
 		}
 	}
 
@@ -33,15 +41,25 @@ export class Scope {
 		if (this.parent) {
 			this.parent.onUpdated(name, value);
 		} else {
-			if (this.opts.onUpdated) this.opts.onUpdated(name, value);
+			if (this.opts.onUpdated) {
+				this.opts.onUpdated(name, value);
+			}
 		}
 	}
 
-	public createChildScope(states: Map<string, Variable> = new Map(), name?: Scope['name'], typeParams: readonly TypeParam[] = []): Scope {
+	public createChildScope(
+		states: Map<string, Variable> = new Map(),
+		name?: Scope['name'],
+		typeParams: readonly TypeParam[] = [],
+	): Scope {
 		return new Scope(states, this, name, undefined, typeParams);
 	}
 
-	public createChildNamespaceScope(nsName: string, states: Map<string, Variable> = new Map(), name?: Scope['name']): Scope {
+	public createChildNamespaceScope(
+		nsName: string,
+		states: Map<string, Variable> = new Map(),
+		name?: Scope['name'],
+	): Scope {
 		return new Scope(states, this, name, nsName);
 	}
 
@@ -59,13 +77,15 @@ export class Scope {
 			return variable.value;
 		}
 
-		throw new AiScriptRuntimeError(
-			`No such variable '${name}' in scope '${this.name}'`,
-			{ scope: this.getLayerdStates() });
+		throw new AiScriptRuntimeError(`No such variable '${name}' in scope '${this.name}'`, {
+			scope: this.getLayerdStates(),
+		});
 	}
 
 	public getNsPrefix(): string {
-		if (this.parent == null || this.nsName == null) return '';
+		if (this.parent == null || this.nsName == null) {
+			return '';
+		}
 		return this.parent.getNsPrefix() + this.nsName + ':';
 	}
 
@@ -90,7 +110,9 @@ export class Scope {
 		}
 		for (let layer = this.parent; layer != null; layer = layer.parent) {
 			for (const [key, variable] of layer.states) {
-				if (!vars.has(key)) vars.set(key, variable);
+				if (!vars.has(key)) {
+					vars.set(key, variable);
+				}
 			}
 		}
 		return vars;
@@ -99,13 +121,16 @@ export class Scope {
 	public add(name: string, variable: Variable): void {
 		this.log('add', { var: name, val: variable });
 		if (this.states.has(name)) {
-			throw new AiScriptRuntimeError(
-				`Variable '${name}' already exists in scope '${this.name}'`,
-				{ scope: this.getLayerdStates() });
+			throw new AiScriptRuntimeError(`Variable '${name}' already exists in scope '${this.name}'`, {
+				scope: this.getLayerdStates(),
+			});
 		}
 		this.states.set(name, variable);
-		if (this.parent == null) this.onUpdated(name, variable.value);
-		else if (this.nsName != null) this.parent.add(this.nsName + ':' + name, variable);
+		if (this.parent == null) {
+			this.onUpdated(name, variable.value);
+		} else if (this.nsName != null) {
+			this.parent.add(this.nsName + ':' + name, variable);
+		}
 	}
 
 	public assign(name: string, val: Value): void {
@@ -116,7 +141,9 @@ export class Scope {
 			}
 			own.value = val;
 			this.log('assign', { var: name, val: val });
-			if (this.parent == null) this.onUpdated(name, val);
+			if (this.parent == null) {
+				this.onUpdated(name, val);
+			}
 			return;
 		}
 		for (let layer = this.parent; layer != null; layer = layer.parent) {
@@ -129,14 +156,16 @@ export class Scope {
 				variable.value = val;
 
 				this.log('assign', { var: name, val: val });
-				if (layer.parent == null) this.onUpdated(name, val);
+				if (layer.parent == null) {
+					this.onUpdated(name, val);
+				}
 				return;
 			}
 		}
 
-		throw new AiScriptRuntimeError(
-			`No such variable '${name}' in scope '${this.name}'`,
-			{ scope: this.getLayerdStates() });
+		throw new AiScriptRuntimeError(`No such variable '${name}' in scope '${this.name}'`, {
+			scope: this.getLayerdStates(),
+		});
 	}
 
 	// get() と assign() の二重探索を避け、複合代入を1回のスコープ探索で処理する。
@@ -149,7 +178,9 @@ export class Scope {
 			}
 			own.value = val;
 			this.log('assign', { var: name, val: val });
-			if (this.parent == null) this.onUpdated(name, val);
+			if (this.parent == null) {
+				this.onUpdated(name, val);
+			}
 			return;
 		}
 		for (let layer = this.parent; layer != null; layer = layer.parent) {
@@ -164,14 +195,16 @@ export class Scope {
 				variable.value = val;
 
 				this.log('assign', { var: name, val: val });
-				if (layer.parent == null) this.onUpdated(name, val);
+				if (layer.parent == null) {
+					this.onUpdated(name, val);
+				}
 				return;
 			}
 		}
 
-		throw new AiScriptRuntimeError(
-			`No such variable '${name}' in scope '${this.name}'`,
-			{ scope: this.getLayerdStates() });
+		throw new AiScriptRuntimeError(`No such variable '${name}' in scope '${this.name}'`, {
+			scope: this.getLayerdStates(),
+		});
 	}
 
 	// エラー情報の構築専用。get/exists/assign のホットパスでは呼び出さない。

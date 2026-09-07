@@ -1,7 +1,7 @@
 import * as assert from 'assert';
 import { describe, expect, test } from 'vitest';
-import { } from '../src';
-import { NUM, STR, NULL, ARR, OBJ, BOOL, TRUE, FALSE, ERROR ,FN_NATIVE } from '../src/interpreter/value';
+import {} from '../src';
+import { NUM, STR, NULL, ARR, OBJ, BOOL, TRUE, FALSE, ERROR, FN_NATIVE } from '../src/interpreter/value';
 import { AiScriptSyntaxError } from '../src/error';
 import { exe, eq } from './testutils';
 
@@ -26,8 +26,8 @@ describe('literal', () => {
 	});
 
 	test.concurrent('Escaped single quote', async () => {
-		const res = await exe('<: \'ai saw a note \\\'bebeyo\\\'.\'');
-		eq(res, STR('ai saw a note \'bebeyo\'.'));
+		const res = await exe("<: 'ai saw a note \\'bebeyo\\'.'");
+		eq(res, STR("ai saw a note 'bebeyo'."));
 	});
 
 	test.concurrent('Escape sequences', async () => {
@@ -90,15 +90,23 @@ describe('literal', () => {
 	});
 
 	test.concurrent('number (overflow)', async () => {
-		await assert.rejects(() => exe(`
+		await assert.rejects(
+			() =>
+				exe(`
 		<: 1e309
-		`), AiScriptSyntaxError);
+		`),
+			AiScriptSyntaxError,
+		);
 	});
 
 	test.concurrent('number (missing exponent)', async () => {
-		await assert.rejects(() => exe(`
+		await assert.rejects(
+			() =>
+				exe(`
 		<: 1.2e+
-		`), AiScriptSyntaxError);
+		`),
+			AiScriptSyntaxError,
+		);
 	});
 
 	test.concurrent('number (hexadecimal)', async () => {
@@ -123,16 +131,20 @@ describe('literal', () => {
 	});
 
 	test.concurrent('number (missing hexadecimal digit)', async () => {
-		await assert.rejects(() => exe(`
+		await assert.rejects(
+			() =>
+				exe(`
 		<: 0x
-		`), AiScriptSyntaxError);
+		`),
+			AiScriptSyntaxError,
+		);
 	});
 
 	test.concurrent('number (underscore separator)', async () => {
 		const res = await exe(`
 		<: [1_000_000, 0x1_F, 0b10_10, 0o1_7, 3.14_15, 1.2e1_0]
 		`);
-		eq(res, ARR([NUM(1000000), NUM(31), NUM(10), NUM(15), NUM(3.1415), NUM(12000000000)]));
+		eq(res, ARR([NUM(1_000_000), NUM(31), NUM(10), NUM(15), NUM(3.1415), NUM(12_000_000_000)]));
 	});
 
 	test.concurrent('number (invalid underscore separator)', async () => {
@@ -207,14 +219,32 @@ describe('literal', () => {
 		const res = await exe(`
 		<: { a: 1, b: 2, c: 3 }
 		`);
-		eq(res, OBJ(new Map([['a', NUM(1)], ['b', NUM(2)], ['c', NUM(3)]])));
+		eq(
+			res,
+			OBJ(
+				new Map([
+					['a', NUM(1)],
+					['b', NUM(2)],
+					['c', NUM(3)],
+				]),
+			),
+		);
 	});
 
 	test.concurrent('obj (separated by comma) (with trailing comma)', async () => {
 		const res = await exe(`
 		<: { a: 1, b: 2, c: 3, }
 		`);
-		eq(res, OBJ(new Map([['a', NUM(1)], ['b', NUM(2)], ['c', NUM(3)]])));
+		eq(
+			res,
+			OBJ(
+				new Map([
+					['a', NUM(1)],
+					['b', NUM(2)],
+					['c', NUM(3)],
+				]),
+			),
+		);
 	});
 
 	test.concurrent('obj (separated by line break)', async () => {
@@ -225,7 +255,16 @@ describe('literal', () => {
 			c: 3
 		}
 		`);
-		eq(res, OBJ(new Map([['a', NUM(1)], ['b', NUM(2)], ['c', NUM(3)]])));
+		eq(
+			res,
+			OBJ(
+				new Map([
+					['a', NUM(1)],
+					['b', NUM(2)],
+					['c', NUM(3)],
+				]),
+			),
+		);
 	});
 
 	test.concurrent('obj (string key)', async () => {
@@ -301,7 +340,7 @@ describe('literal', () => {
 			['meta'],
 			['module'],
 			['namespace'],
-			['new']
+			['new'],
 		])('key "%s"', async (key) => {
 			const res = await exe(`
 			<: {
@@ -313,19 +352,24 @@ describe('literal', () => {
 	});
 
 	test.concurrent('obj (escaped reserved word as key)', async () => {
-		await expect(async () => await exe(`
+		await expect(
+			async () =>
+				await exe(`
 		<: {
 			\\u0064\\u0065\\u0066\\u0061\\u0075\\u006c\\u0074: 42,
 		}
-		`)).rejects.toThrow(AiScriptSyntaxError);
-	})
+		`),
+		).rejects.toThrow(AiScriptSyntaxError);
+	});
 
 	test.concurrent('obj (invalid key)', async () => {
-		assert.rejects(() => exe(`
+		assert.rejects(() =>
+			exe(`
 		<: {
 			42: 42,
 		}
-		`));
+		`),
+		);
 	});
 
 	test.concurrent('obj and arr (separated by line break)', async () => {
@@ -340,11 +384,16 @@ describe('literal', () => {
 			c: 3
 		}
 		`);
-		eq(res, OBJ(new Map<string, any>([
-			['a', NUM(1)],
-			['b', ARR([NUM(1), NUM(2), NUM(3)])],
-			['c', NUM(3)]
-		])));
+		eq(
+			res,
+			OBJ(
+				new Map<string, any>([
+					['a', NUM(1)],
+					['b', ARR([NUM(1), NUM(2), NUM(3)])],
+					['c', NUM(3)],
+				]),
+			),
+		);
 	});
 });
 

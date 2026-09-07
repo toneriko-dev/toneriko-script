@@ -100,20 +100,36 @@ export function assertNull(val: Value | null | undefined): asserts val is VNull 
 }
 
 export function eq(a: Value, b: Value): boolean {
-	if (a.type === 'fn' && b.type === 'fn') return a.native && b.native ? a.native === b.native : a === b;
-	if (a.type === 'fn' || b.type === 'fn') return false;
-	if (a.type === 'null' && b.type === 'null') return true;
-	if (a.type === 'null' || b.type === 'null') return false;
-	return (a.value === b.value);
+	if (a.type === 'fn' && b.type === 'fn') {
+		return a.native && b.native ? a.native === b.native : a === b;
+	}
+	if (a.type === 'fn' || b.type === 'fn') {
+		return false;
+	}
+	if (a.type === 'null' && b.type === 'null') {
+		return true;
+	}
+	if (a.type === 'null' || b.type === 'null') {
+		return false;
+	}
+	return a.value === b.value;
 }
 
 export function valToString(val: Value, simple = false, processingObjects = new Set<object>()): string {
 	if (simple) {
-		if (val.type === 'num') return val.value.toString();
-		if (val.type === 'bool') return val.value ? 'true' : 'false';
-		if (val.type === 'str') return JSON.stringify(val.value);
+		if (val.type === 'num') {
+			return val.value.toString();
+		}
+		if (val.type === 'bool') {
+			return val.value ? 'true' : 'false';
+		}
+		if (val.type === 'str') {
+			return JSON.stringify(val.value);
+		}
 		if (val.type === 'arr') {
-			if (processingObjects.has(val.value)) return '...';
+			if (processingObjects.has(val.value)) {
+				return '...';
+			}
 			processingObjects.add(val.value);
 			const items = Array.from({ length: val.value.length }, (_, index) => {
 				const item = val.value[index];
@@ -123,17 +139,27 @@ export function valToString(val: Value, simple = false, processingObjects = new 
 			processingObjects.delete(val.value);
 			return result;
 		}
-		if (val.type === 'null') return '(null)';
+		if (val.type === 'null') {
+			return '(null)';
+		}
 	}
 	switch (val.type) {
-		case 'num': return `num<${val.value}>`;
-		case 'bool': return `bool<${val.value}>`;
-		case 'str': return `str<${JSON.stringify(val.value)}>`;
-		case 'fn': return 'fn<...>';
-		case 'arr': return 'arr<...>';
-		case 'obj': return 'obj<...>';
-		case 'error': return `error<${val.value}>`;
-		case 'null': return 'null<>';
+		case 'num':
+			return `num<${val.value}>`;
+		case 'bool':
+			return `bool<${val.value}>`;
+		case 'str':
+			return `str<${JSON.stringify(val.value)}>`;
+		case 'fn':
+			return 'fn<...>';
+		case 'arr':
+			return 'arr<...>';
+		case 'obj':
+			return 'obj<...>';
+		case 'error':
+			return `error<${val.value}>`;
+		case 'null':
+			return 'null<>';
 	}
 }
 
@@ -156,10 +182,13 @@ function defineJsProperty(target: { [key: string]: JsValue }, key: string, value
 
 function valToJsInternal(val: Value, converted: Map<object, JsValue>): JsValue {
 	switch (val.type) {
-		case 'fn': return '<function>';
+		case 'fn':
+			return '<function>';
 		case 'arr': {
 			const existing = converted.get(val.value);
-			if (existing !== undefined) return existing;
+			if (existing !== undefined) {
+				return existing;
+			}
 			const result: JsValue[] = [];
 			converted.set(val.value, result);
 			result.length = val.value.length;
@@ -169,12 +198,17 @@ function valToJsInternal(val: Value, converted: Map<object, JsValue>): JsValue {
 			}
 			return result;
 		}
-		case 'bool': return val.value;
-		case 'null': return null;
-		case 'num': return val.value;
+		case 'bool':
+			return val.value;
+		case 'null':
+			return null;
+		case 'num':
+			return val.value;
 		case 'obj': {
 			const existing = converted.get(val.value);
-			if (existing !== undefined) return existing;
+			if (existing !== undefined) {
+				return existing;
+			}
 			const result: { [key: string]: JsValue } = {};
 			converted.set(val.value, result);
 			for (const [key, value] of val.value) {
@@ -184,14 +218,17 @@ function valToJsInternal(val: Value, converted: Map<object, JsValue>): JsValue {
 		}
 		case 'error': {
 			const existing = converted.get(val);
-			if (existing !== undefined) return existing;
+			if (existing !== undefined) {
+				return existing;
+			}
 			const result: { [key: string]: JsValue } = {};
 			converted.set(val, result);
 			defineJsProperty(result, 'name', val.value);
 			defineJsProperty(result, 'info', val.info == null ? null : valToJsInternal(val.info, converted));
 			return result;
 		}
-		case 'str': return val.value;
+		case 'str':
+			return val.value;
 	}
 }
 
@@ -200,13 +237,23 @@ export function valToJs(val: Value): JsValue {
 }
 
 function jsToValInternal(val: unknown, converted: WeakMap<object, Value>): Value {
-	if (val === null) return NULL;
-	if (typeof val === 'boolean') return BOOL(val);
-	if (typeof val === 'string') return STR(val);
-	if (typeof val === 'number') return NUM(val);
+	if (val === null) {
+		return NULL;
+	}
+	if (typeof val === 'boolean') {
+		return BOOL(val);
+	}
+	if (typeof val === 'string') {
+		return STR(val);
+	}
+	if (typeof val === 'number') {
+		return NUM(val);
+	}
 	if (Array.isArray(val)) {
 		const existing = converted.get(val);
-		if (existing !== undefined) return existing;
+		if (existing !== undefined) {
+			return existing;
+		}
 		const result = ARR([]);
 		converted.set(val, result);
 		result.value.length = val.length;
@@ -217,7 +264,9 @@ function jsToValInternal(val: unknown, converted: WeakMap<object, Value>): Value
 	}
 	if (typeof val === 'object') {
 		const existing = converted.get(val);
-		if (existing !== undefined) return existing;
+		if (existing !== undefined) {
+			return existing;
+		}
 		const result = OBJ(new Map());
 		converted.set(val, result);
 		for (const [k, v] of Object.entries(val)) {
@@ -234,7 +283,7 @@ export function jsToVal(val: unknown): Value {
 
 export function getLangVersion(input: string): string | null {
 	const match = /^\s*\/\/\/\s*@\s*([A-Z0-9_.-]+)(?:[\r\n][\s\S]*)?$/i.exec(input);
-	return (match != null) ? match[1]! : null;
+	return match != null ? match[1]! : null;
 }
 
 export function reprValue(value: Value, literalLike = false, processingObjects = new Set<object>()): string {
@@ -242,9 +291,15 @@ export function reprValue(value: Value, literalLike = false, processingObjects =
 		return '...';
 	}
 
-	if (literalLike && value.type === 'str') return JSON.stringify(value.value);
-	if (value.type === 'str') return value.value;
-	if (value.type === 'num') return value.value.toString();
+	if (literalLike && value.type === 'str') {
+		return JSON.stringify(value.value);
+	}
+	if (value.type === 'str') {
+		return value.value;
+	}
+	if (value.type === 'num') {
+		return value.value.toString();
+	}
 	if (value.type === 'arr') {
 		processingObjects.add(value.value);
 		const content = [];
@@ -267,15 +322,20 @@ export function reprValue(value: Value, literalLike = false, processingObjects =
 		processingObjects.delete(value.value);
 		return '{ ' + content.join(', ') + ' }';
 	}
-	if (value.type === 'bool') return value.value.toString();
-	if (value.type === 'null') return 'null';
-	if (value.type === 'error') return `error<${value.value}>`;
+	if (value.type === 'bool') {
+		return value.value.toString();
+	}
+	if (value.type === 'null') {
+		return 'null';
+	}
+	if (value.type === 'error') {
+		return `error<${value.value}>`;
+	}
 	if (value.type === 'fn') {
 		if (value.native) {
 			return '@( ?? ) { native code }';
-		} else {
-			return `@( ${(value.params.map(v => v.dest.type === 'identifier' ? v.dest.name : '?')).join(', ')} ) { ... }`;
 		}
+		return `@( ${value.params.map((v) => (v.dest.type === 'identifier' ? v.dest.name : '?')).join(', ')} ) { ... }`;
 	}
 
 	value satisfies never;

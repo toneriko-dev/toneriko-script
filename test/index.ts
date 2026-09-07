@@ -1,10 +1,14 @@
 import * as assert from 'assert';
 import { describe, expect, test } from 'vitest';
 import { Parser, Interpreter, Ast } from '../src';
-import { NUM, STR, NULL, ARR, OBJ, BOOL, TRUE, FALSE, ERROR ,FN_NATIVE } from '../src/interpreter/value';
-import { AiScriptSyntaxError, AiScriptRuntimeError, AiScriptIndexOutOfRangeError, AiScriptUnexpectedEOFError } from '../src/error';
+import { NUM, STR, NULL, ARR, OBJ, BOOL, TRUE, FALSE, ERROR, FN_NATIVE } from '../src/interpreter/value';
+import {
+	AiScriptSyntaxError,
+	AiScriptRuntimeError,
+	AiScriptIndexOutOfRangeError,
+	AiScriptUnexpectedEOFError,
+} from '../src/error';
 import { exe, eq } from './testutils';
-
 
 test.concurrent('Hello, world!', async () => {
 	const res = await exe('<: "Hello, world!"');
@@ -181,15 +185,23 @@ describe('Object', () => {
 
 		<: obj
 		`);
-		eq(res, OBJ(new Map<string, any>([
-			['a', NUM(24)],
-			['b', OBJ(new Map<string, any>([
-				['c', NUM(2)],
-				['d', OBJ(new Map<string, any>([
-					['e', NUM(42)],
-				]))],
-			]))],
-		])));
+		eq(
+			res,
+			OBJ(
+				new Map<string, any>([
+					['a', NUM(24)],
+					[
+						'b',
+						OBJ(
+							new Map<string, any>([
+								['c', NUM(2)],
+								['d', OBJ(new Map<string, any>([['e', NUM(42)]]))],
+							]),
+						),
+					],
+				]),
+			),
+		);
 	});
 
 	test.concurrent('string key', async () => {
@@ -215,7 +227,9 @@ describe('Object', () => {
 	});
 
 	test.concurrent('unsupported expression key is rejected', async () => {
-		await assert.rejects(() => exe(`
+		await assert.rejects(
+			() =>
+				exe(`
 		let key = "藍"
 
 		let obj = {
@@ -223,7 +237,9 @@ describe('Object', () => {
 		}
 
 		<: obj<key>
-		`), AiScriptSyntaxError);
+		`),
+			AiScriptSyntaxError,
+		);
 	});
 });
 
@@ -249,21 +265,27 @@ describe('Array', () => {
 	});
 
 	test.concurrent('Assign array item to out of range', async () => {
-		assert.rejects(exe(`
+		assert.rejects(
+			exe(`
 			let arr = [1, 2, 3]
 
 			arr[3] = 4
 
 			<: null
-		`), AiScriptIndexOutOfRangeError);
+		`),
+			AiScriptIndexOutOfRangeError,
+		);
 
-		assert.rejects(exe(`
+		assert.rejects(
+			exe(`
 			let arr = [1, 2, 3]
 
 			arr[9] = 10
 
 			<: null
-		`), AiScriptIndexOutOfRangeError)
+		`),
+			AiScriptIndexOutOfRangeError,
+		);
 	});
 
 	test.concurrent('index out of range error', async () => {
@@ -341,11 +363,7 @@ describe('chain', () => {
 
 		<: obj
 		`);
-		eq(res, OBJ(new Map([
-			['a', OBJ(new Map([
-				['b', ARR([STR('ai'), STR('taso'), STR('kawaii')])]
-			]))]
-		])));
+		eq(res, OBJ(new Map([['a', OBJ(new Map([['b', ARR([STR('ai'), STR('taso'), STR('kawaii')])]]))]])));
 	});
 
 	test.concurrent('chained assign right side (prop + index + call)', async () => {
@@ -378,12 +396,17 @@ describe('chain', () => {
 
 		<: arr
 		`);
-		eq(res, ARR([
-			OBJ(new Map([
-				['a', NUM(2)],
-				['b', NUM(1)]
-			]))
-		]));
+		eq(
+			res,
+			ARR([
+				OBJ(
+					new Map([
+						['a', NUM(2)],
+						['b', NUM(1)],
+					]),
+				),
+			]),
+		);
 	});
 
 	test.concurrent('chained inc/dec left side (prop + index)', async () => {
@@ -399,11 +422,7 @@ describe('chain', () => {
 
 		<: obj
 		`);
-		eq(res, OBJ(new Map([
-			['a', OBJ(new Map([
-				['b', ARR([NUM(1), NUM(3), NUM(2)])]
-			]))]
-		])));
+		eq(res, OBJ(new Map([['a', OBJ(new Map([['b', ARR([NUM(1), NUM(3), NUM(2)])]]))]])));
 	});
 
 	test.concurrent('prop in def', async () => {
@@ -473,12 +492,9 @@ describe('chain', () => {
 				(a.b).c
 			`);
 		const line = ast[0];
-		if (
-			line.type !== 'prop' ||
-			line.target.type !== 'prop' ||
-			line.target.target.type !== 'identifier'
-		)
+		if (line.type !== 'prop' || line.target.type !== 'prop' || line.target.target.type !== 'identifier') {
 			assert.fail();
+		}
 		assert.equal(line.target.target.name, 'a');
 		assert.equal(line.target.name, 'b');
 		assert.equal(line.name, 'c');
@@ -494,8 +510,9 @@ describe('chain', () => {
 			line.target.type !== 'index' ||
 			line.target.target.type !== 'identifier' ||
 			line.target.index.type !== 'num'
-		)
+		) {
 			assert.fail();
+		}
 		assert.equal(line.target.target.name, 'a');
 		assert.equal(line.target.index.value, 42);
 		assert.equal(line.name, 'b');
@@ -513,8 +530,9 @@ describe('chain', () => {
 			line.target.args.length !== 2 ||
 			line.target.args[0].type !== 'num' ||
 			line.target.args[1].type !== 'num'
-		)
+		) {
 			assert.fail();
+		}
 		assert.equal(line.target.target.name, 'foo');
 		assert.equal(line.target.args[0].value, 42);
 		assert.equal(line.target.args[1].value, 57);
@@ -532,8 +550,9 @@ describe('chain', () => {
 			line.target.target.type !== 'prop' ||
 			line.target.target.target.type !== 'prop' ||
 			line.target.target.target.target.type !== 'identifier'
-		)
+		) {
 			assert.fail();
+		}
 		assert.equal(line.target.target.target.target.name, 'a');
 		assert.equal(line.target.target.target.name, 'b');
 		assert.equal(line.target.target.name, 'c');
@@ -762,8 +781,7 @@ describe('Return', () => {
 		eq(res, NUM(1));
 	});
 
-	test.concurrent('return inside each', async () =>
-	{
+	test.concurrent('return inside each', async () => {
 		const res = await exe(`
 		@f() {
 			var count = 0
@@ -779,8 +797,7 @@ describe('Return', () => {
 		eq(res, NUM(2));
 	});
 
-	test.concurrent('return inside each 2', async () =>
-	{
+	test.concurrent('return inside each 2', async () => {
 		const res = await exe(`
 		@f() {
 			each (let item, ["ai", "chan", "kawaii"]) {
@@ -849,13 +866,19 @@ describe('Attribute', () => {
 		`);
 		assert.equal(nodes.length, 1);
 		node = nodes[0];
-		if (node.type !== 'def' || node.dest.type !== 'identifier') assert.fail();
+		if (node.type !== 'def' || node.dest.type !== 'identifier') {
+			assert.fail();
+		}
 		assert.equal(node.dest.name, 'onRecieved');
 		assert.equal(node.attr.length, 1);
 		attr = node.attr[0];
-		if (attr.type !== 'attr') assert.fail();
+		if (attr.type !== 'attr') {
+			assert.fail();
+		}
 		assert.equal(attr.name, 'Event');
-		if (attr.value.type !== 'str') assert.fail();
+		if (attr.value.type !== 'str') {
+			assert.fail();
+		}
 		assert.equal(attr.value.value, 'Recieved');
 	});
 
@@ -873,32 +896,47 @@ describe('Attribute', () => {
 		`);
 		assert.equal(nodes.length, 1);
 		node = nodes[0];
-		if (node.type !== 'def' || node.dest.type !== 'identifier') assert.fail();
+		if (node.type !== 'def' || node.dest.type !== 'identifier') {
+			assert.fail();
+		}
 		assert.equal(node.dest.name, 'createNote');
 		assert.equal(node.attr.length, 3);
 		attr = node.attr[0];
-		if (attr.type !== 'attr') assert.fail();
+		if (attr.type !== 'attr') {
+			assert.fail();
+		}
 		assert.equal(attr.name, 'Endpoint');
-		if (attr.value.type !== 'obj') assert.fail();
+		if (attr.value.type !== 'obj') {
+			assert.fail();
+		}
 		assert.equal(attr.value.value.size, 1);
 		for (const [k, v] of attr.value.value) {
 			if (k === 'path') {
-				if (v.type !== 'str') assert.fail();
+				if (v.type !== 'str') {
+					assert.fail();
+				}
 				assert.equal(v.value, '/notes/create');
-			}
-			else {
+			} else {
 				assert.fail();
 			}
 		}
 		attr = node.attr[1];
-		if (attr.type !== 'attr') assert.fail();
+		if (attr.type !== 'attr') {
+			assert.fail();
+		}
 		assert.equal(attr.name, 'Desc');
-		if (attr.value.type !== 'str') assert.fail();
+		if (attr.value.type !== 'str') {
+			assert.fail();
+		}
 		assert.equal(attr.value.value, 'Create a note.');
 		attr = node.attr[2];
-		if (attr.type !== 'attr') assert.fail();
+		if (attr.type !== 'attr') {
+			assert.fail();
+		}
 		assert.equal(attr.name, 'Cat');
-		if (attr.value.type !== 'bool') assert.fail();
+		if (attr.value.type !== 'bool') {
+			assert.fail();
+		}
 		assert.equal(attr.value.value, true);
 	});
 
@@ -913,26 +951,36 @@ describe('Attribute', () => {
 		assert.equal(nodes.length, 1);
 		const ifNode = nodes[0];
 		assert.equal(ifNode.type, 'if');
-		if (ifNode.type !== 'if') assert.fail();
+		if (ifNode.type !== 'if') {
+			assert.fail();
+		}
 		assert.equal(ifNode.then.type, 'block');
-		if (ifNode.then.type !== 'block') assert.fail();
+		if (ifNode.then.type !== 'block') {
+			assert.fail();
+		}
 		assert.equal(ifNode.then.statements.length, 1);
 		const definition = ifNode.then.statements[0];
 		assert.equal(definition.type, 'def');
-		if (definition.type !== 'def') assert.fail();
+		if (definition.type !== 'def') {
+			assert.fail();
+		}
 		assert.equal(definition.attr.length, 1);
 		const attr = definition.attr[0];
 		assert.equal(attr.name, 'x');
 		assert.equal(attr.value.type, 'num');
-		if (attr.value.type !== 'num') assert.fail();
+		if (attr.value.type !== 'num') {
+			assert.fail();
+		}
 		assert.equal(attr.value.value, 42);
 	});
 
 	test.concurrent('attribute target does not exist', async () => {
 		const parser = new Parser();
-		expect(() => parser.parse(`
+		expect(() =>
+			parser.parse(`
 		#[orphan]
-		`)).toThrow(AiScriptUnexpectedEOFError);
+		`),
+		).toThrow(AiScriptUnexpectedEOFError);
 	});
 
 	test.concurrent('single attribute (no value)', async () => {
@@ -945,13 +993,17 @@ describe('Attribute', () => {
 		`);
 		assert.equal(nodes.length, 1);
 		node = nodes[0];
-		if (node.type !== 'def' || node.dest.type !== 'identifier') assert.fail();
+		if (node.type !== 'def' || node.dest.type !== 'identifier') {
+			assert.fail();
+		}
 		assert.equal(node.dest.name, 'data');
 		assert.equal(node.attr.length, 1);
 		attr = node.attr[0];
 		assert.ok(attr.type === 'attr');
 		assert.equal(attr.name, 'serializable');
-		if (attr.value.type !== 'bool') assert.fail();
+		if (attr.value.type !== 'bool') {
+			assert.fail();
+		}
 		assert.equal(attr.value.value, true);
 	});
 
@@ -994,7 +1046,9 @@ describe('Location', () => {
 		`);
 		assert.equal(nodes.length, 1);
 		node = nodes[0];
-		if (!node.loc) assert.fail();
+		if (!node.loc) {
+			assert.fail();
+		}
 		assert.deepEqual(node.loc, {
 			start: { line: 2, column: 4 },
 			end: { line: 2, column: 15 },
@@ -1011,7 +1065,9 @@ describe('Location', () => {
 		`);
 		assert.equal(nodes.length, 1);
 		node = nodes[0];
-		if (!node.loc) assert.fail();
+		if (!node.loc) {
+			assert.fail();
+		}
 		assert.deepEqual(node.loc.start, { line: 5, column: 3 });
 	});
 	test.concurrent('template', async () => {
@@ -1022,7 +1078,9 @@ describe('Location', () => {
 		`);
 		assert.equal(nodes.length, 1);
 		node = nodes[0];
-		if (!node.loc || node.type !== "tmpl") assert.fail();
+		if (!node.loc || node.type !== 'tmpl') {
+			assert.fail();
+		}
 		assert.deepEqual(node.loc, {
 			start: { line: 2, column: 4 },
 			end: { line: 2, column: 17 },
@@ -1164,23 +1222,26 @@ describe('extra', () => {
 		}
 		<: res
 		`);
-		eq(res, ARR([
-			NUM(1),
-			NUM(2),
-			STR('Fizz'),
-			NUM(4),
-			STR('Buzz'),
-			STR('Fizz'),
-			NUM(7),
-			NUM(8),
-			STR('Fizz'),
-			STR('Buzz'),
-			NUM(11),
-			STR('Fizz'),
-			NUM(13),
-			NUM(14),
-			STR('FizzBuzz'),
-		]));
+		eq(
+			res,
+			ARR([
+				NUM(1),
+				NUM(2),
+				STR('Fizz'),
+				NUM(4),
+				STR('Buzz'),
+				STR('Fizz'),
+				NUM(7),
+				NUM(8),
+				STR('Fizz'),
+				STR('Buzz'),
+				NUM(11),
+				STR('Fizz'),
+				NUM(13),
+				NUM(14),
+				STR('FizzBuzz'),
+			]),
+		);
 	});
 
 	test.concurrent('SKI', async () => {

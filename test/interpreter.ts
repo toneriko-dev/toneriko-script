@@ -10,14 +10,14 @@ test('maxStep is applied per top-level execution', async () => {
 	const parser = new Parser();
 	const interpreter = new Interpreter({}, { maxStep: 10 });
 	const script = parser.parse('<: 1');
-	for (let i = 0; i < 20; i++) await interpreter.exec(script);
+	for (let i = 0; i < 20; i++) {
+		await interpreter.exec(script);
+	}
 });
 
 describe('value conversion', () => {
 	test.concurrent('special object keys do not alter the prototype', () => {
-		const value = OBJ(new Map([
-			['__proto__', OBJ(new Map([['polluted', TRUE]]))],
-		]));
+		const value = OBJ(new Map([['__proto__', OBJ(new Map([['polluted', TRUE]]))]]));
 		const result = utils.valToJs(value);
 
 		expect(Object.getPrototypeOf(result)).toBe(Object.prototype);
@@ -49,7 +49,9 @@ describe('value conversion', () => {
 		const result = utils.jsToVal(source);
 
 		expect(result.type).toBe('obj');
-		if (result.type !== 'obj') return;
+		if (result.type !== 'obj') {
+			return;
+		}
 		expect(result.value.get('self')).toBe(result);
 		expect(result.value.get('first')).toBe(result.value.get('second'));
 		const convertedSparse = result.value.get('sparse');
@@ -105,17 +107,24 @@ describe('value conversion', () => {
 		expect(utils.valToString(STR(text))).toBe(`str<${literal}>`);
 		expect(utils.valToString(STR(text), true)).toBe(literal);
 		expect(utils.reprValue(ARR([STR(text)]))).toBe(`[ ${literal} ]`);
-		expect(utils.reprValue(OBJ(new Map([
-			['foo-bar', STR(text)],
-			['normal', NUM(1)],
-		])))).toBe(`{ "foo-bar": ${literal}, normal: 1 }`);
+		expect(
+			utils.reprValue(
+				OBJ(
+					new Map([
+						['foo-bar', STR(text)],
+						['normal', NUM(1)],
+					]),
+				),
+			),
+		).toBe(`{ "foo-bar": ${literal}, normal: 1 }`);
 	});
 });
 
 describe('Scope', () => {
 	test.concurrent('getAll', async () => {
 		const aiscript = new Interpreter({});
-		await aiscript.exec(Parser.parse(`
+		await aiscript.exec(
+			Parser.parse(`
 		let a = 1
 		@b() {
 			let x = a + 1
@@ -125,7 +134,8 @@ describe('Scope', () => {
 			var y = 2
 		}
 		var c = true
-		`));
+		`),
+		);
 		const vars = aiscript.scope.getAll();
 		assert.ok(vars.get('a') != null);
 		assert.ok(vars.get('b') != null);
@@ -139,22 +149,29 @@ describe('error handler', () => {
 	test.concurrent('error from outside caller', async () => {
 		let outsideCaller: () => Promise<void> = async () => {};
 		let errCount: number = 0;
-		const aiscript = new Interpreter({
-			emitError: FN_NATIVE((_args, _opts) => {
-				throw Error('emitError');
-			}),
-			genOutsideCaller: FN_NATIVE(([fn], opts) => {
-				utils.assertFunction(fn);
-				outsideCaller = async () => {
-					opts.topCall(fn, []);
-				};
-			}),
-		}, {
-			err(e) { errCount++ },
-		});
-		await aiscript.exec(Parser.parse(`
+		const aiscript = new Interpreter(
+			{
+				emitError: FN_NATIVE((_args, _opts) => {
+					throw Error('emitError');
+				}),
+				genOutsideCaller: FN_NATIVE(([fn], opts) => {
+					utils.assertFunction(fn);
+					outsideCaller = async () => {
+						opts.topCall(fn, []);
+					};
+				}),
+			},
+			{
+				err(e) {
+					errCount++;
+				},
+			},
+		);
+		await aiscript.exec(
+			Parser.parse(`
 		genOutsideCaller(emitError)
-		`));
+		`),
+		);
 		assert.strictEqual(errCount, 0);
 		await outsideCaller();
 		assert.strictEqual(errCount, 1);
@@ -162,12 +179,19 @@ describe('error handler', () => {
 
 	test.concurrent('array.map calls the handler just once', async () => {
 		let errCount: number = 0;
-		const aiscript = new Interpreter({}, {
-			err(e) { errCount++ },
-		});
-		await aiscript.exec(Parser.parse(`
+		const aiscript = new Interpreter(
+			{},
+			{
+				err(e) {
+					errCount++;
+				},
+			},
+		);
+		await aiscript.exec(
+			Parser.parse(`
 		Core:range(1,5).map(@(){ hoge })
-		`));
+		`),
+		);
 		assert.strictEqual(errCount, 1);
 	});
 });
@@ -220,66 +244,88 @@ describe('Async timers', () => {
 });
 
 describe('error location', () => {
-	const exeAndGetErrPos = (src: string): Promise<Ast.Pos|undefined> => new Promise((ok, ng) => {
-		const aiscript = new Interpreter({
-			emitError: FN_NATIVE((_args, _opts) => {
-				throw Error('emitError');
-			}),
-		}, {
-			err(e) { ok(e.pos) },
+	const exeAndGetErrPos = (src: string): Promise<Ast.Pos | undefined> =>
+		new Promise((ok, ng) => {
+			const aiscript = new Interpreter(
+				{
+					emitError: FN_NATIVE((_args, _opts) => {
+						throw Error('emitError');
+					}),
+				},
+				{
+					err(e) {
+						ok(e.pos);
+					},
+				},
+			);
+			aiscript.exec(Parser.parse(src)).then(() => ng('error has not occured.'));
 		});
-		aiscript.exec(Parser.parse(src)).then(() => ng('error has not occured.'));
-	});
 
 	test.concurrent('Non-aiscript Error', async () => {
-		return expect(exeAndGetErrPos(`/* (の位置
+		return expect(
+			exeAndGetErrPos(`/* (の位置
 			*/
 			emitError()
-		`)).resolves.toEqual({ line: 3, column: 13});
+		`),
+		).resolves.toEqual({ line: 3, column: 13 });
 	});
 
 	test.concurrent('No "var" in namespace declaration', async () => {
-		return expect(exeAndGetErrPos(`// vの位置
+		return expect(
+			exeAndGetErrPos(`// vの位置
 			:: Ai {
 				let chan = 'kawaii'
 				var kun = '!?'
 			}
-		`)).resolves.toEqual({ line: 4, column: 5});
+		`),
+		).resolves.toEqual({ line: 4, column: 5 });
 	});
 
 	test.concurrent('Index out of range', async () => {
-		return expect(exeAndGetErrPos(`// [の位置
+		return expect(
+			exeAndGetErrPos(`// [の位置
 			let arr = []
 			arr[0]
-		`)).resolves.toEqual({ line: 3, column: 7});
+		`),
+		).resolves.toEqual({ line: 3, column: 7 });
 	});
 
 	test.concurrent('Error in passed function', async () => {
-		return expect(exeAndGetErrPos(`// (の位置
+		return expect(
+			exeAndGetErrPos(`// (の位置
 			[1, 2, 3].map(@(v){
 				if v==1 Core:abort("error")
 			})
-		`)).resolves.toEqual({ line: 3, column: 23});
+		`),
+		).resolves.toEqual({ line: 3, column: 23 });
 	});
 
 	test.concurrent('No such prop', async () => {
-		return expect(exeAndGetErrPos(`// .の位置
+		return expect(
+			exeAndGetErrPos(`// .の位置
 			[].ai
-		`)).resolves.toEqual({ line: 2, column: 6});
+		`),
+		).resolves.toEqual({ line: 2, column: 6 });
 	});
 });
 
 describe('callstack', () => {
-	const exeAndGetErrMessage = (src: string): Promise<string> => new Promise((ok, ng) => {
-		const aiscript = new Interpreter({
-			emitError: FN_NATIVE((_args, _opts) => {
-				throw Error('emitError');
-			}),
-		}, {
-			err(e) { ok(e.message) },
+	const exeAndGetErrMessage = (src: string): Promise<string> =>
+		new Promise((ok, ng) => {
+			const aiscript = new Interpreter(
+				{
+					emitError: FN_NATIVE((_args, _opts) => {
+						throw Error('emitError');
+					}),
+				},
+				{
+					err(e) {
+						ok(e.message);
+					},
+				},
+			);
+			aiscript.exec(Parser.parse(src)).then(() => ng('error has not occurred.'));
 		});
-		aiscript.exec(Parser.parse(src)).then(() => ng('error has not occurred.'));
-	});
 
 	test('error in function', async () => {
 		const result = await exeAndGetErrMessage(`
@@ -323,12 +369,16 @@ describe('IRQ', () => {
 	describe('irqSleep is function', () => {
 		async function countSleeps(irqRate: number): Promise<number> {
 			let count = 0;
-			const interpreter = new Interpreter({}, {
-				irqRate,
-				// 大規模なループを実行しないテストでのみ安全に使える。
-				irqSleep: async () => count++,
-			});
-			await interpreter.exec(Parser.parse(`
+			const interpreter = new Interpreter(
+				{},
+				{
+					irqRate,
+					// 大規模なループを実行しないテストでのみ安全に使える。
+					irqSleep: async () => count++,
+				},
+			);
+			await interpreter.exec(
+				Parser.parse(`
 			'Ai-chan kawaii'
 			'Ai-chan kawaii'
 			'Ai-chan kawaii'
@@ -338,7 +388,8 @@ describe('IRQ', () => {
 			'Ai-chan kawaii'
 			'Ai-chan kawaii'
 			'Ai-chan kawaii'
-			'Ai-chan kawaii'`));
+			'Ai-chan kawaii'`),
+			);
 			return count;
 		}
 
@@ -352,9 +403,7 @@ describe('IRQ', () => {
 			return expect(countSleeps(rate)).resolves.toEqual(count);
 		});
 
-		test.concurrent.each(
-			[-1, NaN],
-		)('rate = %d', async (rate, count) => {
+		test.concurrent.each([-1, NaN])('rate = %d', async (rate, count) => {
 			return expect(countSleeps(rate)).rejects.toThrow(AiScriptHostsideError);
 		});
 	});
@@ -362,11 +411,15 @@ describe('IRQ', () => {
 	describe('irqSleep is number', () => {
 		// この関数はIRQを10回実行するため、合計で10 * irqSleepミリ秒かかる。
 		async function countSleeps(irqSleep: number): Promise<void> {
-			const interpreter = new Interpreter({}, {
-				irqRate: 1,
-				irqSleep,
-			});
-			await interpreter.exec(Parser.parse(`
+			const interpreter = new Interpreter(
+				{},
+				{
+					irqRate: 1,
+					irqSleep,
+				},
+			);
+			await interpreter.exec(
+				Parser.parse(`
 			'Ai-chan kawaii'
 			'Ai-chan kawaii'
 			'Ai-chan kawaii'
@@ -376,16 +429,17 @@ describe('IRQ', () => {
 			'Ai-chan kawaii'
 			'Ai-chan kawaii'
 			'Ai-chan kawaii'
-			'Ai-chan kawaii'`));
+			'Ai-chan kawaii'`),
+			);
 		}
 
 		beforeEach(() => {
 			vi.useFakeTimers();
-		})
+		});
 
 		afterEach(() => {
 			vi.restoreAllMocks();
-		})
+		});
 
 		test('It ends', async () => {
 			const countSleepsSpy = vi.fn(countSleeps);
@@ -401,9 +455,7 @@ describe('IRQ', () => {
 			return expect(countSleepsSpy).not.toHaveResolved();
 		});
 
-		test.each(
-			[-1, NaN]
-		)('Invalid number: %d', (time) => {
+		test.each([-1, NaN])('Invalid number: %d', (time) => {
 			return expect(countSleeps(time)).rejects.toThrow(AiScriptHostsideError);
 		});
 	});
@@ -412,31 +464,34 @@ describe('IRQ', () => {
 describe('pause', () => {
 	async function exePausable() {
 		let count = 0;
-		
-		const interpreter = new Interpreter({
-			count: values.FN_NATIVE(() => { count++; }),
-		}, {});
+
+		const interpreter = new Interpreter(
+			{
+				count: values.FN_NATIVE(() => {
+					count++;
+				}),
+			},
+			{},
+		);
 
 		// await で非同期実行時のエラーを捕捉する。
-		await interpreter.exec(Parser.parse(
-			`Async:interval(100, @() { count() })`
-		));
+		await interpreter.exec(Parser.parse(`Async:interval(100, @() { count() })`));
 
 		return {
 			pause: interpreter.pause,
 			unpause: interpreter.unpause,
 			getCount: () => count,
-			resetCount: () => count = 0,
+			resetCount: () => (count = 0),
 		};
 	}
 
 	beforeEach(() => {
 		vi.useFakeTimers();
-	})
+	});
 
 	afterEach(() => {
 		vi.restoreAllMocks();
-	})
+	});
 
 	test('basic', async () => {
 		const p = await exePausable();
@@ -458,9 +513,11 @@ describe('pause', () => {
 
 	describe('randomly scheduled pausing', () => {
 		function rnd(min: number, max: number): number {
-			return Math.floor(min + (Math.random() * (max - min + 1)));
+			return Math.floor(min + Math.random() * (max - min + 1));
 		}
-		const schedule = Array(rnd(2, 10)).fill(0).map(() => rnd(1, 10) * 100);
+		const schedule = Array(rnd(2, 10))
+			.fill(0)
+			.map(() => rnd(1, 10) * 100);
 		const title = schedule.map((v, i) => `${i % 2 ? 'un' : ''}pause ${v}`).join(', ');
 
 		test(title, async () => {
@@ -470,8 +527,9 @@ describe('pause', () => {
 				if (i % 2) {
 					p.unpause();
 					answer += v / 100;
+				} else {
+					p.pause();
 				}
-				else p.pause();
 				await vi.advanceTimersByTimeAsync(v);
 			}
 			return expect(p.getCount()).toEqual(answer);
@@ -490,57 +548,83 @@ describe('Attribute', () => {
 	};
 
 	test.concurrent('no attribute', async () => {
-		const attr = await getAttr('f', `
+		const attr = await getAttr(
+			'f',
+			`
 		@f() {}
-		`);
+		`,
+		);
 		expect(attr).toBeUndefined();
 	});
 
 	test.concurrent('single attribute', async () => {
-		const attr = await getAttr('f', `
+		const attr = await getAttr(
+			'f',
+			`
 		#[x 42]
 		@f() {}
-		`);
+		`,
+		);
 		expect(attr).toStrictEqual([{ name: 'x', value: NUM(42) }]);
 	});
 
 	test.concurrent('attribute with a negative number', async () => {
-		const attr = await getAttr('f', `
+		const attr = await getAttr(
+			'f',
+			`
 		#[x -42]
 		@f() {}
-		`);
+		`,
+		);
 		expect(attr).toStrictEqual([{ name: 'x', value: NUM(-42) }]);
 	});
 
 	test.concurrent('multiple attributes', async () => {
-		const attr = await getAttr('f', `
+		const attr = await getAttr(
+			'f',
+			`
 		#[o { a: 1, b: 2 }]
 		#[s "ai"]
 		#[b false]
 		@f() {}
-		`);
+		`,
+		);
 		expect(attr).toStrictEqual([
-			{ name: 'o', value: OBJ(new Map([['a', NUM(1)], ['b', NUM(2)]])) },
+			{
+				name: 'o',
+				value: OBJ(
+					new Map([
+						['a', NUM(1)],
+						['b', NUM(2)],
+					]),
+				),
+			},
 			{ name: 's', value: STR('ai') },
 			{ name: 'b', value: FALSE },
 		]);
 	});
 
 	test.concurrent('single attribute without value', async () => {
-		const attr = await getAttr('f', `
+		const attr = await getAttr(
+			'f',
+			`
 		#[x]
 		@f() {}
-		`);
+		`,
+		);
 		expect(attr).toStrictEqual([{ name: 'x', value: TRUE }]);
 	});
 
 	test.concurrent('attribute under namespace', async () => {
-		const attr = await getAttr('Ns:f', `
+		const attr = await getAttr(
+			'Ns:f',
+			`
 		:: Ns {
 			#[x 42]
 			@f() {}
 		}
-		`);
+		`,
+		);
 		expect(attr).toStrictEqual([{ name: 'x', value: NUM(42) }]);
 	});
 

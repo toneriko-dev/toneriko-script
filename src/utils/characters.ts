@@ -1,7 +1,7 @@
-const MIN_HIGH_SURROGATE = 0xD800;
-const MAX_HIGH_SURROGATE = 0xDBFF;
-const MIN_LOW_SURROGATE = 0xDC00;
-const MAX_LOW_SURROGATE = 0xDFFF;
+const MIN_HIGH_SURROGATE = 0xd8_00;
+const MAX_HIGH_SURROGATE = 0xdb_ff;
+const MIN_LOW_SURROGATE = 0xdc_00;
+const MAX_LOW_SURROGATE = 0xdf_ff;
 const HEX_DIGIT = /^[0-9a-fA-F]$/;
 
 export function isHighSurrogate(string: string, index = 0): boolean {

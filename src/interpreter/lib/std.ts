@@ -1,6 +1,18 @@
 /* eslint-disable no-empty-pattern */
 import { NUM, STR, FN_NATIVE, FALSE, TRUE, ARR, NULL, BOOL, OBJ, ERROR } from '../value.js';
-import { assertNumber, assertString, assertBoolean, valToJs, jsToVal, assertFunction, assertObject, eq, expectAny, assertArray, reprValue } from '../util.js';
+import {
+	assertNumber,
+	assertString,
+	assertBoolean,
+	valToJs,
+	jsToVal,
+	assertFunction,
+	assertObject,
+	eq,
+	expectAny,
+	assertArray,
+	reprValue,
+} from '../util.js';
 import { AiScriptRuntimeError, AiScriptUserError } from '../../error.js';
 import { AISCRIPT_VERSION, MAX_NATIVE_VALUE_SIZE } from '../../constants.js';
 import { textDecoder } from '../../const.js';
@@ -10,7 +22,7 @@ import type { Value } from '../value.js';
 export const std: Record<string, Value> = {
 	...stdMath,
 
-	'help': STR('SEE: https://github.com/syuilo/aiscript/blob/master/docs/get-started.md'),
+	help: STR('SEE: https://github.com/syuilo/aiscript/blob/master/docs/get-started.md'),
 
 	//#region Core
 	'Core:v': STR(AISCRIPT_VERSION),
@@ -36,14 +48,18 @@ export const std: Record<string, Value> = {
 
 	'Core:and': FN_NATIVE(([a, b]) => {
 		assertBoolean(a);
-		if (!a.value) return FALSE;
+		if (!a.value) {
+			return FALSE;
+		}
 		assertBoolean(b);
 		return b.value ? TRUE : FALSE;
 	}),
 
 	'Core:or': FN_NATIVE(([a, b]) => {
 		assertBoolean(a);
-		if (a.value) return TRUE;
+		if (a.value) {
+			return TRUE;
+		}
 		assertBoolean(b);
 		return b.value ? TRUE : FALSE;
 	}),
@@ -125,15 +141,18 @@ export const std: Record<string, Value> = {
 		assertNumber(a);
 		assertNumber(b);
 		const length = Math.abs(b.value - a.value) + 1;
-		if (!Number.isSafeInteger(length)) throw new AiScriptRuntimeError('Core:range expected safe integer bounds');
-		if (length > MAX_NATIVE_VALUE_SIZE) throw new AiScriptRuntimeError(`Core:range size must not exceed ${MAX_NATIVE_VALUE_SIZE}`);
-		if (a.value < b.value) {
-			return ARR(Array.from({ length: (b.value - a.value) + 1 }, (_, i) => NUM(i + a.value)));
-		} else if (a.value > b.value) {
-			return ARR(Array.from({ length: (a.value - b.value) + 1 }, (_, i) => NUM(a.value - i)));
-		} else {
-			return ARR([a]);
+		if (!Number.isSafeInteger(length)) {
+			throw new AiScriptRuntimeError('Core:range expected safe integer bounds');
 		}
+		if (length > MAX_NATIVE_VALUE_SIZE) {
+			throw new AiScriptRuntimeError(`Core:range size must not exceed ${MAX_NATIVE_VALUE_SIZE}`);
+		}
+		if (a.value < b.value) {
+			return ARR(Array.from({ length: b.value - a.value + 1 }, (_, i) => NUM(i + a.value)));
+		} else if (a.value > b.value) {
+			return ARR(Array.from({ length: a.value - b.value + 1 }, (_, i) => NUM(a.value - i)));
+		}
+		return ARR([a]);
 	}),
 	'Core:sleep': FN_NATIVE(async ([delay]) => {
 		assertNumber(delay);
@@ -184,37 +203,51 @@ export const std: Record<string, Value> = {
 	}),
 
 	'Date:year': FN_NATIVE(([v]) => {
-		if (v) { assertNumber(v); }
+		if (v) {
+			assertNumber(v);
+		}
 		return NUM(new Date(v?.value ?? Date.now()).getFullYear());
 	}),
 
 	'Date:month': FN_NATIVE(([v]) => {
-		if (v) { assertNumber(v); }
+		if (v) {
+			assertNumber(v);
+		}
 		return NUM(new Date(v?.value ?? Date.now()).getMonth() + 1);
 	}),
 
 	'Date:day': FN_NATIVE(([v]) => {
-		if (v) { assertNumber(v); }
+		if (v) {
+			assertNumber(v);
+		}
 		return NUM(new Date(v?.value ?? Date.now()).getDate());
 	}),
 
 	'Date:hour': FN_NATIVE(([v]) => {
-		if (v) { assertNumber(v); }
+		if (v) {
+			assertNumber(v);
+		}
 		return NUM(new Date(v?.value ?? Date.now()).getHours());
 	}),
 
 	'Date:minute': FN_NATIVE(([v]) => {
-		if (v) { assertNumber(v); }
+		if (v) {
+			assertNumber(v);
+		}
 		return NUM(new Date(v?.value ?? Date.now()).getMinutes());
 	}),
 
 	'Date:second': FN_NATIVE(([v]) => {
-		if (v) { assertNumber(v); }
+		if (v) {
+			assertNumber(v);
+		}
 		return NUM(new Date(v?.value ?? Date.now()).getSeconds());
 	}),
 
 	'Date:millisecond': FN_NATIVE(([v]) => {
-		if (v) { assertNumber(v); }
+		if (v) {
+			assertNumber(v);
+		}
 		return NUM(new Date(v?.value ?? Date.now()).getMilliseconds());
 	}),
 
@@ -222,14 +255,18 @@ export const std: Record<string, Value> = {
 		assertString(v);
 		const res = new Date(v.value).getTime();
 		// NaN は自身とも一致しないため、自己比較で妥当性を判定する。
-		return (res === res) ? NUM(res) : ERROR('not_date');
+		return res === res ? NUM(res) : ERROR('not_date');
 	}),
 
 	'Date:to_iso_str': FN_NATIVE(([v, ofs]) => {
-		if (v) { assertNumber(v); }
+		if (v) {
+			assertNumber(v);
+		}
 		const date = new Date(v?.value ?? Date.now());
 
-		if (ofs) { assertNumber(ofs); }
+		if (ofs) {
+			assertNumber(ofs);
+		}
 		const offset = ofs?.value ?? -date.getTimezoneOffset();
 		let offset_s: string;
 		if (offset === 0) {
@@ -241,7 +278,7 @@ export const std: Record<string, Value> = {
 			date.setUTCHours(date.getUTCHours() + sign * offset_hours);
 			date.setUTCMinutes(date.getUTCMinutes() + sign * offset_minutes);
 
-			const sign_s = (offset > 0) ? '+' : '-';
+			const sign_s = offset > 0 ? '+' : '-';
 			const offset_hours_s = offset_hours.toString().padStart(2, '0');
 			const offset_minutes_s = offset_minutes.toString().padStart(2, '0');
 			offset_s = `${sign_s}${offset_hours_s}:${offset_minutes_s}`;
@@ -276,9 +313,8 @@ export const std: Record<string, Value> = {
 			return NUM(-1);
 		} else if (a.value === b.value) {
 			return NUM(0);
-		} else {
-			return NUM(1);
 		}
+		return NUM(1);
 	}),
 
 	'Str:gt': FN_NATIVE(([a, b]) => {
@@ -288,9 +324,8 @@ export const std: Record<string, Value> = {
 			return NUM(-1);
 		} else if (a.value === b.value) {
 			return NUM(0);
-		} else {
-			return NUM(1);
 		}
+		return NUM(1);
 	}),
 
 	'Str:from_codepoint': FN_NATIVE(([codePoint]) => {
@@ -301,18 +336,28 @@ export const std: Record<string, Value> = {
 
 	'Str:from_unicode_codepoints': FN_NATIVE(([codePoints]) => {
 		assertArray(codePoints);
-		return STR(Array.from(codePoints.value.map((a) => {
-			assertNumber(a);
-			return String.fromCodePoint(a.value);
-		})).join(''));
+		return STR(
+			Array.from(
+				codePoints.value.map((a) => {
+					assertNumber(a);
+					return String.fromCodePoint(a.value);
+				}),
+			).join(''),
+		);
 	}),
-	
+
 	'Str:from_utf8_bytes': FN_NATIVE(([bytes]) => {
 		assertArray(bytes);
-		return STR(textDecoder.decode(Uint8Array.from(bytes.value.map((a) => {
-			assertNumber(a);
-			return a.value;
-		}))));
+		return STR(
+			textDecoder.decode(
+				Uint8Array.from(
+					bytes.value.map((a) => {
+						assertNumber(a);
+						return a.value;
+					}),
+				),
+			),
+		);
 	}),
 	//#endregion
 
@@ -320,18 +365,18 @@ export const std: Record<string, Value> = {
 	'Uri:encode_full': FN_NATIVE(([v]) => {
 		assertString(v);
 		return STR(encodeURI(v.value));
-	}),	
+	}),
 
 	'Uri:encode_component': FN_NATIVE(([v]) => {
 		assertString(v);
 		return STR(encodeURIComponent(v.value));
-	}),	
+	}),
 
 	'Uri:decode_full': FN_NATIVE(([v]) => {
 		assertString(v);
 		return STR(decodeURI(v.value));
 	}),
-	
+
 	'Uri:decode_component': FN_NATIVE(([v]) => {
 		assertString(v);
 		return STR(decodeURIComponent(v.value));
@@ -341,9 +386,15 @@ export const std: Record<string, Value> = {
 	//#region Arr
 	'Arr:create': FN_NATIVE(([length, initial]) => {
 		assertNumber(length);
-		if (length.value < 0) throw new AiScriptRuntimeError('Arr:create expected non-negative number, got negative');
-		if (!Number.isInteger(length.value)) throw new AiScriptRuntimeError('Arr:create expected integer, got non-integer');
-		if (length.value > MAX_NATIVE_VALUE_SIZE) throw new AiScriptRuntimeError(`Arr:create size must not exceed ${MAX_NATIVE_VALUE_SIZE}`);
+		if (length.value < 0) {
+			throw new AiScriptRuntimeError('Arr:create expected non-negative number, got negative');
+		}
+		if (!Number.isInteger(length.value)) {
+			throw new AiScriptRuntimeError('Arr:create expected integer, got non-integer');
+		}
+		if (length.value > MAX_NATIVE_VALUE_SIZE) {
+			throw new AiScriptRuntimeError(`Arr:create size must not exceed ${MAX_NATIVE_VALUE_SIZE}`);
+		}
 		return ARR(Array(length.value).fill(initial ?? NULL));
 	}),
 	//#endregion
@@ -351,7 +402,7 @@ export const std: Record<string, Value> = {
 	//#region Obj
 	'Obj:keys': FN_NATIVE(([obj]) => {
 		assertObject(obj);
-		return ARR(Array.from(obj.value.keys()).map(k => STR(k)));
+		return ARR(Array.from(obj.value.keys()).map((k) => STR(k)));
 	}),
 
 	'Obj:vals': FN_NATIVE(([obj]) => {
@@ -398,25 +449,29 @@ export const std: Record<string, Value> = {
 	'Obj:pick': FN_NATIVE(([obj, keys]) => {
 		assertObject(obj);
 		assertArray(keys);
-		return OBJ(new Map(
-			keys.value.map(key => {
-				assertString(key);
-				return [key.value, obj.value.get(key.value) ?? NULL];
-			})
-		));
+		return OBJ(
+			new Map(
+				keys.value.map((key) => {
+					assertString(key);
+					return [key.value, obj.value.get(key.value) ?? NULL];
+				}),
+			),
+		);
 	}),
 
 	'Obj:from_kvs': FN_NATIVE(([kvs]) => {
 		assertArray(kvs);
-		return OBJ(new Map(
-			kvs.value.map((kv) => {
-				assertArray(kv);
-				const [key, value] = kv.value;
-				assertString(key);
-				expectAny(value);
-				return [key.value, value];
-			}),
-		));
+		return OBJ(
+			new Map(
+				kvs.value.map((kv) => {
+					assertArray(kv);
+					const [key, value] = kv.value;
+					assertString(key);
+					expectAny(value);
+					return [key.value, value];
+				}),
+			),
+		);
 	}),
 	//#endregion
 
@@ -436,7 +491,9 @@ export const std: Record<string, Value> = {
 		};
 		if (immediate) {
 			assertBoolean(immediate);
-			if (immediate.value) callCallback();
+			if (immediate.value) {
+				callCallback();
+			}
 		}
 
 		let id: ReturnType<typeof setInterval>;

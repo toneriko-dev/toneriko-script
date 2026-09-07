@@ -21,11 +21,13 @@ export abstract class RandomBase {
 			res |= this.generateBigUintByBits(shift);
 			exponent = Math.max(exponent - shift, 0);
 		}
-		return (Number(res) * 0.5 ** safeIntegerBits) * (0.5 ** (1022 - exponent));
+		return Number(res) * 0.5 ** safeIntegerBits * 0.5 ** (1022 - exponent);
 	}
 
 	public generateUniform(maxInclusive: bigint): bigint {
-		if (maxInclusive < 1) return 0n;
+		if (maxInclusive < 1) {
+			return 0n;
+		}
 		const log2 = maxInclusive.toString(2).length;
 		const bytes = Math.ceil(log2 / 8);
 		const wastedBits = BigInt(bytes * 8 - log2);
@@ -40,7 +42,9 @@ export abstract class RandomBase {
 		const ceilMin = Math.ceil(min);
 		const floorMax = Math.floor(max);
 		const signedScale = floorMax - ceilMin;
-		if (signedScale === 0) return ceilMin;
+		if (signedScale === 0) {
+			return ceilMin;
+		}
 		const scale = Math.abs(signedScale);
 		const scaleSign = Math.sign(signedScale);
 		if (!Number.isSafeInteger(scale) || !Number.isSafeInteger(ceilMin) || !Number.isSafeInteger(floorMax)) {
@@ -52,12 +56,16 @@ export abstract class RandomBase {
 }
 
 export function bitsToRepresent(num: bigint): number {
-	if (num === 0n) return 0;
+	if (num === 0n) {
+		return 0;
+	}
 	return num.toString(2).length;
 }
 
 function readSmallBigUintLittleEndian(buffer: ArrayBufferLike): bigint | null {
-	if (buffer.byteLength === 0) return null;
+	if (buffer.byteLength === 0) {
+		return null;
+	}
 	if (buffer.byteLength < 8) {
 		const array = new Uint8Array(8);
 		array.set(new Uint8Array(buffer));
@@ -67,7 +75,9 @@ function readSmallBigUintLittleEndian(buffer: ArrayBufferLike): bigint | null {
 }
 
 export function readBigUintLittleEndian(buffer: ArrayBufferLike): bigint | null {
-	if (buffer.byteLength === 0) return null;
+	if (buffer.byteLength === 0) {
+		return null;
+	}
 	if (buffer.byteLength <= 8) {
 		return readSmallBigUintLittleEndian(buffer);
 	}

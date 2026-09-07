@@ -6,18 +6,24 @@
 const segmenter = new Intl.Segmenter(undefined, { granularity: 'grapheme' });
 
 export function toArray(str: string): string[] {
-	return Array.from(segmenter.segment(str), s => s.segment);
+	return Array.from(segmenter.segment(str), (s) => s.segment);
 }
 
 export function length(str: string): number {
 	let count = 0;
-	for (const _ of segmenter.segment(str)) count++;
+	for (const _ of segmenter.segment(str)) {
+		count++;
+	}
 	return count;
 }
 
 export function substring(str: string, begin: number, end: number): string {
-	if (typeof begin !== 'number' || begin < 0) begin = 0;
-	if (typeof end === 'number' && end < 0) end = 0;
+	if (typeof begin !== 'number' || begin < 0) {
+		begin = 0;
+	}
+	if (typeof end === 'number' && end < 0) {
+		end = 0;
+	}
 	return toArray(str).slice(begin, end).join('');
 }
 
@@ -40,10 +46,7 @@ export function indexOf(str: string, searchStr: string, pos = 0): number {
 	const searchArr = toArray(searchStr);
 	for (let index = pos; index < strArr.length; index++) {
 		let searchIndex = 0;
-		while (
-			searchIndex < searchArr.length &&
-			searchArr[searchIndex] === strArr[index + searchIndex]
-		) {
+		while (searchIndex < searchArr.length && searchArr[searchIndex] === strArr[index + searchIndex]) {
 			searchIndex++;
 		}
 		if (searchIndex === searchArr.length) {

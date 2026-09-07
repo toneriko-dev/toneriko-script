@@ -32,7 +32,7 @@ export class TokenStream implements ITokenStream {
 	}
 
 	private get eof(): boolean {
-		return (this.index >= this.source.length);
+		return this.index >= this.source.length;
 	}
 
 	public getToken(): Token {
@@ -68,9 +68,8 @@ export class TokenStream implements ITokenStream {
 	public lookahead(offset: number): Token {
 		if (this.index + offset < this.source.length) {
 			return this.source[this.index + offset]!;
-		} else {
-			return TOKEN(TokenKind.EOF, { line: -1, column: -1 });
 		}
+		return TOKEN(TokenKind.EOF, { line: -1, column: -1 });
 	}
 
 	public expect(kind: TokenKind): void {

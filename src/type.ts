@@ -4,7 +4,7 @@ import type * as Ast from './node.js';
 export type TSimple<N extends string = string> = {
 	type: 'simple';
 	name: N;
-}
+};
 
 export function T_SIMPLE<T extends string>(name: T): TSimple<T> {
 	return {
@@ -17,7 +17,7 @@ export type TGeneric<N extends string = string> = {
 	type: 'generic';
 	name: N;
 	inners: Type[];
-}
+};
 
 export function T_GENERIC<N extends string>(name: N, inners: Type[]): TGeneric<N> {
 	return {
@@ -44,7 +44,7 @@ export function T_FN(params: Type[], result: Type): TFn {
 export type TParam = {
 	type: 'param';
 	name: string;
-}
+};
 
 export function T_PARAM(name: string): TParam {
 	return {
@@ -56,7 +56,7 @@ export function T_PARAM(name: string): TParam {
 export type TUnion = {
 	type: 'union';
 	inners: Type[];
-}
+};
 
 export function T_UNION(inners: Type[]): TUnion {
 	return {
@@ -73,17 +73,16 @@ export function getTypeNameBySource(typeSource: Ast.TypeSource): string {
 			if (typeSource.inner) {
 				const inner = getTypeNameBySource(typeSource.inner);
 				return `${typeSource.name}<${inner}>`;
-			} else {
-				return typeSource.name;
 			}
+			return typeSource.name;
 		}
 		case 'fnTypeSource': {
-			const params = typeSource.params.map(param => getTypeNameBySource(param)).join(', ');
+			const params = typeSource.params.map((param) => getTypeNameBySource(param)).join(', ');
 			const result = getTypeNameBySource(typeSource.result);
 			return `@(${params}) => ${result}`;
 		}
 		case 'unionTypeSource': {
-			return typeSource.inners.map(inner => getTypeNameBySource(inner)).join(' | ');
+			return typeSource.inners.map((inner) => getTypeNameBySource(inner)).join(' | ');
 		}
 	}
 }
@@ -126,10 +125,10 @@ export function getTypeBySource(typeSource: Ast.TypeSource, typeParams?: readonl
 		if (typeParams != null) {
 			fnTypeParams = fnTypeParams.concat(typeParams);
 		}
-		const paramTypes = typeSource.params.map(param => getTypeBySource(param, fnTypeParams));
+		const paramTypes = typeSource.params.map((param) => getTypeBySource(param, fnTypeParams));
 		return T_FN(paramTypes, getTypeBySource(typeSource.result, fnTypeParams));
 	} else {
-		const innerTypes = typeSource.inners.map(inner => getTypeBySource(inner, typeParams));
+		const innerTypes = typeSource.inners.map((inner) => getTypeBySource(inner, typeParams));
 		return T_UNION(innerTypes);
 	}
 }

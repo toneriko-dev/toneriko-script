@@ -1,9 +1,8 @@
 import { describe, expect, test } from 'vitest';
-import { NUM, STR, NULL, ARR, OBJ, BOOL, TRUE, FALSE, ERROR ,FN_NATIVE } from '../src/interpreter/value';
+import { NUM, STR, NULL, ARR, OBJ, BOOL, TRUE, FALSE, ERROR, FN_NATIVE } from '../src/interpreter/value';
 import { AiScriptRuntimeError } from '../src/error';
 import { MAX_ARRAY_FLAT_DEPTH, MAX_NATIVE_VALUE_SIZE } from '../src/constants';
 import { exe, eq } from './testutils';
-
 
 describe('num', () => {
 	test.concurrent('to_str', async () => {
@@ -22,12 +21,20 @@ describe('num', () => {
 			2 ^ 1023,
 		].map(@(v){v.to_hex()})
 		`);
-		eq(res, ARR([
-			STR('0'), STR('0'), STR('a'), STR('10'),
-			STR('-a'), STR('-10'),
-			STR('0.8'), STR((1 / 3).toString(16)),
-			STR((2 ** 1023).toString(16)),
-		]));
+		eq(
+			res,
+			ARR([
+				STR('0'),
+				STR('0'),
+				STR('a'),
+				STR('10'),
+				STR('-a'),
+				STR('-10'),
+				STR('0.8'),
+				STR((1 / 3).toString(16)),
+				STR((2 ** 1023).toString(16)),
+			]),
+		);
 	});
 
 	test.concurrent('to_hex rejects non-finite numbers', async () => {
@@ -147,77 +154,121 @@ describe('str', () => {
 		eq(res, STR('el'));
 	});
 
-	test.concurrent("codepoint_at", async () => {
+	test.concurrent('codepoint_at', async () => {
 		const res = await exe(`
 		let str = "𩸽"
 		<: str.codepoint_at(0)
 		`);
-		eq(res, NUM(171581));
+		eq(res, NUM(171_581));
 	});
 
-	test.concurrent("to_arr", async () => {
+	test.concurrent('to_arr', async () => {
 		const res = await exe(`
 		let str = "𩸽👉🏿👨‍👦"
 		<: str.to_arr()
 		`);
-		eq(
-			res,
-			ARR([STR("𩸽"), STR("👉🏿"), STR("👨‍👦")])
-		);
+		eq(res, ARR([STR('𩸽'), STR('👉🏿'), STR('👨‍👦')]));
 	});
 
-	test.concurrent("to_unicode_arr", async () => {
+	test.concurrent('to_unicode_arr', async () => {
 		const res = await exe(`
 		let str = "𩸽👉🏿👨‍👦"
 		<: str.to_unicode_arr()
 		`);
-		eq(
-			res,
-			ARR([STR("𩸽"), STR("👉"), STR(String.fromCodePoint(0x1F3FF)), STR("👨"), STR("\u200d"), STR("👦")])
-		);
+		eq(res, ARR([STR('𩸽'), STR('👉'), STR(String.fromCodePoint(0x1_f3_ff)), STR('👨'), STR('\u200D'), STR('👦')]));
 	});
 
-	test.concurrent("to_unicode_codepoint_arr", async () => {
+	test.concurrent('to_unicode_codepoint_arr', async () => {
 		const res = await exe(`
 		let str = "𩸽👉🏿👨‍👦"
 		<: str.to_unicode_codepoint_arr()
 		`);
-		eq(
-			res,
-			ARR([NUM(171581), NUM(128073), NUM(127999), NUM(128104), NUM(8205), NUM(128102)])
-		);
+		eq(res, ARR([NUM(171_581), NUM(128_073), NUM(127_999), NUM(128_104), NUM(8205), NUM(128_102)]));
 	});
 
-	test.concurrent("to_char_arr", async () => {
+	test.concurrent('to_char_arr', async () => {
 		const res = await exe(`
 		let str = "abc𩸽👉🏿👨‍👦def"
 		<: str.to_char_arr()
 		`);
 		eq(
 			res,
-			ARR([97, 98, 99, 55399, 56893, 55357, 56393, 55356, 57343, 55357, 56424, 8205, 55357, 56422, 100, 101, 102].map((s) => STR(String.fromCharCode(s))))
+			ARR(
+				[
+					97, 98, 99, 55_399, 56_893, 55_357, 56_393, 55_356, 57_343, 55_357, 56_424, 8205, 55_357, 56_422, 100, 101,
+					102,
+				].map((s) => STR(String.fromCharCode(s))),
+			),
 		);
 	});
 
-	test.concurrent("to_charcode_arr", async () => {
+	test.concurrent('to_charcode_arr', async () => {
 		const res = await exe(`
 		let str = "abc𩸽👉🏿👨‍👦def"
 		<: str.to_charcode_arr()
 		`);
 		eq(
 			res,
-			ARR([NUM(97), NUM(98), NUM(99), NUM(55399), NUM(56893), NUM(55357), NUM(56393), NUM(55356), NUM(57343), NUM(55357), NUM(56424), NUM(8205), NUM(55357), NUM(56422), NUM(100), NUM(101), NUM(102)])
+			ARR([
+				NUM(97),
+				NUM(98),
+				NUM(99),
+				NUM(55_399),
+				NUM(56_893),
+				NUM(55_357),
+				NUM(56_393),
+				NUM(55_356),
+				NUM(57_343),
+				NUM(55_357),
+				NUM(56_424),
+				NUM(8205),
+				NUM(55_357),
+				NUM(56_422),
+				NUM(100),
+				NUM(101),
+				NUM(102),
+			]),
 		);
 	});
 
-	test.concurrent("to_utf8_byte_arr", async () => {
+	test.concurrent('to_utf8_byte_arr', async () => {
 		const res = await exe(`
 		let str = "abc𩸽👉🏿👨‍👦def"
 		<: str.to_utf8_byte_arr()
 		`);
 		eq(
 			res,
-			ARR([NUM(97), NUM(98), NUM(99), NUM(240), NUM(169), NUM(184), NUM(189), NUM(240), NUM(159), NUM(145), NUM(137), NUM(240), NUM(159), NUM(143), NUM(191), NUM(240), NUM(159), NUM(145), NUM(168), NUM(226), NUM(128), NUM(141), NUM(240), NUM(159), NUM(145), NUM(166), NUM(100), NUM(101), NUM(102)])
+			ARR([
+				NUM(97),
+				NUM(98),
+				NUM(99),
+				NUM(240),
+				NUM(169),
+				NUM(184),
+				NUM(189),
+				NUM(240),
+				NUM(159),
+				NUM(145),
+				NUM(137),
+				NUM(240),
+				NUM(159),
+				NUM(143),
+				NUM(191),
+				NUM(240),
+				NUM(159),
+				NUM(145),
+				NUM(168),
+				NUM(226),
+				NUM(128),
+				NUM(141),
+				NUM(240),
+				NUM(159),
+				NUM(145),
+				NUM(166),
+				NUM(100),
+				NUM(101),
+				NUM(102),
+			]),
 		);
 	});
 
@@ -231,11 +282,7 @@ describe('str', () => {
 			empty.starts_with(""), empty.starts_with("he"),
 		]
 		`);
-		eq(res, ARR([
-			TRUE, TRUE,
-			TRUE, FALSE,
-			TRUE, FALSE, 
-		]));
+		eq(res, ARR([TRUE, TRUE, TRUE, FALSE, TRUE, FALSE]));
 	});
 
 	test.concurrent('starts_with (with index)', async () => {
@@ -252,15 +299,7 @@ describe('str', () => {
 			empty.starts_with("", 2), empty.starts_with("ll", 2),
 		]
 		`);
-		eq(res, ARR([
-			TRUE, TRUE,
-			TRUE, TRUE,
-			TRUE, TRUE,
-			FALSE, FALSE,
-			FALSE, TRUE,
-			FALSE, TRUE,
-			TRUE, FALSE,
-		]));
+		eq(res, ARR([TRUE, TRUE, TRUE, TRUE, TRUE, TRUE, FALSE, FALSE, FALSE, TRUE, FALSE, TRUE, TRUE, FALSE]));
 	});
 
 	test.concurrent('ends_with (no index)', async () => {
@@ -273,11 +312,7 @@ describe('str', () => {
 			empty.ends_with(""), empty.ends_with("he"),
 		]
 		`);
-		eq(res, ARR([
-			TRUE, TRUE,
-			TRUE, FALSE,
-			TRUE, FALSE,
-		]));
+		eq(res, ARR([TRUE, TRUE, TRUE, FALSE, TRUE, FALSE]));
 	});
 
 	test.concurrent('ends_with (with index)', async () => {
@@ -294,18 +329,10 @@ describe('str', () => {
 			empty.ends_with("", 2), empty.ends_with("ll", 2),
 		]
 		`);
-		eq(res, ARR([
-			TRUE, TRUE,
-			TRUE, TRUE,
-			TRUE, TRUE,
-			FALSE, FALSE,
-			FALSE, TRUE,
-			FALSE, TRUE,
-			TRUE, FALSE,
-		]));
+		eq(res, ARR([TRUE, TRUE, TRUE, TRUE, TRUE, TRUE, FALSE, FALSE, FALSE, TRUE, FALSE, TRUE, TRUE, FALSE]));
 	});
 
-	test.concurrent("pad_start", async () => {
+	test.concurrent('pad_start', async () => {
 		const res = await exe(`
 		let str = "abc"
 		<: [
@@ -314,19 +341,39 @@ describe('str', () => {
 			str.pad_start(0, "01"), str.pad_start(1, "01"), str.pad_start(2, "01"), str.pad_start(3, "01"), str.pad_start(4, "01"), str.pad_start(5, "01"),
 		]
 		`);
-		eq(res, ARR([
-			STR("abc"), STR("abc"), STR("abc"), STR("abc"), STR(" abc"), STR("  abc"),
-			STR("abc"), STR("abc"), STR("abc"), STR("abc"), STR("0abc"), STR("00abc"),
-			STR("abc"), STR("abc"), STR("abc"), STR("abc"), STR("0abc"), STR("01abc"),
-		]));
+		eq(
+			res,
+			ARR([
+				STR('abc'),
+				STR('abc'),
+				STR('abc'),
+				STR('abc'),
+				STR(' abc'),
+				STR('  abc'),
+				STR('abc'),
+				STR('abc'),
+				STR('abc'),
+				STR('abc'),
+				STR('0abc'),
+				STR('00abc'),
+				STR('abc'),
+				STR('abc'),
+				STR('abc'),
+				STR('abc'),
+				STR('0abc'),
+				STR('01abc'),
+			]),
+		);
 	});
 
 	test('pad_start size limit', async () => {
 		eq(await exe(`<: "x".pad_start(${MAX_NATIVE_VALUE_SIZE}).len`), NUM(MAX_NATIVE_VALUE_SIZE));
-		await expect(exe(`"x".pad_start(${MAX_NATIVE_VALUE_SIZE + 1})`)).rejects.toThrow('str.pad_start width must not exceed');
+		await expect(exe(`"x".pad_start(${MAX_NATIVE_VALUE_SIZE + 1})`)).rejects.toThrow(
+			'str.pad_start width must not exceed',
+		);
 	});
 
-	test.concurrent("pad_end", async () => {
+	test.concurrent('pad_end', async () => {
 		const res = await exe(`
 		let str = "abc"
 		<: [
@@ -335,11 +382,29 @@ describe('str', () => {
 			str.pad_end(0, "01"), str.pad_end(1, "01"), str.pad_end(2, "01"), str.pad_end(3, "01"), str.pad_end(4, "01"), str.pad_end(5, "01"),
 		]
 		`);
-		eq(res, ARR([
-			STR("abc"), STR("abc"), STR("abc"), STR("abc"), STR("abc "), STR("abc  "),
-			STR("abc"), STR("abc"), STR("abc"), STR("abc"), STR("abc0"), STR("abc00"),
-			STR("abc"), STR("abc"), STR("abc"), STR("abc"), STR("abc0"), STR("abc01"),
-		]));
+		eq(
+			res,
+			ARR([
+				STR('abc'),
+				STR('abc'),
+				STR('abc'),
+				STR('abc'),
+				STR('abc '),
+				STR('abc  '),
+				STR('abc'),
+				STR('abc'),
+				STR('abc'),
+				STR('abc'),
+				STR('abc0'),
+				STR('abc00'),
+				STR('abc'),
+				STR('abc'),
+				STR('abc'),
+				STR('abc'),
+				STR('abc0'),
+				STR('abc01'),
+			]),
+		);
 	});
 
 	test('pad_end size limit', async () => {
@@ -399,10 +464,7 @@ describe('arr', () => {
 		let concated = arr.concat([4, 5])
 		<: [concated, arr]
 		`);
-		eq(res, ARR([
-			ARR([NUM(1), NUM(2), NUM(3), NUM(4), NUM(5)]),
-			ARR([NUM(1), NUM(2), NUM(3)])
-		]));
+		eq(res, ARR([ARR([NUM(1), NUM(2), NUM(3), NUM(4), NUM(5)]), ARR([NUM(1), NUM(2), NUM(3)])]));
 	});
 
 	test.concurrent('slice', async () => {
@@ -411,10 +473,13 @@ describe('arr', () => {
 		let sliced = arr.slice(2, 4)
 		<: [sliced, arr]
 		`);
-		eq(res, ARR([
-			ARR([STR('camel'), STR('duck')]),
-			ARR([STR('ant'), STR('bison'), STR('camel'), STR('duck'), STR('elephant')])
-		]));
+		eq(
+			res,
+			ARR([
+				ARR([STR('camel'), STR('duck')]),
+				ARR([STR('ant'), STR('bison'), STR('camel'), STR('duck'), STR('elephant')]),
+			]),
+		);
 	});
 
 	test.concurrent('join', async () => {
@@ -474,10 +539,12 @@ describe('arr', () => {
 	});
 
 	test.concurrent('reduce of empty array without initial value', async () => {
-		await expect(exe(`
+		await expect(
+			exe(`
 		let arr = [1, 2, 3, 4]
 		<: [].reduce(@(){})
-		`)).rejects.toThrow('Reduce of empty array without initial value');
+		`),
+		).rejects.toThrow('Reduce of empty array without initial value');
 	});
 
 	test.concurrent('find', async () => {
@@ -537,10 +604,7 @@ describe('arr', () => {
 		copied.reverse()
 		<: [copied, arr]
 		`);
-		eq(res, ARR([
-			ARR([NUM(3), NUM(2), NUM(1)]),
-			ARR([NUM(1), NUM(2), NUM(3)])
-		]));
+		eq(res, ARR([ARR([NUM(3), NUM(2), NUM(1)]), ARR([NUM(1), NUM(2), NUM(3)])]));
 	});
 
 	test.concurrent('sort num array', async () => {
@@ -568,7 +632,7 @@ describe('arr', () => {
 			arr.sort(Str:gt)
 			<: arr
 		`);
-		eq(res, ARR([ STR('piyo'),  STR('huga'), STR('hoge'), STR('hoge')]));
+		eq(res, ARR([STR('piyo'), STR('huga'), STR('hoge'), STR('hoge')]));
 	});
 
 	test.concurrent('sort object array', async () => {
@@ -590,15 +654,18 @@ describe('arr', () => {
 			arr.sort(comp)
 			<: arr
 		`);
-		eq(res, ARR([
-			ARR([NUM(2), NUM(0)]),
-			ARR([NUM(2), NUM(4)]),
-			ARR([NUM(3), NUM(2)]),
-			ARR([NUM(3), NUM(3)]),
-			ARR([NUM(10), NUM(1)]),
-		]));
+		eq(
+			res,
+			ARR([
+				ARR([NUM(2), NUM(0)]),
+				ARR([NUM(2), NUM(4)]),
+				ARR([NUM(3), NUM(2)]),
+				ARR([NUM(3), NUM(3)]),
+				ARR([NUM(10), NUM(1)]),
+			]),
+		);
 	});
-	
+
 	test.concurrent('fill', async () => {
 		const res = await exe(`
 			var arr1 = [0, 1, 2]
@@ -608,15 +675,18 @@ describe('arr', () => {
 			let arr5 = [0, 1, 2].fill(3, -2, -1)
 			<: [arr1, arr2, arr3, arr4, arr5]
 		`);
-		eq(res, ARR([
-			ARR([NUM(3), NUM(3), NUM(3)]), // 対象配列が変更される
-			ARR([NUM(3), NUM(3), NUM(3)]),
-			ARR([NUM(0), NUM(3), NUM(3)]),
-			ARR([NUM(0), NUM(3), NUM(2)]),
-			ARR([NUM(0), NUM(3), NUM(2)]),
-		]));
+		eq(
+			res,
+			ARR([
+				ARR([NUM(3), NUM(3), NUM(3)]), // 対象配列が変更される
+				ARR([NUM(3), NUM(3), NUM(3)]),
+				ARR([NUM(0), NUM(3), NUM(3)]),
+				ARR([NUM(0), NUM(3), NUM(2)]),
+				ARR([NUM(0), NUM(3), NUM(2)]),
+			]),
+		);
 	});
-	
+
 	test.concurrent('repeat', async () => {
 		const res = await exe(`
 			var arr1 = [0, 1, 2]
@@ -624,21 +694,22 @@ describe('arr', () => {
 			let arr3 = arr1.repeat(0)
 			<: [arr1, arr2, arr3]
 		`);
-		eq(res, ARR([
-			ARR([NUM(0), NUM(1), NUM(2)]), // 対象配列は変更されない
+		eq(
+			res,
 			ARR([
-				NUM(0), NUM(1), NUM(2),
-				NUM(0), NUM(1), NUM(2),
-				NUM(0), NUM(1), NUM(2),
+				ARR([NUM(0), NUM(1), NUM(2)]), // 対象配列は変更されない
+				ARR([NUM(0), NUM(1), NUM(2), NUM(0), NUM(1), NUM(2), NUM(0), NUM(1), NUM(2)]),
+				ARR([]),
 			]),
-			ARR([]),
-		]));
+		);
 	});
 
 	test('repeat size limit', async () => {
 		eq(await exe(`<: [0].repeat(${MAX_NATIVE_VALUE_SIZE}).len`), NUM(MAX_NATIVE_VALUE_SIZE));
 		eq(await exe(`<: [].repeat(${MAX_NATIVE_VALUE_SIZE + 1}).len`), NUM(0));
-		await expect(exe(`[0, 1].repeat(${(MAX_NATIVE_VALUE_SIZE / 2) + 1})`)).rejects.toThrow('arr.repeat size must not exceed');
+		await expect(exe(`[0, 1].repeat(${MAX_NATIVE_VALUE_SIZE / 2 + 1})`)).rejects.toThrow(
+			'arr.repeat size must not exceed',
+		);
 	});
 
 	test.concurrent('splice (full)', async () => {
@@ -647,48 +718,36 @@ describe('arr', () => {
 			let arr2 = arr1.splice(1, 2, [10])
 			<: [arr1, arr2]
 		`);
-		eq(res, ARR([
-			ARR([NUM(0), NUM(10), NUM(3)]),
-			ARR([NUM(1), NUM(2)]),
-		]));
+		eq(res, ARR([ARR([NUM(0), NUM(10), NUM(3)]), ARR([NUM(1), NUM(2)])]));
 	});
-	
+
 	test.concurrent('splice (negative-index)', async () => {
 		const res = await exe(`
 				let arr1 = [0, 1, 2, 3]
 			let arr2 = arr1.splice(-1, 0, [10, 20])
 			<: [arr1, arr2]
 		`);
-		eq(res, ARR([
-			ARR([NUM(0), NUM(1), NUM(2), NUM(10), NUM(20), NUM(3)]),
-			ARR([]),
-		]));
+		eq(res, ARR([ARR([NUM(0), NUM(1), NUM(2), NUM(10), NUM(20), NUM(3)]), ARR([])]));
 	});
-	
+
 	test.concurrent('splice (larger-index)', async () => {
 		const res = await exe(`
 			let arr1 = [0, 1, 2, 3]
 			let arr2 = arr1.splice(4, 100, [10, 20])
 			<: [arr1, arr2]
 		`);
-		eq(res, ARR([
-			ARR([NUM(0), NUM(1), NUM(2), NUM(3), NUM(10), NUM(20)]),
-			ARR([]),
-		]));
+		eq(res, ARR([ARR([NUM(0), NUM(1), NUM(2), NUM(3), NUM(10), NUM(20)]), ARR([])]));
 	});
-	
+
 	test.concurrent('splice (single argument)', async () => {
 		const res = await exe(`
 			let arr1 = [0, 1, 2, 3]
 			let arr2 = arr1.splice(1)
 			<: [arr1, arr2]
 		`);
-		eq(res, ARR([
-			ARR([NUM(0)]),
-			ARR([NUM(1), NUM(2), NUM(3)]),
-		]));
+		eq(res, ARR([ARR([NUM(0)]), ARR([NUM(1), NUM(2), NUM(3)])]));
 	});
-	
+
 	test.concurrent('flat', async () => {
 		const res = await exe(`
 			var arr1 = [0, [1], [2, 3], [4, [5, 6]]]
@@ -696,27 +755,21 @@ describe('arr', () => {
 			let arr3 = arr1.flat(2)
 			<: [arr1, arr2, arr3]
 		`);
-		eq(res, ARR([
+		eq(
+			res,
 			ARR([
-				NUM(0), ARR([NUM(1)]), ARR([NUM(2), NUM(3)]),
-				ARR([NUM(4), ARR([NUM(5), NUM(6)])])
-			]), // 対象配列は変更されない
-			ARR([
-				NUM(0), NUM(1), NUM(2), NUM(3),
-				NUM(4), ARR([NUM(5), NUM(6)]),
+				ARR([NUM(0), ARR([NUM(1)]), ARR([NUM(2), NUM(3)]), ARR([NUM(4), ARR([NUM(5), NUM(6)])])]), // 対象配列は変更されない
+				ARR([NUM(0), NUM(1), NUM(2), NUM(3), NUM(4), ARR([NUM(5), NUM(6)])]),
+				ARR([NUM(0), NUM(1), NUM(2), NUM(3), NUM(4), NUM(5), NUM(6)]),
 			]),
-			ARR([
-				NUM(0), NUM(1), NUM(2), NUM(3),
-				NUM(4), NUM(5), NUM(6),
-			]),
-		]));
+		);
 	});
 
 	test('flat depth limit', async () => {
 		eq(await exe(`<: [1].flat(${MAX_ARRAY_FLAT_DEPTH})`), ARR([NUM(1)]));
 		await expect(exe(`[1].flat(${MAX_ARRAY_FLAT_DEPTH + 1})`)).rejects.toThrow('arr.flat depth must not exceed');
 	});
-	
+
 	test.concurrent('flat_map', async () => {
 		const res = await exe(`
 			let arr1 = [0, 1, 2]
@@ -724,17 +777,20 @@ describe('arr', () => {
 			let arr3 = arr1.flat_map(@(x){ arr2.map(@(y){ [x, y] }) })
 			<: [arr1, arr3]
 		`);
-		eq(res, ARR([
-			ARR([NUM(0), NUM(1), NUM(2)]), // 対象配列は変更されない
+		eq(
+			res,
 			ARR([
-				ARR([NUM(0), STR("a")]),
-				ARR([NUM(0), STR("b")]),
-				ARR([NUM(1), STR("a")]),
-				ARR([NUM(1), STR("b")]),
-				ARR([NUM(2), STR("a")]),
-				ARR([NUM(2), STR("b")]),
+				ARR([NUM(0), NUM(1), NUM(2)]), // 対象配列は変更されない
+				ARR([
+					ARR([NUM(0), STR('a')]),
+					ARR([NUM(0), STR('b')]),
+					ARR([NUM(1), STR('a')]),
+					ARR([NUM(1), STR('b')]),
+					ARR([NUM(2), STR('a')]),
+					ARR([NUM(2), STR('b')]),
+				]),
 			]),
-		]));
+		);
 	});
 
 	test.concurrent('every', async () => {
@@ -745,14 +801,17 @@ describe('arr', () => {
 			let res3 = [].every(@(v,i){false})
 			<: [arr1, res1, res2, res3]
 		`);
-		eq(res, ARR([
-			ARR([NUM(0), NUM(1), NUM(2), NUM(3)]), // 対象配列は変更されない
-			TRUE,
-			FALSE,
-			TRUE,
-		]));
+		eq(
+			res,
+			ARR([
+				ARR([NUM(0), NUM(1), NUM(2), NUM(3)]), // 対象配列は変更されない
+				TRUE,
+				FALSE,
+				TRUE,
+			]),
+		);
 	});
-	
+
 	test.concurrent('some', async () => {
 		const res = await exe(`
 			let arr1 = [0, 1, 2, 3]
@@ -760,13 +819,16 @@ describe('arr', () => {
 			let res2 = arr1.some(@(v,i){v%2==0 && i > 2})
 			<: [arr1, res1, res2]
 		`);
-		eq(res, ARR([
-			ARR([NUM(0), NUM(1), NUM(2), NUM(3)]), // 対象配列は変更されない
-			TRUE,
-			FALSE,
-		]));
+		eq(
+			res,
+			ARR([
+				ARR([NUM(0), NUM(1), NUM(2), NUM(3)]), // 対象配列は変更されない
+				TRUE,
+				FALSE,
+			]),
+		);
 	});
-	
+
 	test.concurrent('insert', async () => {
 		const res = await exe(`
 			let arr1 = [0, 1, 2]
@@ -780,12 +842,20 @@ describe('arr', () => {
 			res.push(arr1)
 			<: res
 		`);
-		eq(res, ARR([
-			NULL, NULL, NULL, NULL, NULL, NULL, 
-			ARR([NUM(30), NUM(0), NUM(1), NUM(50), NUM(20), NUM(2), NUM(40), NUM(10), NUM(60)])
-		]));
+		eq(
+			res,
+			ARR([
+				NULL,
+				NULL,
+				NULL,
+				NULL,
+				NULL,
+				NULL,
+				ARR([NUM(30), NUM(0), NUM(1), NUM(50), NUM(20), NUM(2), NUM(40), NUM(10), NUM(60)]),
+			]),
+		);
 	});
-	
+
 	test.concurrent('remove', async () => {
 		const res = await exe(`
 			let arr1 = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
@@ -799,12 +869,9 @@ describe('arr', () => {
 			res.push(arr1)
 			<: res
 		`);
-		eq(res, ARR([
-			NUM(9), NUM(3), NUM(0), NUM(8), NUM(2), NULL, 
-			ARR([NUM(1), NUM(4), NUM(5), NUM(6), NUM(7)])
-		]));
+		eq(res, ARR([NUM(9), NUM(3), NUM(0), NUM(8), NUM(2), NULL, ARR([NUM(1), NUM(4), NUM(5), NUM(6), NUM(7)])]));
 	});
-	
+
 	test.concurrent('at (without default value)', async () => {
 		const res = await exe(`
 			let arr1 = [10, 20, 30]
@@ -816,15 +883,26 @@ describe('arr', () => {
 				arr1.at(-6), arr1.at(-5), arr1.at(-4)
 			]
 		`);
-		eq(res, ARR([
-			ARR([NUM(10), NUM(20), NUM(30)]),
-			NUM(10), NUM(20), NUM(30),
-			NUM(10), NUM(20), NUM(30),
-			NULL, NULL, NULL,
-			NULL, NULL, NULL,
-		]));
+		eq(
+			res,
+			ARR([
+				ARR([NUM(10), NUM(20), NUM(30)]),
+				NUM(10),
+				NUM(20),
+				NUM(30),
+				NUM(10),
+				NUM(20),
+				NUM(30),
+				NULL,
+				NULL,
+				NULL,
+				NULL,
+				NULL,
+				NULL,
+			]),
+		);
 	});
-	
+
 	test.concurrent('at (with default value)', async () => {
 		const res = await exe(`
 			let arr1 = [10, 20, 30]
@@ -836,12 +914,23 @@ describe('arr', () => {
 				arr1.at(-6, 100), arr1.at(-5, 100), arr1.at(-4, 100)
 			]
 		`);
-		eq(res, ARR([
-			ARR([NUM(10), NUM(20), NUM(30)]),
-			NUM(10), NUM(20), NUM(30),
-			NUM(10), NUM(20), NUM(30),
-			NUM(100), NUM(100), NUM(100),
-			NUM(100), NUM(100), NUM(100),
-		]));
+		eq(
+			res,
+			ARR([
+				ARR([NUM(10), NUM(20), NUM(30)]),
+				NUM(10),
+				NUM(20),
+				NUM(30),
+				NUM(10),
+				NUM(20),
+				NUM(30),
+				NUM(100),
+				NUM(100),
+				NUM(100),
+				NUM(100),
+				NUM(100),
+				NUM(100),
+			]),
+		);
 	});
 });

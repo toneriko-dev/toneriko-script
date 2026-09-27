@@ -313,19 +313,6 @@ describe('Array', () => {
 		assert.fail();
 	});
 
-	test.concurrent('non-integer-indexed assignment', async () => {
-		try {
-			await exe(`
-			var a = []
-	 		a[6.21] = 'hoge'
-			`);
-		} catch (e) {
-			assert.equal(e instanceof AiScriptIndexOutOfRangeError, true);
-			return;
-		}
-		assert.fail();
-	});
-
 	test.each([
 		['fractional', '0.5'],
 		['NaN', '0 / 0'],

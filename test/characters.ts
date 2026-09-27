@@ -57,7 +57,7 @@ describe('isSurrogatePair', () => {
 		expect(isSurrogatePair(input)).toBe(expected);
 	});
 
-	test.concurrent.each(cases)('start given', () => {
+	test.concurrent('start given', () => {
 		expect(isSurrogatePair('_\uD842\uDFB7', 1)).toBe(true);
 	});
 });

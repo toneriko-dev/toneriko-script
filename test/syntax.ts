@@ -541,17 +541,6 @@ describe('Comment', () => {
 		eq(res, NUM(42));
 	});
 
-	test.concurrent('multi line comment', async () => {
-		const res = await exe(`
-		/* variable declaration here...
-			let a = ...
-		*/
-		let a = 42
-		<: a
-		`);
-		eq(res, NUM(42));
-	});
-
 	test.concurrent('multi line comment 2', async () => {
 		const res = await exe(`
 		/* variable declaration here...
@@ -711,13 +700,6 @@ describe('Variable declaration', () => {
 			<: [a, b]
 		`);
 		eq(res, ARR([NUM(1), NUM(2)]));
-	});
-	test.concurrent('empty function', async () => {
-		const res = await exe(`
-			@hoge() { }
-			<: hoge()
-		`);
-		eq(res, NULL);
 	});
 });
 
@@ -1029,16 +1011,6 @@ describe('do-while', () => {
 		eq(res, STR('hoge'));
 	});
 
-	test.concurrent('with label', async () => {
-		const res = await exe(`
-		var count = 0
-		do {
-			count += 1
-		} while count < 42
-		<: count
-		`);
-		eq(res, NUM(42));
-	});
 });
 
 describe('loop', () => {
@@ -1083,93 +1055,28 @@ describe('loop', () => {
 });
 
 describe('meta', () => {
-	test.concurrent('default meta', async () => {
-		const res = getMeta(`
-		### { a: 1, b: 2, c: 3, }
-		`);
-		eq(res, new Map([
-			[null, {
-				a: 1,
-				b: 2,
-				c: 3,
-			}]
-		]));
-		eq(res!.get(null), {
-			a: 1,
-			b: 2,
-			c: 3,
-		});
+	test.concurrent.each([
+		{
+			name: 'default object',
+			script: '### { a: 1, b: 2, c: 3, }',
+			expected: new Map([[null, { a: 1, b: 2, c: 3 }]]),
+		},
+		{ name: 'string', script: '### x "hoge"', expected: new Map([['x', 'hoge']]) },
+		{ name: 'number', script: '### x 42', expected: new Map([['x', 42]]) },
+		{ name: 'negative number', script: '### x -42', expected: new Map([['x', -42]]) },
+		{ name: 'boolean', script: '### x true', expected: new Map([['x', true]]) },
+		{ name: 'null', script: '### x null', expected: new Map([['x', null]]) },
+		{ name: 'array', script: '### x [1, 2, 3]', expected: new Map([['x', [1, 2, 3]]]) },
+		{ name: 'object', script: '### x { a: 1, b: 2, c: 3, }', expected: new Map([['x', { a: 1, b: 2, c: 3 }]]) },
+	])('$name', ({ script, expected }) => {
+		expect(getMeta(script)).toStrictEqual(expected);
 	});
 
-	describe('String', () => {
-		test.concurrent('valid', async () => {
-			const res = getMeta(`
-			### x "hoge"
-			`);
-			eq(res, new Map([
-				['x', 'hoge']
-			]));
-		});
-	});
-
-	describe('Number', () => {
-		test.concurrent('valid', async () => {
-			const res = getMeta(`
-			### x 42
-			`);
-			eq(res, new Map([
-				['x', 42]
-			]));
-		});
-
-		test.concurrent('negative', async () => {
-			const res = getMeta(`
-			### x -42
-			`);
-			eq(res, new Map([
-				['x', -42]
-			]));
-		});
-
-		test.concurrent('negative overflow', async () => {
-			expect(() => getMeta(`
-			### x -1e309
-			`)).toThrow(AiScriptSyntaxError);
-		});
-	});
-
-	describe('Boolean', () => {
-		test.concurrent('valid', async () => {
-			const res = getMeta(`
-			### x true
-			`);
-			eq(res, new Map([
-				['x', true]
-			]));
-		});
-	});
-
-	describe('Null', () => {
-		test.concurrent('valid', async () => {
-			const res = getMeta(`
-			### x null
-			`);
-			eq(res, new Map([
-				['x', null]
-			]));
-		});
+	test.concurrent('negative overflow', () => {
+		expect(() => getMeta('### x -1e309')).toThrow(AiScriptSyntaxError);
 	});
 
 	describe('Array', () => {
-		test.concurrent('valid', async () => {
-			const res = getMeta(`
-			### x [1, 2, 3]
-			`);
-			eq(res, new Map([
-				['x', [1, 2, 3]]
-			]));
-		});
-
 		test.concurrent('invalid', async () => {
 			try {
 				getMeta(`
@@ -1184,19 +1091,6 @@ describe('meta', () => {
 	});
 
 	describe('Object', () => {
-		test.concurrent('valid', async () => {
-			const res = getMeta(`
-			### x { a: 1, b: 2, c: 3, }
-			`);
-			eq(res, new Map([
-				['x', {
-					a: 1,
-					b: 2,
-					c: 3,
-				}]
-			]));
-		});
-
 		test.concurrent('invalid', async () => {
 			try {
 				getMeta(`

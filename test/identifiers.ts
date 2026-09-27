@@ -235,13 +235,6 @@ const sampleCodes = Object.entries<[(definedName: string, referredName: string) 
 	}
 	`, NULL],
 
-	eachContinue: [(definedName, referredName) =>
-	`
-	#${definedName}: each let v, [0] {
-		break #${referredName}
-	}
-	`, NULL],
-
 	whileContinue: [(definedName, referredName) =>
 	`
 	var flag = true

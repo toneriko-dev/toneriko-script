@@ -949,12 +949,10 @@ export class Interpreter {
 						};
 					}),
 				);
-				const control = params
-					.map((param) => param.default)
-					.filter((value) => value != null)
-					.find(isControl);
-				if (control != null) {
-					return control;
+				for (const param of params) {
+					if (param.default != null && isControl(param.default)) {
+						return param.default;
+					}
 				}
 				return FN(params as VUserFn['params'], node.children, scope, node.typeParams);
 			}
@@ -1534,12 +1532,10 @@ export class Interpreter {
 						type: param.argType ? getTypeBySource(param.argType, typeParams) : undefined,
 					};
 				});
-				const control = params
-					.map((param) => param.default)
-					.filter((value) => value != null)
-					.find(isControl);
-				if (control != null) {
-					return control;
+				for (const param of params) {
+					if (param.default != null && isControl(param.default)) {
+						return param.default;
+					}
 				}
 				return FN(params as VUserFn['params'], node.children, scope, node.typeParams);
 			}
@@ -1867,12 +1863,14 @@ export class Interpreter {
 			}
 			case 'arr': {
 				assertArray(value);
-				dest.value.map((item, index) => this.define(scope, item, value.value[index] ?? NULL, isMutable));
+				dest.value.forEach((item, index) => this.define(scope, item, value.value[index] ?? NULL, isMutable));
 				break;
 			}
 			case 'obj': {
 				assertObject(value);
-				[...dest.value].map(([key, item]) => this.define(scope, item, value.value.get(key) ?? NULL, isMutable));
+				for (const [key, item] of dest.value) {
+					this.define(scope, item, value.value.get(key) ?? NULL, isMutable);
+				}
 				break;
 			}
 			default: {

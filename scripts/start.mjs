@@ -1,6 +1,6 @@
 import fs from 'fs';
 import * as readline from 'readline';
-import chalk from 'chalk';
+import { styleText } from 'node:util';
 import { Parser, Interpreter, errors, utils } from '@syuilo/aiscript';
 const { AiScriptError } = errors;
 const { valToString } = utils;
@@ -17,10 +17,10 @@ const interpreter = new Interpreter({}, {
 		});
 	},
 	out(value) {
-		console.log(chalk.magenta(valToString(value, true)));
+		console.log(styleText('magenta', valToString(value, true)));
 	},
 	err(e) {
-		console.log(chalk.red(`${e}`));
+		console.log(styleText('red', `${e}`));
 	},
 	log(type, params) {
 	}
@@ -32,7 +32,7 @@ try {
 	await interpreter.exec(ast);
 } catch (e) {
 	if (e instanceof AiScriptError) {
-		console.log(chalk.red(`${e}`));
+		console.log(styleText('red', `${e}`));
 	} else {
 		throw e
 	}

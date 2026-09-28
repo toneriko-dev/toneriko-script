@@ -1,5 +1,5 @@
 import * as readline from 'readline/promises';
-import chalk from 'chalk';
+import { styleText } from 'node:util';
 import { errors, Parser, Interpreter, utils } from '@syuilo/aiscript';
 const { valToString } = utils;
 
@@ -23,18 +23,18 @@ const interpreter = new Interpreter(
 		},
 		out(value) {
 			if (value.type === 'str') {
-				console.log(chalk.magenta(value.value));
+				console.log(styleText('magenta', value.value));
 			} else {
-				console.log(chalk.magenta(valToString(value)));
+				console.log(styleText('magenta', valToString(value)));
 			}
 		},
 		err(e) {
-			console.log(chalk.red(`${e}`));
+			console.log(styleText('red', `${e}`));
 		},
 		log(type, params) {
 			switch (type) {
 				case 'end':
-					console.log(chalk.gray(`< ${valToString(params.val, true)}`));
+					console.log(styleText('gray', `< ${valToString(params.val, true)}`));
 					break;
 				default:
 					break;
@@ -75,7 +75,7 @@ async function main() {
 		}
 		await interpreter.exec(ast);
 	} catch (e) {
-		console.log(chalk.red(`${e}`));
+		console.log(styleText('red', `${e}`));
 	}
 	return true;
 }

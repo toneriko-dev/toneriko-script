@@ -9,7 +9,7 @@ import type { TypeParam } from '../../node.js';
 
 /**
  * ```abnf
- * Type = FnType / NamedType
+ * Type = UnionType
  * ```
  */
 export function parseType(s: ITokenStream): Ast.TypeSource {
@@ -60,7 +60,7 @@ function parseTypeParam(s: ITokenStream): TypeParam {
 
 /**
  * ```abnf
- * UnionType = UnionTypeInner *("|" UnionTypeInner)
+ * UnionType = UnionTypeTerm *("|" UnionTypeTerm)
  * ```
  */
 function parseUnionType(s: ITokenStream): Ast.TypeSource {
@@ -146,7 +146,7 @@ function parseFnType(s: ITokenStream): Ast.TypeSource {
 
 /**
  * ```abnf
- * NamedType = IDENT ["<" Type ">"]
+ * NamedType = (IDENT / "null") ["<" Type ">"]
  * ```
  */
 function parseNamedType(s: ITokenStream): Ast.TypeSource {

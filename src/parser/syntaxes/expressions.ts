@@ -33,8 +33,8 @@ export function parseExpr(s: ITokenStream, isStatic: boolean): Ast.Expression {
 	return parsePratt(s, 0);
 }
 
-// 中置演算子では lbp が大きいほど右結合、rbp が大きいほど左結合になる。
-// これらの値は演算子の左右に対する結合力を表す。
+// 中置演算子は lbp > rbp なら右結合、lbp < rbp なら左結合になる。
+// 結合力が大きい演算子ほど優先する。
 
 const operators: OpInfo[] = [
 	{ opKind: 'postfix', kind: TokenKind.OpenParen, bp: 20 },
@@ -633,7 +633,7 @@ function parseReference(s: ITokenStream): Ast.Identifier {
 
 /**
  * ```abnf
- * Object = "{" [ObjectKey ":" Expr *(SEP IDENT ":" Expr) [SEP]] "}"
+ * Object = "{" [ObjectKey ":" Expr *(SEP ObjectKey ":" Expr) [SEP]] "}"
  * ```
  */
 function parseObject(s: ITokenStream, isStatic: boolean): Ast.Obj {

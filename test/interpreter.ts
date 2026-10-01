@@ -474,7 +474,6 @@ describe('pause', () => {
 			{},
 		);
 
-		// await で非同期実行時のエラーを捕捉する。
 		await interpreter.exec(Parser.parse(`Async:interval(100, @() { count() })`));
 
 		return {

@@ -57,7 +57,7 @@ export function parseTopLevel(s: ITokenStream): Ast.Node[] {
 
 /**
  * ```abnf
- * Namespace = "::" IDENT "{" *(VarDef / FnDef / Namespace) "}"
+ * Namespace = "::" IDENT "{" *(DefStatement / StatementWithAttr / Namespace) "}"
  * ```
 */
 export function parseNamespace(s: ITokenStream): Ast.Namespace {

@@ -95,7 +95,7 @@ function parseUnionTypeInner(s: ITokenStream): Ast.TypeSource {
 /**
  * ```abnf
  * FnType = "@" [TypeParams] "(" ParamTypes ")" "=>" Type
- * ParamTypes = [Type *(SEP Type)]
+ * ParamTypes = [Type *("," Type)]
  * ```
  */
 function parseFnType(s: ITokenStream): Ast.TypeSource {

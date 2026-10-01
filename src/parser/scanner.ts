@@ -592,8 +592,7 @@ export class Scanner implements ITokenStream {
 	}
 
 	/**
-	 * `\`の直後から呼び出し、エスケープシーケンスをデコードして1文字以上の文字列を返します。
-	 * (呼び出し時点で`\`自体は読み飛ばし済みであることが前提)
+	 * 呼び出し時点で先頭の `\` は消費済み。未知のエスケープは次の文字をそのまま返す。
 	 */
 	private readEscapeSequence(literalStartPos: TokenPosition): string {
 		if (this.stream.eof) {
@@ -627,7 +626,6 @@ export class Scanner implements ITokenStream {
 				return String.fromCharCode(Number.parseInt(code, 16));
 			}
 			default: {
-				// \\ \' \" \` \{ \} 等はそのままの文字として、それ以外の未知のエスケープも寛容にそのままの文字として扱う
 				this.stream.next();
 				return escapeChar;
 			}

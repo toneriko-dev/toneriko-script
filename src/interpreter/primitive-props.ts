@@ -1,4 +1,3 @@
-// JavaScriptは一部のUnicode文字列を正しく扱えないため標準関数の代わりにIntl.Segmenterベースの関数を使う
 import { substring, length, indexOf, toArray } from '../utils/graphemes.js';
 import { AiScriptRuntimeError } from '../error.js';
 import { textEncoder } from '../const.js';
@@ -31,10 +30,8 @@ type PrimitiveProps = {
 	[key in VWithPP['type']]: { [key: string]: (target: Value) => Value };
 };
 
-// 各プロパティは対応するVWithPPの派生型(VNum/VStr/VArr/VError)を引数に取るよう narrow に書きたいが、
-// それをそのまま PrimitiveProps (target: Value) の形に代入しようとすると反変な関数引数チェックに
-// 引っかかる。target.type によるディスパッチ(getPrimProp参照)で実行時の型は保証されるため、
-// as unknown as で意図的に広げる。
+// getPrimProp が target.type に対応する関数だけを呼ぶため、各関数の引数を派生型に絞れる。
+// PrimitiveProps の引数型とは反変性により一致しないので、ここでは二段階の型アサーションを使う。
 const PRIMITIVE_PROPS = {
 	num: {
 		to_str: (target: VNum): VFn =>

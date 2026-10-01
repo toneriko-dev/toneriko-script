@@ -107,42 +107,6 @@ describe('Math', () => {
 	test.concurrent('max', async () => {
 		eq(await exe("<: Math:max(-2, -3)"), NUM(-2));
 	});
-	
-	/*
-	test.concurrent('rnd', async () => {
-		const steps = 512;
-
-		const res = await exe(`
-		let counts = [] // 0 ~ 10 の出現回数を格納する配列
-		for (11) {
-			counts.push(0) // 初期化
-		}
-
-		for (${steps}) {
-			let rnd = Math:rnd(0 10) // 0 以上 10 以下の整数乱数
-			counts[rnd] = counts[rnd] + 1
-		}
-		<: counts`);
-
-		function chiSquareTest(observed: number[], expected: number[]) {
-			let chiSquare = 0; // カイ二乗値
-			for (let i = 0; i < observed.length; i++) {
-				chiSquare += Math.pow(observed[i] - expected[i], 2) / expected[i];
-			}
-			return chiSquare;
-		}
-
-		let observed: Array<number> = [];
-		for (let i = 0; i < res.value.length; i++) {
-			observed.push(res.value[i].value);
-		}
-		let expected = new Array(11).fill(steps / 10);
-		let chiSquare = chiSquareTest(observed, expected);
-
-		// 自由度が (11 - 1) の母分散の カイ二乗分布 95% 信頼区間は [3.94, 18.31]
-		assert.deepEqual(3.94 <= chiSquare && chiSquare <= 18.31, true, `カイ二乗値(${chiSquare})が母分散の95%信頼区間にありません`);
-	});
-	*/
 
 	test.concurrent('rnd with arg', async () => {
 		eq(await exe("<: Math:rnd(1, 1.5)"), NUM(1));

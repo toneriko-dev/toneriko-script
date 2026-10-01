@@ -403,7 +403,7 @@ function parseReturn(s: ITokenStream): Ast.Return {
 
 /**
  * ```abnf
- * StatementWithAttr = *Attr Statement
+ * StatementWithAttr = *(Attr NewLine) DefStatement
  * ```
  */
 export function parseStatementWithAttr(s: ITokenStream): Ast.Definition {

@@ -1,8 +1,5 @@
-// JavaScriptのstring.lengthや添字アクセスはUTF-16コードユニット単位であり、
-// 肌色修飾子付き絵文字やZWJ結合絵文字(家族の絵文字など)を複数文字として誤って扱ってしまう。
-// AiScriptの文字列操作(str.len/slice/index_of/to_arr/split/pick)はユーザーが視覚的に
-// 認識する「1文字」(Unicode拡張書記素クラスタ)単位で動作させたいため、
-// ICU実装に基づくIntl.Segmenterで分割する。
+// UTF-16 コードユニットではなく拡張書記素クラスタを単位にする文字列操作で共有する。
+// str.split は区切り文字を省略した場合だけこの分割を使う。
 const segmenter = new Intl.Segmenter(undefined, { granularity: 'grapheme' });
 
 export function toArray(str: string): string[] {

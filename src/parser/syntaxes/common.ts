@@ -26,7 +26,8 @@ export function parseDest(s: ITokenStream): Ast.Expression {
 
 /**
  * ```abnf
- * Params = "(" [Dest [":" Type] *(SEP Dest [":" Type])] ")"
+ * Params = "(" [Param *(SEP Param) [SEP]] ")"
+ * Param = Dest ["?" / ("=" Expr)] [":" Type]
  * ```
  */
 export function parseParams(s: ITokenStream): Ast.Fn['params'] {

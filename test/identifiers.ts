@@ -27,7 +27,6 @@ const reservedWords = [
 	'let',
 	'exists',
 
-	// 文脈キーワードは識別子に利用できるため除外
 	'as',
 	'async',
 	'attr',
@@ -35,17 +34,13 @@ const reservedWords = [
 	'await',
 	'catch',
 	'class',
-	// 'const',
 	'component',
 	'constructor',
-	// 'def',
 	'dictionary',
 	'enum',
 	'export',
 	'finally',
 	'fn',
-	// 'func',
-	// 'function',
 	'hash',
 	'in',
 	'interface',
@@ -289,8 +284,7 @@ describe.each(
 		parser.parse(sampleCode(wordCat, wordCat));
 	});
 
-	// グローバルの expect を使用すると expect.hasAssertions() が失敗するときがあるので、
-	// ローカルの expect を使用する
+	// 並行実行中の expect.hasAssertions() を各テストに対応付けるため、テストコンテキストの expect を使う。
 	test.concurrent.for(
 		identifierCases
 	)('%s is allowed: %s', async ([word, allowed], { expect }) => {

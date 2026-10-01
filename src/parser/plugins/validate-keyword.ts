@@ -2,8 +2,7 @@ import { AiScriptSyntaxError } from '../../error.js';
 import { visitNode } from '../visit.js';
 import type * as Ast from '../../node.js';
 
-// 字句解析で Identifier になるエスケープ形式も予約語として拒否する。
-// 文脈キーワードは識別子に使えるため、この一覧から除外する。
+// 字句解析で Identifier になる語も予約語として拒否する。
 
 const reservedWord = [
 	'null',
@@ -35,17 +34,13 @@ const reservedWord = [
 	'await',
 	'catch',
 	'class',
-	// 'const',
 	'component',
 	'constructor',
-	// 'def',
 	'dictionary',
 	'enum',
 	'export',
 	'finally',
 	'fn',
-	// 'func',
-	// 'function',
 	'hash',
 	'in',
 	'interface',

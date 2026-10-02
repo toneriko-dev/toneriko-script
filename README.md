@@ -1,7 +1,19 @@
-# @syuilo/aiscript (Misskey fork)
+# @syuilo/aiscript
 
-[syuilo/aiscript](https://github.com/syuilo/aiscript) 1.2.1 をこのMisskeyフォークにベンダリングしたもの。Play / Widget / プラグインで使われるAiScript処理系(パーサ・インタプリタ・標準ライブラリ)本体で、独自の言語拡張(新構文・型システム・標準ライブラリ・パフォーマンス改善)を加えていくためのベースとして取り込んでいる。
+[syuilo/aiscript](https://github.com/syuilo/aiscript) 1.2.1 を、このリポジトリに取り込んだものです。Play、ウィジェット、プラグインで使う AiScript の処理系(パーサー、インタプリタ、標準ライブラリ)の本体で、独自の言語拡張(新しい構文、型システム、標準ライブラリ、性能の改善)を加えるときの出発点にしています。
 
-upstreamとの追従・同期は行わない(このMisskeyフォーク自体がupstream Misskeyから完全に独立した独自路線であるのと同じ方針)。ライセンスはMITのまま、著作権表示は`LICENSE`に保持している。
+upstream には追従せず、同期もしません。このリポジトリが Misskey の upstream から独立して開発されているのと同じ方針です。ライセンスは MIT のままで、著作権表示は [LICENSE](./LICENSE) に残してあります。
 
-`packages/frontend`からは`@syuilo/aiscript`という同名のworkspaceパッケージとして解決される(本物の同名npmパッケージをbunのworkspace解決で差し替える手法)。
+ワークスペースのパッケージとして、同じ名前の `@syuilo/aiscript` で解決されます。[packages/frontend](../frontend) は `workspace:*` でこれを参照するので、npm 上の同名のパッケージは使われません。
+
+## コマンド
+
+| コマンド | 内容 |
+| --- | --- |
+| `bun run --filter @syuilo/aiscript build` | ビルドする |
+| `bun run --filter @syuilo/aiscript watch` | 監視してビルドを繰り返す |
+| `bun run --filter @syuilo/aiscript test` | テストを実行する |
+| `bun run --filter @syuilo/aiscript typecheck` | 型検査を行う |
+| `bun run --filter @syuilo/aiscript repl` | 対話環境を開く |
+| `bun run --filter @syuilo/aiscript start` | カレントディレクトリの `main.ais` を実行する |
+| `bun run --filter @syuilo/aiscript parse` | カレントディレクトリの `main.ais` を構文木に変換して表示する |

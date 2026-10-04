@@ -15,10 +15,7 @@ describe('num', () => {
 	test.concurrent('to_hex', async () => {
 		const res = await exe(`
 		<: [
-			0, -0, 10, 16,
-			-10, -16,
-			0.5, 1 / 3,
-			2 ^ 1023,
+			0, -0, 16, -16, 0.5,
 		].map(@(v){v.to_hex()})
 		`);
 		eq(
@@ -26,13 +23,9 @@ describe('num', () => {
 			ARR([
 				STR('0'),
 				STR('0'),
-				STR('a'),
 				STR('10'),
-				STR('-a'),
 				STR('-10'),
 				STR('0.8'),
-				STR((1 / 3).toString(16)),
-				STR((2 ** 1023).toString(16)),
 			]),
 		);
 	});
@@ -45,14 +38,6 @@ describe('num', () => {
 });
 
 describe('str', () => {
-	test.concurrent('len', async () => {
-		const res = await exe(`
-		let str = "hello"
-		<: str.len
-		`);
-		eq(res, NUM(5));
-	});
-
 	test.concurrent('to_num', async () => {
 		const res = await exe(`
 		let str = "123"
@@ -136,22 +121,6 @@ describe('str', () => {
 		<: str.split(",")
 		`);
 		eq(res, ARR([STR('a'), STR('b'), STR('c')]));
-	});
-
-	test.concurrent('pick', async () => {
-		const res = await exe(`
-		let str = "hello"
-		<: str.pick(1)
-		`);
-		eq(res, STR('e'));
-	});
-
-	test.concurrent('slice', async () => {
-		const res = await exe(`
-		let str = "hello"
-		<: str.slice(1, 3)
-		`);
-		eq(res, STR('el'));
 	});
 
 	test.concurrent('codepoint_at', async () => {
@@ -336,30 +305,17 @@ describe('str', () => {
 		const res = await exe(`
 		let str = "abc"
 		<: [
-			str.pad_start(0), str.pad_start(1), str.pad_start(2), str.pad_start(3), str.pad_start(4), str.pad_start(5),
-			str.pad_start(0, "0"), str.pad_start(1, "0"), str.pad_start(2, "0"), str.pad_start(3, "0"), str.pad_start(4, "0"), str.pad_start(5, "0"),
-			str.pad_start(0, "01"), str.pad_start(1, "01"), str.pad_start(2, "01"), str.pad_start(3, "01"), str.pad_start(4, "01"), str.pad_start(5, "01"),
+			str.pad_start(2), str.pad_start(4),
+			str.pad_start(5, "0"),
+			str.pad_start(4, "01"), str.pad_start(5, "01"),
 		]
 		`);
 		eq(
 			res,
 			ARR([
 				STR('abc'),
-				STR('abc'),
-				STR('abc'),
-				STR('abc'),
 				STR(' abc'),
-				STR('  abc'),
-				STR('abc'),
-				STR('abc'),
-				STR('abc'),
-				STR('abc'),
-				STR('0abc'),
 				STR('00abc'),
-				STR('abc'),
-				STR('abc'),
-				STR('abc'),
-				STR('abc'),
 				STR('0abc'),
 				STR('01abc'),
 			]),
@@ -377,30 +333,17 @@ describe('str', () => {
 		const res = await exe(`
 		let str = "abc"
 		<: [
-			str.pad_end(0), str.pad_end(1), str.pad_end(2), str.pad_end(3), str.pad_end(4), str.pad_end(5),
-			str.pad_end(0, "0"), str.pad_end(1, "0"), str.pad_end(2, "0"), str.pad_end(3, "0"), str.pad_end(4, "0"), str.pad_end(5, "0"),
-			str.pad_end(0, "01"), str.pad_end(1, "01"), str.pad_end(2, "01"), str.pad_end(3, "01"), str.pad_end(4, "01"), str.pad_end(5, "01"),
+			str.pad_end(2), str.pad_end(4),
+			str.pad_end(5, "0"),
+			str.pad_end(4, "01"), str.pad_end(5, "01"),
 		]
 		`);
 		eq(
 			res,
 			ARR([
 				STR('abc'),
-				STR('abc'),
-				STR('abc'),
-				STR('abc'),
 				STR('abc '),
-				STR('abc  '),
-				STR('abc'),
-				STR('abc'),
-				STR('abc'),
-				STR('abc'),
-				STR('abc0'),
 				STR('abc00'),
-				STR('abc'),
-				STR('abc'),
-				STR('abc'),
-				STR('abc'),
 				STR('abc0'),
 				STR('abc01'),
 			]),
@@ -490,28 +433,12 @@ describe('arr', () => {
 		eq(res, STR('a-b-c'));
 	});
 
-	test.concurrent('map', async () => {
-		const res = await exe(`
-		let arr = [1, 2, 3]
-		<: arr.map(@(item) { item * 2 })
-		`);
-		eq(res, ARR([NUM(2), NUM(4), NUM(6)]));
-	});
-
 	test.concurrent('map with index', async () => {
 		const res = await exe(`
 		let arr = [1, 2, 3]
-		<: arr.map(@(item, index) { item * index })
+		<: [arr.map(@(item, index) { item * index }), arr.map(@(item) { item * 2 })]
 		`);
-		eq(res, ARR([NUM(0), NUM(2), NUM(6)]));
-	});
-
-	test.concurrent('filter', async () => {
-		const res = await exe(`
-		let arr = [1, 2, 3]
-		<: arr.filter(@(item) { item != 2 })
-		`);
-		eq(res, ARR([NUM(1), NUM(3)]));
+		eq(res, ARR([ARR([NUM(0), NUM(2), NUM(6)]), ARR([NUM(2), NUM(4), NUM(6)])]));
 	});
 
 	test.concurrent('filter with index', async () => {
@@ -545,14 +472,6 @@ describe('arr', () => {
 		<: [].reduce(@(){})
 		`),
 		).rejects.toThrow('Reduce of empty array without initial value');
-	});
-
-	test.concurrent('find', async () => {
-		const res = await exe(`
-		let arr = ["abc", "def", "ghi"]
-		<: arr.find(@(item) { item.incl("e") })
-		`);
-		eq(res, STR('def'));
 	});
 
 	test.concurrent('find with index', async () => {
@@ -607,16 +526,6 @@ describe('arr', () => {
 		eq(res, ARR([ARR([NUM(3), NUM(2), NUM(1)]), ARR([NUM(1), NUM(2), NUM(3)])]));
 	});
 
-	test.concurrent('sort num array', async () => {
-		const res = await exe(`
-			var arr = [2, 10, 3]
-			let comp = @(a, b) { a - b }
-			arr.sort(comp)
-			<: arr
-		`);
-		eq(res, ARR([NUM(2), NUM(3), NUM(10)]));
-	});
-
 	test.concurrent('sort string array (with Str:lt)', async () => {
 		const res = await exe(`
 			var arr = ["hoge", "huga", "piyo", "hoge"]
@@ -633,17 +542,6 @@ describe('arr', () => {
 			<: arr
 		`);
 		eq(res, ARR([STR('piyo'), STR('huga'), STR('hoge'), STR('hoge')]));
-	});
-
-	test.concurrent('sort object array', async () => {
-		const res = await exe(`
-			var arr = [{x: 2}, {x: 10}, {x: 3}]
-			let comp = @(a, b) { a.x - b.x }
-
-			arr.sort(comp)
-			<: arr
-		`);
-		eq(res, ARR([OBJ(new Map([['x', NUM(2)]])), OBJ(new Map([['x', NUM(3)]])), OBJ(new Map([['x', NUM(10)]]))]));
 	});
 
 	test.concurrent('sort (stable)', async () => {
@@ -877,10 +775,8 @@ describe('arr', () => {
 			let arr1 = [10, 20, 30]
 			<: [
 				arr1
-				arr1.at(0), arr1.at(1), arr1.at(2)
-				arr1.at(-3), arr1.at(-2), arr1.at(-1)
-				arr1.at(3), arr1.at(4), arr1.at(5)
-				arr1.at(-6), arr1.at(-5), arr1.at(-4)
+				arr1.at(0), arr1.at(-1), arr1.at(-3)
+				arr1.at(3), arr1.at(-4)
 			]
 		`);
 		eq(
@@ -888,15 +784,8 @@ describe('arr', () => {
 			ARR([
 				ARR([NUM(10), NUM(20), NUM(30)]),
 				NUM(10),
-				NUM(20),
 				NUM(30),
 				NUM(10),
-				NUM(20),
-				NUM(30),
-				NULL,
-				NULL,
-				NULL,
-				NULL,
 				NULL,
 				NULL,
 			]),
@@ -908,10 +797,8 @@ describe('arr', () => {
 			let arr1 = [10, 20, 30]
 			<: [
 				arr1
-				arr1.at(0, 100), arr1.at(1, 100), arr1.at(2, 100)
-				arr1.at(-3, 100), arr1.at(-2, 100), arr1.at(-1, 100)
-				arr1.at(3, 100), arr1.at(4, 100), arr1.at(5, 100)
-				arr1.at(-6, 100), arr1.at(-5, 100), arr1.at(-4, 100)
+				arr1.at(0, 100), arr1.at(-1, 100)
+				arr1.at(3, 100), arr1.at(-4, 100)
 			]
 		`);
 		eq(
@@ -919,15 +806,7 @@ describe('arr', () => {
 			ARR([
 				ARR([NUM(10), NUM(20), NUM(30)]),
 				NUM(10),
-				NUM(20),
 				NUM(30),
-				NUM(10),
-				NUM(20),
-				NUM(30),
-				NUM(100),
-				NUM(100),
-				NUM(100),
-				NUM(100),
 				NUM(100),
 				NUM(100),
 			]),

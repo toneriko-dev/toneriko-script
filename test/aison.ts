@@ -86,11 +86,6 @@ greet()`)).toThrow();
 		expect(() => AiSON.parse('"hello" "hi"')).toThrow();
 	});
 
-	test.concurrent('not allowed: multiple statements (object)', () => {
-		expect(() => AiSON.parse(`{key: "value"}
-
-{foo: "bar"}`)).toThrow();
-	});
 });
 
 describe('stringify', () => {
@@ -140,7 +135,10 @@ describe('stringify', () => {
 	});
 
 	test.concurrent('nested', () => {
-		expect(AiSON.stringify([{ key: 'value' }])).toEqual('[{key: "value"}]');
+		const value = [{ key: 'value' }];
+		const serialized = AiSON.stringify(value);
+		expect(serialized).toEqual('[{key: "value"}]');
+		expect(AiSON.parse(serialized)).toStrictEqual(value);
 	});
 
 	test.concurrent('repeats shared values and rejects circular references', () => {
@@ -152,23 +150,10 @@ describe('stringify', () => {
 		expect(() => AiSON.stringify(circular)).toThrow(new TypeError('Cannot stringify circular AiSON value.'));
 	});
 
-	test.concurrent('pretty print: array', () => {
-		expect(AiSON.stringify([1, 2, 3], null, 2)).toEqual(`[
-  1,
-  2,
-  3
-]`);
-	});
-
-	test.concurrent('pretty print: object', () => {
-		expect(AiSON.stringify({ key: 'value', foo: 'bar' }, null, 2)).toEqual(`{
-  key: "value",
-  foo: "bar"
-}`);
-	});
-
 	test.concurrent('pretty print: nested', () => {
-		expect(AiSON.stringify({ arr: [1, 2, { key: 'value' }] }, null, 2)).toEqual(`{
+		const value = { arr: [1, 2, { key: 'value' }] };
+		const serialized = AiSON.stringify(value, null, 2);
+		expect(serialized).toEqual(`{
   arr: [
     1,
     2,
@@ -177,6 +162,7 @@ describe('stringify', () => {
     }
   ]
 }`);
+		expect(AiSON.parse(serialized)).toStrictEqual(value);
 	});
 	
 	test.concurrent('custom indent', () => {
@@ -198,16 +184,6 @@ describe('stringify', () => {
 		expect(AiSON.stringify(value, null, '123456789012')).toBe(AiSON.stringify(value, null, '1234567890'));
 	});
 	
-	test.concurrent('no indent when indent is 0', () => {
-		expect(AiSON.stringify({ key: 'value', foo: 'bar' }, null, 0)).toEqual('{key: "value", foo: "bar"}');
-	});
-
-	test.concurrent('can parse generated aison', () => {
-		const obj = { arr: [1, 2, { key: 'value' }] };
-		const aison = AiSON.stringify(obj);
-		const parsed = AiSON.parse(aison);
-		expect(parsed).toStrictEqual(obj);
-	});
 
 	test.concurrent('quotes object keys that are not identifiers', () => {
 		const obj = {

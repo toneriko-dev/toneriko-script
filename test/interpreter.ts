@@ -441,18 +441,14 @@ describe('IRQ', () => {
 			vi.restoreAllMocks();
 		});
 
-		test('It ends', async () => {
+		test('finishes after all sleeps', async () => {
 			const countSleepsSpy = vi.fn(countSleeps);
-			countSleepsSpy(100);
-			await vi.advanceTimersByTimeAsync(1000);
-			return expect(countSleepsSpy).toHaveResolved();
-		});
-
-		test('It takes time', async () => {
-			const countSleepsSpy = vi.fn(countSleeps);
-			countSleepsSpy(100);
+			const execution = countSleepsSpy(100);
 			await vi.advanceTimersByTimeAsync(999);
-			return expect(countSleepsSpy).not.toHaveResolved();
+			expect(countSleepsSpy).not.toHaveResolved();
+			await vi.advanceTimersByTimeAsync(1);
+			await execution;
+			expect(countSleepsSpy).toHaveResolved();
 		});
 
 		test.each([-1, NaN])('Invalid number: %d', (time) => {
@@ -537,10 +533,31 @@ describe('pause', () => {
 });
 
 describe('Attribute', () => {
-	const getAttr = async (name: string, script: string): Promise<Value['attr']> => {
+	const getAttr = async (
+		name: string,
+		script: string,
+		expectedAst?: { type: string; name: string; value: { type: string; value: unknown } }[],
+	): Promise<Value['attr']> => {
 		const parser = new Parser();
 		const interpreter = new Interpreter({});
 		const ast = parser.parse(script);
+		if (expectedAst) {
+			expect(ast).toHaveLength(1);
+			const root = ast[0];
+			const definition = root.type === 'ns' ? root.members[0] : root;
+			if (root.type === 'ns') {
+				expect(root.name).toBe(name.split(':')[0]);
+				expect(root.members).toHaveLength(1);
+			}
+			assert.equal(definition.type, 'def');
+			if (definition.type !== 'def') assert.fail();
+			expect(definition.dest).toMatchObject({ type: 'identifier', name: name.split(':').at(-1) });
+			expect(definition.attr.map(attr => ({
+				type: attr.type,
+				name: attr.name,
+				value: { type: attr.value.type, value: 'value' in attr.value ? attr.value.value : undefined },
+			}))).toEqual(expectedAst);
+		}
 		await interpreter.exec(ast);
 		const value = interpreter.scope.get(name);
 		return value.attr;
@@ -587,6 +604,14 @@ describe('Attribute', () => {
 		#[b false]
 		@f() {}
 		`,
+			[
+				{ type: 'attr', name: 'o', value: { type: 'obj', value: new Map([
+					['a', expect.objectContaining({ type: 'num', value: 1 })],
+					['b', expect.objectContaining({ type: 'num', value: 2 })],
+				]) } },
+				{ type: 'attr', name: 's', value: { type: 'str', value: 'ai' } },
+				{ type: 'attr', name: 'b', value: { type: 'bool', value: false } },
+			],
 		);
 		expect(attr).toStrictEqual([
 			{
@@ -610,6 +635,7 @@ describe('Attribute', () => {
 		#[x]
 		@f() {}
 		`,
+			[{ type: 'attr', name: 'x', value: { type: 'bool', value: true } }],
 		);
 		expect(attr).toStrictEqual([{ name: 'x', value: TRUE }]);
 	});
@@ -623,6 +649,7 @@ describe('Attribute', () => {
 			@f() {}
 		}
 		`,
+			[{ type: 'attr', name: 'x', value: { type: 'num', value: 42 } }],
 		);
 		expect(attr).toStrictEqual([{ name: 'x', value: NUM(42) }]);
 	});

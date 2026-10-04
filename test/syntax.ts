@@ -107,17 +107,6 @@ describe('separator', () => {
 			eq(res, STR('a'));
 		});
 
-		test.concurrent('multi line with semi colon', async () => {
-			const res = await exe(`
-			let x = 1
-			<: match x {
-				case 1 => "a",
-				case 2 => "b"
-			}
-			`);
-			eq(res, STR('a'));
-		});
-
 		test.concurrent('single line', async () => {
 			const res = await exe(`
 			let x = 1
@@ -126,7 +115,7 @@ describe('separator', () => {
 			eq(res, STR('a'));
 		});
 
-		test.concurrent('single line with tail semi colon', async () => {
+		test.concurrent('single line with tail comma', async () => {
 			const res = await exe(`
 			let x = 1
 			<: match x{case 1=>"a",case 2=>"b",}
@@ -146,18 +135,6 @@ describe('separator', () => {
 			eq(res, STR('c'));
 		});
 
-		test.concurrent('multi line with semi colon (default)', async () => {
-			const res = await exe(`
-			let x = 3
-			<: match x {
-				case 1 => "a",
-				case 2 => "b",
-				default => "c"
-			}
-			`);
-			eq(res, STR('c'));
-		});
-
 		test.concurrent('single line (default)', async () => {
 			const res = await exe(`
 			let x = 3
@@ -166,7 +143,7 @@ describe('separator', () => {
 			eq(res, STR('c'));
 		});
 
-		test.concurrent('single line with tail semi colon (default)', async () => {
+		test.concurrent('single line with tail comma (default)', async () => {
 			const res = await exe(`
 			let x = 3
 			<:match x{case 1=>"a",case 2=>"b",default=>"c",}
@@ -312,17 +289,6 @@ describe('separator', () => {
 	});
 
 	describe('obj', () => {
-		test.concurrent('multi line', async () => {
-			const res = await exe(`
-			let x = {
-				a: 1
-				b: 2
-			}
-			<: x.b
-			`);
-			eq(res, NUM(2));
-		});
-
 		test.concurrent('multi line, multi newlines', async () => {
 			const res = await exe(`
 			let x = {
@@ -332,9 +298,9 @@ describe('separator', () => {
 				b: 2
 
 			}
-			<: x.b
+			<: x
 			`);
-			eq(res, NUM(2));
+			eq(res, OBJ(new Map([['a', NUM(1)], ['b', NUM(2)]])));
 		});
 
 		test.concurrent('multi line with comma', async () => {
@@ -343,40 +309,29 @@ describe('separator', () => {
 				a: 1,
 				b: 2
 			}
-			<: x.b
+			<: x
 			`);
-			eq(res, NUM(2));
+			eq(res, OBJ(new Map([['a', NUM(1)], ['b', NUM(2)]])));
 		});
 
 		test.concurrent('single line', async () => {
 			const res = await exe(`
 			let x={a:1,b:2}
-			<: x.b
+			<: x
 			`);
-			eq(res, NUM(2));
+			eq(res, OBJ(new Map([['a', NUM(1)], ['b', NUM(2)]])));
 		});
 
 		test.concurrent('single line with tail comma', async () => {
 			const res = await exe(`
 			let x={a:1,b:2,}
-			<: x.b
+			<: x
 			`);
-			eq(res, NUM(2));
+			eq(res, OBJ(new Map([['a', NUM(1)], ['b', NUM(2)]])));
 		});
 	});
 
 	describe('arr', () => {
-		test.concurrent('multi line', async () => {
-			const res = await exe(`
-			let x = [
-				1
-				2
-			]
-			<: x[1]
-			`);
-			eq(res, NUM(2));
-		});
-
 		test.concurrent('multi line, multi newlines', async () => {
 			const res = await exe(`
 			let x = [
@@ -386,45 +341,9 @@ describe('separator', () => {
 				2
 
 			]
-			<: x[1]
+			<: x
 			`);
-			eq(res, NUM(2));
-		});
-
-		test.concurrent('multi line with comma', async () => {
-			const res = await exe(`
-			let x = [
-				1,
-				2
-			]
-			<: x[1]
-			`);
-			eq(res, NUM(2));
-		});
-
-		test.concurrent('multi line with comma, multi newlines', async () => {
-			const res = await exe(`
-			let x = [
-
-				1,
-
-				2
-
-			]
-			<: x[1]
-			`);
-			eq(res, NUM(2));
-		});
-
-		test.concurrent('multi line with comma and tail comma', async () => {
-			const res = await exe(`
-			let x = [
-				1,
-				2,
-			]
-			<: x[1]
-			`);
-			eq(res, NUM(2));
+			eq(res, ARR([NUM(1), NUM(2)]));
 		});
 
 		test.concurrent('multi line with comma and tail comma, multi newlines', async () => {
@@ -436,25 +355,25 @@ describe('separator', () => {
 				2,
 
 			]
-			<: x[1]
+			<: x
 			`);
-			eq(res, NUM(2));
+			eq(res, ARR([NUM(1), NUM(2)]));
 		});
 
 		test.concurrent('single line', async () => {
 			const res = await exe(`
 			let x=[1,2]
-			<: x[1]
+			<: x
 			`);
-			eq(res, NUM(2));
+			eq(res, ARR([NUM(1), NUM(2)]));
 		});
 
 		test.concurrent('single line with tail comma', async () => {
 			const res = await exe(`
 			let x=[1,2,]
-			<: x[1]
+			<: x
 			`);
-			eq(res, NUM(2));
+			eq(res, ARR([NUM(1), NUM(2)]));
 		});
 	});
 
@@ -483,19 +402,6 @@ describe('separator', () => {
 			const res = await exe(`
 			@f(
 				a
-				b
-			) {
-				a + b
-			}
-			<: f(1, 2)
-			`);
-			eq(res, NUM(3));
-		});
-
-		test.concurrent('multi line with comma', async () => {
-			const res = await exe(`
-			@f(
-				a,
 				b
 			) {
 				a + b

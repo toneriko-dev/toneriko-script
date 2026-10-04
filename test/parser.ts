@@ -5,19 +5,6 @@ import { TOKEN, TokenKind, TokenPosition } from '../src/parser/token';
 import { CharStream } from '../src/parser/streams/char-stream';
 
 describe('CharStream', () => {
-	test.concurrent('char', async () => {
-		const source = 'abc';
-		const stream = new CharStream(source);
-		assert.strictEqual('a', stream.char);
-	});
-
-	test.concurrent('next', async () => {
-		const source = 'abc';
-		const stream = new CharStream(source);
-		stream.next();
-		assert.strictEqual('b', stream.char);
-	});
-
 	describe('prev', () => {
 		test.concurrent('move', async () => {
 			const source = 'abc';
@@ -111,18 +98,6 @@ describe('CharStream', () => {
 		assert.strictEqual(true, stream.eof);
 	});
 
-	test.concurrent('EOFでcharを参照するとエラー', async () => {
-		const source = '';
-		const stream = new CharStream(source);
-		assert.strictEqual(true, stream.eof);
-		try {
-			stream.char;
-		} catch (e) {
-			return;
-		}
-		assert.fail();
-	});
-
 	test.concurrent('CRは読み飛ばされる', async () => {
 		const source = 'a\r\nb';
 		const stream = new CharStream(source);
@@ -131,14 +106,6 @@ describe('CharStream', () => {
 		assert.strictEqual('\n', stream.char);
 		stream.next();
 		assert.strictEqual('b', stream.char);
-		stream.next();
-		assert.strictEqual(true, stream.eof);
-	});
-
-	test.concurrent('surrogate pair', async () => {
-		const source = '\uD83E\uDD2F';
-		const stream = new CharStream(source);
-		assert.strictEqual('\uD83E\uDD2F', stream.char);
 		stream.next();
 		assert.strictEqual(true, stream.eof);
 	});

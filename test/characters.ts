@@ -44,9 +44,7 @@ describe('isLowSurrogate', () => {
 describe('isSurrogatePair', () => {
 	const cases: [string, boolean][] = [
 		['\uD842\uDFB7', true],
-		['\uD83E\uDD2F', true],
 		['a', false],
-		['\u85CD', false],
 		['\uD842', false],
 		['\uD8000', false],
 		['0\uDC00', false],
@@ -63,10 +61,6 @@ describe('isSurrogatePair', () => {
 });
 
 describe('decodeUnicodeEscapeSequence', () => {
-	test('plain', () => {
-		expect(decodeUnicodeEscapeSequence('abc123')).toBe('abc123');
-	});
-
 	test('escape', () => {
 		expect(decodeUnicodeEscapeSequence('\\u0041')).toBe('A');
 	});

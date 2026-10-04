@@ -12,20 +12,6 @@ test.concurrent('Hello, world!', () => {
 });
 
 
-test.concurrent('Closure', () => {
-	const res = exeSync(`
-	@store(v) {
-		let state = v
-		@() {
-			state
-		}
-	}
-	let s = store("ai")
-	s()
-	`);
-	eq(res, STR('ai'));
-});
-
 test.concurrent('Closure (counter)', () => {
 	const res = exeSync(`
 	@create_counter() {

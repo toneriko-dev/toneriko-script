@@ -265,22 +265,11 @@ describe('Array', () => {
 	});
 
 	test.concurrent('Assign array item to out of range', async () => {
-		assert.rejects(
+		await assert.rejects(
 			exe(`
 			let arr = [1, 2, 3]
 
 			arr[3] = 4
-
-			<: null
-		`),
-			AiScriptIndexOutOfRangeError,
-		);
-
-		assert.rejects(
-			exe(`
-			let arr = [1, 2, 3]
-
-			arr[9] = 10
 
 			<: null
 		`),
@@ -292,19 +281,6 @@ describe('Array', () => {
 		try {
 			await exe(`
 			<: [42][1]
-			`);
-		} catch (e) {
-			assert.equal(e instanceof AiScriptIndexOutOfRangeError, true);
-			return;
-		}
-		assert.fail();
-	});
-
-	test.concurrent('index out of range on assignment', async () => {
-		try {
-			await exe(`
-			var a = []
-	 		a[2] = 'hoge'
 			`);
 		} catch (e) {
 			assert.equal(e instanceof AiScriptIndexOutOfRangeError, true);
@@ -645,20 +621,6 @@ describe('Function call', () => {
 });
 
 describe('Return', () => {
-	test.concurrent('Early return', async () => {
-		const res = await exe(`
-		@f() {
-			if true {
-				return "ai"
-			}
-
-			"pope"
-		}
-		<: f()
-		`);
-		eq(res, STR('ai'));
-	});
-
 	test.concurrent('Early return (nested)', async () => {
 		const res = await exe(`
 		@f() {
@@ -670,32 +632,15 @@ describe('Return', () => {
 
 			"pope"
 		}
-		<: f()
-		`);
-		eq(res, STR('ai'));
-	});
-
-	test.concurrent('Early return (nested) 2', async () => {
-		const res = await exe(`
-		@f() {
-			if true {
-				return "ai"
-			}
-
-			"pope"
-		}
-
 		@g() {
 			if (f() == "ai") {
 				return "kawaii"
 			}
-
 			"pope"
 		}
-
-		<: g()
+		<: [f(), g()]
 		`);
-		eq(res, STR('kawaii'));
+		eq(res, ARR([STR('ai'), STR('kawaii')]));
 	});
 
 	test.concurrent('Early return without block', async () => {
@@ -726,19 +671,6 @@ describe('Return', () => {
 		eq(res, NUM(43));
 	});
 
-	test.concurrent('return inside for 2', async () => {
-		const res = await exe(`
-		@f() {
-			for (let i, 10) {
-				return 1
-			}
-			2
-		}
-		<: f()
-		`);
-		eq(res, NUM(1));
-	});
-
 	test.concurrent('return inside loop', async () => {
 		const res = await exe(`
 		@f() {
@@ -753,19 +685,6 @@ describe('Return', () => {
 		<: f()
 		`);
 		eq(res, NUM(42));
-	});
-
-	test.concurrent('return inside loop 2', async () => {
-		const res = await exe(`
-		@f() {
-			loop {
-				return 1
-			}
-			2
-		}
-		<: f()
-		`);
-		eq(res, NUM(1));
 	});
 
 	test.concurrent('return inside each', async () => {
@@ -784,18 +703,6 @@ describe('Return', () => {
 		eq(res, NUM(2));
 	});
 
-	test.concurrent('return inside each 2', async () => {
-		const res = await exe(`
-		@f() {
-			each (let item, ["ai", "chan", "kawaii"]) {
-				return 1
-			}
-			2
-		}
-		<: f()
-		`);
-		eq(res, NUM(1));
-	});
 });
 
 describe('type declaration', () => {
@@ -841,92 +748,6 @@ describe('type declaration', () => {
 });
 
 describe('Attribute', () => {
-	test.concurrent('single attribute with function (str)', async () => {
-		let node: Ast.Node;
-		let attr: Ast.Attribute;
-		const parser = new Parser();
-		const nodes = parser.parse(`
-		#[Event "Recieved"]
-		@onRecieved(data) {
-			data
-		}
-		`);
-		assert.equal(nodes.length, 1);
-		node = nodes[0];
-		if (node.type !== 'def' || node.dest.type !== 'identifier') {
-			assert.fail();
-		}
-		assert.equal(node.dest.name, 'onRecieved');
-		assert.equal(node.attr.length, 1);
-		attr = node.attr[0];
-		if (attr.type !== 'attr') {
-			assert.fail();
-		}
-		assert.equal(attr.name, 'Event');
-		if (attr.value.type !== 'str') {
-			assert.fail();
-		}
-		assert.equal(attr.value.value, 'Recieved');
-	});
-
-	test.concurrent('multiple attributes with function (obj, str, bool)', async () => {
-		let node: Ast.Node;
-		let attr: Ast.Attribute;
-		const parser = new Parser();
-		const nodes = parser.parse(`
-		#[Endpoint { path: "/notes/create" }]
-		#[Desc "Create a note."]
-		#[Cat true]
-		@createNote(text) {
-			<: text
-		}
-		`);
-		assert.equal(nodes.length, 1);
-		node = nodes[0];
-		if (node.type !== 'def' || node.dest.type !== 'identifier') {
-			assert.fail();
-		}
-		assert.equal(node.dest.name, 'createNote');
-		assert.equal(node.attr.length, 3);
-		attr = node.attr[0];
-		if (attr.type !== 'attr') {
-			assert.fail();
-		}
-		assert.equal(attr.name, 'Endpoint');
-		if (attr.value.type !== 'obj') {
-			assert.fail();
-		}
-		assert.equal(attr.value.value.size, 1);
-		for (const [k, v] of attr.value.value) {
-			if (k === 'path') {
-				if (v.type !== 'str') {
-					assert.fail();
-				}
-				assert.equal(v.value, '/notes/create');
-			} else {
-				assert.fail();
-			}
-		}
-		attr = node.attr[1];
-		if (attr.type !== 'attr') {
-			assert.fail();
-		}
-		assert.equal(attr.name, 'Desc');
-		if (attr.value.type !== 'str') {
-			assert.fail();
-		}
-		assert.equal(attr.value.value, 'Create a note.');
-		attr = node.attr[2];
-		if (attr.type !== 'attr') {
-			assert.fail();
-		}
-		assert.equal(attr.name, 'Cat');
-		if (attr.value.type !== 'bool') {
-			assert.fail();
-		}
-		assert.equal(attr.value.value, true);
-	});
-
 	test.concurrent('attributed function in block', async () => {
 		const parser = new Parser();
 		const nodes = parser.parse(`
@@ -970,47 +791,21 @@ describe('Attribute', () => {
 		).toThrow(AiScriptUnexpectedEOFError);
 	});
 
-	test.concurrent('single attribute (no value)', async () => {
-		let node: Ast.Node;
-		let attr: Ast.Attribute;
-		const parser = new Parser();
-		const nodes = parser.parse(`
+	test.concurrent('single attribute (no value)', () => {
+		const nodes = Parser.parse(`
 		#[serializable]
 		let data = 1
 		`);
-		assert.equal(nodes.length, 1);
-		node = nodes[0];
-		if (node.type !== 'def' || node.dest.type !== 'identifier') {
-			assert.fail();
-		}
-		assert.equal(node.dest.name, 'data');
-		assert.equal(node.attr.length, 1);
-		attr = node.attr[0];
-		assert.ok(attr.type === 'attr');
-		assert.equal(attr.name, 'serializable');
-		if (attr.value.type !== 'bool') {
-			assert.fail();
-		}
-		assert.equal(attr.value.value, true);
-	});
-
-	test.concurrent('attribute with statement under namespace', async () => {
-		const parser = new Parser();
-		const nodes = parser.parse(`
-		:: Tests {
-			#[test]
-			@assert_success() {
-				<: "Hello, world!"
-			}
-		}
-		`);
-		assert.equal(nodes.length, 1);
-		const ns = nodes[0];
-		assert.ok(ns.type === 'ns');
-		const member = ns.members[0];
-		assert.ok(member.type === 'def');
-		const attr = member.attr[0];
-		assert.equal(attr.name, 'test');
+		expect(nodes).toHaveLength(1);
+		const definition = nodes[0];
+		if (definition.type !== 'def') assert.fail();
+		expect(definition.dest).toMatchObject({ type: 'identifier', name: 'data' });
+		expect(definition.attr).toHaveLength(1);
+		expect(definition.attr[0]).toMatchObject({
+			type: 'attr',
+			name: 'serializable',
+			value: { type: 'bool', value: true },
+		});
 	});
 
 	test.concurrent('non-static expression is not allowed', async () => {

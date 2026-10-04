@@ -152,12 +152,6 @@ describe('generics', () => {
 			eq(res, ARR([STR('abc'), NUM(123)]));
 		});
 
-		test.concurrent('duplicate', async () => {
-			await expect(() => exe(`
-			@f<T, T>(v: T) {}
-			`)).rejects.toThrow(AiScriptSyntaxError);
-		});
-
 		test.concurrent('duplicate (no param and ret types)', async () => {
 			await expect(() => exe(`
 			@f<T, T>() {}

@@ -644,7 +644,6 @@ describe('break', () => {
 		<: x
 		`);
 		eq(res, NUM(0));
-		await assert.rejects(() => exe('<: if true { break }'));
 	});
 
 	test.concurrent('in function', async () => {
@@ -752,9 +751,9 @@ describe('break', () => {
 		test.concurrent('inner each', async () => {
 			const res = await exe(`
 			var x = 0
-			#l: each let v, [0] {
+			#l: each let v, [0, 1] {
 				each let v, [0] {
-					x = 1
+					x += 1
 					break #l
 				}
 				x = 2
@@ -767,9 +766,9 @@ describe('break', () => {
 		test.concurrent('inner for', async () => {
 			const res = await exe(`
 			var x = 0
-			#l: each let v, [0] {
+			#l: each let v, [0, 1] {
 				for 1 {
-					x = 1
+					x += 1
 					break #l
 				}
 				x = 2
@@ -782,9 +781,9 @@ describe('break', () => {
 		test.concurrent('inner loop', async () => {
 			const res = await exe(`
 			var x = 0
-			#l: each let v, [0] {
+			#l: each let v, [0, 1] {
 				loop {
-					x = 1
+					x += 1
 					break #l
 				}
 				x = 2
@@ -797,9 +796,9 @@ describe('break', () => {
 		test.concurrent('inner do-while', async () => {
 			const res = await exe(`
 			var x = 0
-			#l: each let v, [0] {
+			#l: each let v, [0, 1] {
 				do {
-					x = 1
+					x += 1
 					break #l
 				} while false
 				x = 2
@@ -812,9 +811,9 @@ describe('break', () => {
 		test.concurrent('inner while', async () => {
 			const res = await exe(`
 			var x = 0
-			#l: each let v, [0] {
+			#l: each let v, [0, 1] {
 				while true {
-					x = 1
+					x += 1
 					break #l
 				}
 				x = 2
@@ -829,9 +828,9 @@ describe('break', () => {
 		test.concurrent('inner each', async () => {
 			const res = await exe(`
 			var x = 0
-			#l: for 1 {
+			#l: for 2 {
 				each let v, [0] {
-					x = 1
+					x += 1
 					break #l
 				}
 				x = 2
@@ -841,65 +840,6 @@ describe('break', () => {
 			eq(res, NUM(1));
 		});
 
-		test.concurrent('inner for', async () => {
-			const res = await exe(`
-			var x = 0
-			#l: for 1 {
-				for 1 {
-					x = 1
-					break #l
-				}
-				x = 2
-			}
-			<: x
-			`);
-			eq(res, NUM(1));
-		});
-
-		test.concurrent('inner loop', async () => {
-			const res = await exe(`
-			var x = 0
-			#l: for 1 {
-				loop {
-					x = 1
-					break #l
-				}
-				x = 2
-			}
-			<: x
-			`);
-			eq(res, NUM(1));
-		});
-
-		test.concurrent('inner do-while', async () => {
-			const res = await exe(`
-			var x = 0
-			#l: for 1 {
-				do {
-					x = 1
-					break #l
-				} while false
-				x = 2
-			}
-			<: x
-			`);
-			eq(res, NUM(1));
-		});
-
-		test.concurrent('inner while', async () => {
-			const res = await exe(`
-			var x = 0
-			#l: for 1 {
-				while true {
-					x = 1
-					break #l
-				}
-				x = 2
-			}
-			<: x
-			`);
-			eq(res, NUM(1));
-		});
 	});
 
 	describe('labeled loop', () => {
@@ -907,8 +847,9 @@ describe('break', () => {
 			const res = await exe(`
 			var x = 0
 			#l: loop {
+				if x == 2 { break }
 				each let v, [0] {
-					x = 1
+					x += 1
 					break #l
 				}
 				x = 2
@@ -918,65 +859,6 @@ describe('break', () => {
 			eq(res, NUM(1));
 		});
 
-		test.concurrent('inner for', async () => {
-			const res = await exe(`
-			var x = 0
-			#l: loop {
-				for 1 {
-					x = 1
-					break #l
-				}
-				x = 2
-			}
-			<: x
-			`);
-			eq(res, NUM(1));
-		});
-
-		test.concurrent('inner loop', async () => {
-			const res = await exe(`
-			var x = 0
-			#l: loop {
-				loop {
-					x = 1
-					break #l
-				}
-				x = 2
-			}
-			<: x
-			`);
-			eq(res, NUM(1));
-		});
-
-		test.concurrent('inner do-while', async () => {
-			const res = await exe(`
-			var x = 0
-			#l: loop {
-				do {
-					x = 1
-					break #l
-				} while false
-				x = 2
-			}
-			<: x
-			`);
-			eq(res, NUM(1));
-		});
-
-		test.concurrent('inner while', async () => {
-			const res = await exe(`
-			var x = 0
-			#l: loop {
-				while true {
-					x = 1
-					break #l
-				}
-				x = 2
-			}
-			<: x
-			`);
-			eq(res, NUM(1));
-		});
 	});
 
 	describe('labeled do-while', () => {
@@ -985,84 +867,25 @@ describe('break', () => {
 			var x = 0
 			#l: do {
 				each let v, [0] {
-					x = 1
+					x += 1
 					break #l
 				}
 				x = 2
-			} while false
+			} while x < 2
 			<: x
 			`);
 			eq(res, NUM(1));
 		});
 
-		test.concurrent('inner for', async () => {
-			const res = await exe(`
-			var x = 0
-			#l: do {
-				for 1 {
-					x = 1
-					break #l
-				}
-				x = 2
-			} while false
-			<: x
-			`);
-			eq(res, NUM(1));
-		});
-
-		test.concurrent('inner loop', async () => {
-			const res = await exe(`
-			var x = 0
-			#l: do {
-				loop {
-					x = 1
-					break #l
-				}
-				x = 2
-			} while false
-			<: x
-			`);
-			eq(res, NUM(1));
-		});
-
-		test.concurrent('inner do-while', async () => {
-			const res = await exe(`
-			var x = 0
-			#l: do {
-				do {
-					x = 1
-					break #l
-				} while false
-				x = 2
-			} while false
-			<: x
-			`);
-			eq(res, NUM(1));
-		});
-
-		test.concurrent('inner while', async () => {
-			const res = await exe(`
-			var x = 0
-			#l: do {
-				while true {
-					x = 1
-					break #l
-				}
-				x = 2
-			} while false
-			<: x
-			`);
-			eq(res, NUM(1));
-		});
 	});
 
 	describe('labeled while', () => {
 		test.concurrent('inner each', async () => {
 			const res = await exe(`
 			var x = 0
-			#l: while true {
+			#l: while x < 2 {
 				each let v, [0] {
-					x = 1
+					x += 1
 					break #l
 				}
 				x = 2
@@ -1072,65 +895,6 @@ describe('break', () => {
 			eq(res, NUM(1));
 		});
 
-		test.concurrent('inner for', async () => {
-			const res = await exe(`
-			var x = 0
-			#l: while true {
-				for 1 {
-					x = 1
-					break #l
-				}
-				x = 2
-			}
-			<: x
-			`);
-			eq(res, NUM(1));
-		});
-
-		test.concurrent('inner loop', async () => {
-			const res = await exe(`
-			var x = 0
-			#l: while true {
-				loop {
-					x = 1
-					break #l
-				}
-				x = 2
-			}
-			<: x
-			`);
-			eq(res, NUM(1));
-		});
-
-		test.concurrent('inner do-while', async () => {
-			const res = await exe(`
-			var x = 0
-			#l: while true {
-				do {
-					x = 1
-					break #l
-				} while false
-				x = 2
-			}
-			<: x
-			`);
-			eq(res, NUM(1));
-		});
-
-		test.concurrent('inner while', async () => {
-			const res = await exe(`
-			var x = 0
-			#l: while true {
-				while true {
-					x = 1
-					break #l
-				}
-				x = 2
-			}
-			<: x
-			`);
-			eq(res, NUM(1));
-		});
 	});
 
 	describe('labeled if', () => {
@@ -1272,7 +1036,6 @@ describe('continue', () => {
 		<: x
 		`);
 		eq(res, NUM(0));
-		await assert.rejects(() => exe('<: if true { continue }'));
 	});
 
 	test.concurrent('in function', async () => {

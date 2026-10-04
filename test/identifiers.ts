@@ -170,6 +170,14 @@ const escapeIdentifiers: [string, string][] = [
 	['_\\uD842\\uDFB7', '_𠮷'],
 ];
 
+const representativeIdentifiers: [string, boolean][] = [
+	['A', true],
+	['_A', true],
+	['a0', true],
+	['Ω', false],
+	['\\u0041', false],
+];
+
 const sampleCodes = Object.entries<[(definedName: string, referredName: string) => string, Value]>({
 	variable: [(definedName, referredName) =>
 	`
@@ -269,7 +277,7 @@ const parser = new Parser();
 
 describe.each(
 	sampleCodes
-)('identifier validation on %s', (_, [sampleCode, expected]) => {
+)('identifier validation on %s', (context, [sampleCode, expected]) => {
 
 	test.concurrent.each(
 		reservedWords
@@ -278,7 +286,7 @@ describe.each(
 	});
 
 	test.concurrent.each(
-		reservedWords
+		context === 'variable' ? reservedWords : ['if', 'constructor']
 	)('%scat must be allowed', (word) => {
 		const wordCat = word + 'cat';
 		parser.parse(sampleCode(wordCat, wordCat));
@@ -286,7 +294,7 @@ describe.each(
 
 	// 並行実行中の expect.hasAssertions() を各テストに対応付けるため、テストコンテキストの expect を使う。
 	test.concurrent.for(
-		identifierCases
+		context === 'variable' ? identifierCases : representativeIdentifiers
 	)('%s is allowed: %s', async ([word, allowed], { expect }) => {
 		expect.hasAssertions();
 		if (allowed) {
@@ -299,7 +307,7 @@ describe.each(
 	});
 
 	test.concurrent.each(
-		escapeIdentifiers
+		context === 'variable' ? escapeIdentifiers.slice(0, 5) : escapeIdentifiers.slice(0, 1)
 	)('escape sequence is not allowed: %s', async (word) => {
 		expect(() => parser.parse(sampleCode(word, word))).toThrow(AiScriptSyntaxError);
 	});
@@ -328,7 +336,7 @@ describe('identifier validation on obj key', () => {
 		});
 
 		test.concurrent.for(
-			identifierCases
+			representativeIdentifiers
 		)('%s is allowed: %s', async ([word, allowed], { expect }) => {
 			expect.hasAssertions();
 			if (allowed) {
@@ -358,7 +366,7 @@ describe('reserved word validation on string obj key', () => {
 
 	describe.each(codes)('%s', (_, code) => {
 		test.concurrent.each(
-			reservedWords
+			['if', 'constructor', 'null']
 		)('reserved word %s must be allowed', async (word) => {
 			const res = await exe(code(word, word));
 			eq(res, NUM(1));

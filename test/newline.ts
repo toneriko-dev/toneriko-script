@@ -14,45 +14,28 @@ describe('empty lines', () => {
 			eq(res, NULL);
 		});
 
-		test.concurrent('empty line before case', async () => {
+		test.concurrent('empty lines before and after case', async () => {
 			const res = await exe(`
 			<: match 1 {
 				// comment
 				case 1 => 1
-			}
-			`);
-			eq(res, NUM(1));
-		});
-
-		test.concurrent('empty line after case', async () => {
-			const res = await exe(`
-			<: match 1 {
-				case 1 => 1
 				// comment
 			}
 			`);
 			eq(res, NUM(1));
 		});
 
-		test.concurrent('empty line before default', async () => {
+		test.concurrent('empty lines before and after default only', async () => {
 			const res = await exe(`
 			<: match 1 {
 				// comment
-				default => 1
-			}
-			`);
-			eq(res, NUM(1));
-		});
-
-		test.concurrent('empty line after default', async () => {
-			const res = await exe(`
-			<: match 1 {
 				default => 1
 				// comment
 			}
 			`);
 			eq(res, NUM(1));
 		});
+
     });
 
     describe('call', () => {
@@ -68,7 +51,7 @@ describe('empty lines', () => {
 			eq(res, NUM(1));
 		});
 
-		test.concurrent('empty line before', async () => {
+		test.concurrent('empty lines before and after', async () => {
 			const res = await exe(`
 			@f(a) {
 				a
@@ -76,32 +59,22 @@ describe('empty lines', () => {
 			<:f(
 				// comment
 				1
+				// comment
 			)
 			`);
 			eq(res, NUM(1));
 		});
 
-		test.concurrent('empty line after', async () => {
-			const res = await exe(`
-			@f(a) {
-				a
-			}
-			<:f(
-				1
-				// comment
-			)
-			`);
-			eq(res, NUM(1));
-		});
     });
 
     describe('type params', () => {
         describe('function', () => {
-            test.concurrent('empty line before', async () => {
+            test.concurrent('empty lines before and after', async () => {
                 const res = await exe(`
                 @f<
                     // comment
                     T
+                    // comment
                 >(v: T): T {
                     v
                 }
@@ -110,26 +83,15 @@ describe('empty lines', () => {
                 eq(res, NUM(1));
             });
 
-            test.concurrent('empty line after', async () => {
-                const res = await exe(`
-                @f<
-                    T
-                    // comment
-                >(v: T): T {
-                    v
-                }
-                <: f(1)
-                `);
-                eq(res, NUM(1));
-            });
         });
 
         describe('function type', () => {
-            test.concurrent('empty line before', async () => {
+            test.concurrent('empty lines before and after', async () => {
                 const res = await exe(`
                 let f: @<
                     // comment
                     T
+                    // comment
                 >(T) => T = @(v) {
                     v
                 }
@@ -138,18 +100,6 @@ describe('empty lines', () => {
                 eq(res, NUM(1));
             });
 
-            test.concurrent('empty line after', async () => {
-                const res = await exe(`
-                let f: @<
-                    T
-                    // comment
-                >(T) => T = @(v) {
-                    v
-                }
-                <: f(1)
-                `);
-                eq(res, NUM(1));
-            });
         });
     });
 
@@ -166,11 +116,12 @@ describe('empty lines', () => {
 			eq(res, NUM(1));
 		});
 
-		test.concurrent('empty line before', async () => {
+		test.concurrent('empty lines before and after', async () => {
 			const res = await exe(`
 			@f(
 				// comment
 				a
+				// comment
 			) {
 				a
 			}
@@ -179,34 +130,9 @@ describe('empty lines', () => {
 			eq(res, NUM(1));
 		});
 
-		test.concurrent('empty line after', async () => {
-			const res = await exe(`
-			@f(
-				a
-				// comment
-			) {
-				a
-			}
-			<: f(1)
-			`);
-			eq(res, NUM(1));
-		});
     });
 
     describe('if', () => {
-        test.concurrent('empty line between if ~ elif', async () => {
-            const res = await exe(`
-            <: if true {
-                1
-            }
-            // comment
-            elif true {
-                2
-            }
-            `);
-            eq(res, NUM(1));
-        });
-
         test.concurrent('empty line between if ~ elif ~ elif', async () => {
             const res = await exe(`
             <: if true {
@@ -224,22 +150,9 @@ describe('empty lines', () => {
             eq(res, NUM(1));
         });
 
-        test.concurrent('empty line between if ~ else', async () => {
-            const res = await exe(`
-            <: if true {
-                1
-            }
-            // comment
-            else {
-                2
-            }
-            `);
-            eq(res, NUM(1));
-        });
-
         test.concurrent('empty line between if ~ elif ~ else', async () => {
             const res = await exe(`
-            <: if true {
+            let a = if true {
                 1
             }
             // comment
@@ -250,8 +163,16 @@ describe('empty lines', () => {
             else {
                 3
             }
+            let b = if true {
+                1
+            }
+            // comment
+            else {
+                2
+            }
+            <: [a, b]
             `);
-            eq(res, NUM(1));
+            eq(res, ARR([NUM(1), NUM(1)]));
         });
     });
 
@@ -322,27 +243,18 @@ describe('empty lines', () => {
             eq(res, OBJ(new Map()));
         });
 
-        test.concurrent('empty line before', async () => {
+        test.concurrent('empty lines before and after', async () => {
             const res = await exe(`
             let x = {
                 // comment
                 a: 1
+                // comment
             }
             <: x.a
             `);
             eq(res, NUM(1));
         });
 
-        test.concurrent('empty line after', async () => {
-            const res = await exe(`
-            let x = {
-                a: 1
-                // comment
-            }
-            <: x.a
-            `);
-            eq(res, NUM(1));
-        });
     });
 
     describe('arr literal', () => {
@@ -355,26 +267,17 @@ describe('empty lines', () => {
             eq(res, ARR([]));
         });
 
-        test.concurrent('empty line before', async () => {
+        test.concurrent('empty lines before and after', async () => {
             const res = await exe(`
             let x = [
                 // comment
                 1
+                // comment
             ]
             <: x[0]
             `);
             eq(res, NUM(1));
         });
 
-        test.concurrent('empty line after', async () => {
-            const res = await exe(`
-            let x = [
-                1
-                // comment
-            ]
-            <: x[0]
-            `);
-            eq(res, NUM(1));
-        });
     });
 });

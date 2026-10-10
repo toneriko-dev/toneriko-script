@@ -20,7 +20,7 @@
 	"scripts": {
 		"build": "bun ./build.js",
 		"watch": "bun ./build.js --watch",
-		"typecheck": "bun ../../scripts/tsc-native.mjs --noEmit",
+		"typecheck": "bun check",
 		"lint": "bun run --bun typecheck",
 		"test": "vitest run",
 		"start": "bun ./scripts/start.mjs",

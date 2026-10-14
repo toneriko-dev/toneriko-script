@@ -5,6 +5,41 @@ import { TonerikoScriptSyntaxError, formatDiagnostic } from '../../src/v2/diagno
 import { messages } from '../../src/v2/messages.js';
 
 const accepted = [
+	['テンプレート補間をまたいで型引数を読まない', 'const t = `${a < b}${c > (d)}`;'],
+
+	['条件式の単項演算と括弧', 'a ? !(b) : c => d; a ? -(b) : c => d;'],
+	['条件式の真側の戻り値型', 'a ? (b): number => b : c;'],
+	['case の式と括弧付きのアロー文', 'switch (k) { case (x): (y) => y; }'],
+	['return の次の行のラベル', 'function f() { return\nlabel: {} }'],
+	['return の次の行の関数宣言', 'function f() { return\nfunction g() {} }'],
+	['return の次の行の async 関数宣言', 'function f() { return\nasync function g() {} }'],
+
+	['型注釈の次の行の空配列', 'let x: string\n[]'],
+	['型注釈の改行を含むコメントの後の空配列', 'let x: string /*\n*/ []'],
+	['比較と論理式を型引数と混同しない', 'if (a < b && c > (d)) {}'],
+	['別の行の比較を型引数と混同しない', 'function f() { if (x < 0) return 0\nif (x > (max - 1)) return max - 1 }'],
+	['return の直後に閉じ括弧', 'function f() { return\n}'],
+	['return の行コメントの後に閉じ括弧', 'function f() { return // done\n}'],
+	['return のブロックコメントの後に閉じ括弧', 'function f() { return /* done\n*/ }'],
+	['return の直後に case と default', 'function f() { switch (x) { case 0: return\ncase 1: return\ndefault: return\n} }'],
+	['return の直後に else', 'function f() { if (x) return\nelse return; }'],
+	['return の直後にセミコロン', 'function f() { return\n; }'],
+	['条件式の括弧とアロー関数', 'a ? (b) : c => d;'],
+	['条件式の null と引数のないアロー関数', 'const onClick = disabled ? (null) : () => go()'],
+	['case の括弧と戻り値のアロー関数', 'function f() { switch (k) { case (1): return x => x } }'],
+	['関数宣言の後の空文', 'function f() {};'],
+	['if の後の空文', 'if (a) {};'],
+	['代入の後の空文', 'x = 1;;'],
+	['先頭の空文と async 即時呼び出し', ';(async () => { f() })()'],
+	['改行を挟む as の呼び出し', 'foo()\nas(1)'],
+	['改行を挟む type の識別子', 'type\nfoo()'],
+	['改行を挟む match の識別子', 'const m = match\nfoo()'],
+	['in の左辺の match', 'match in o'],
+	['改行を挟む each の識別子', 'x = each\nlet y = 1'],
+	['入れ子のループラベル', 'a: b: while (1) { continue a; break b; }'],
+	['入れ子のブロックラベル', 'a: b: { break a; }'],
+	['先頭の区切りを持つ合併型', 'let x: | number'],
+
 	['文脈キーワードと通常の識別子', 'const each = x => x; each(xs); const match = x => x; match(xs); match;'],
 	['継承プロパティと同名の識別子', 'const constructor = toString; constructor(); const o = { constructor, toString };'],
 	['代入パターン中のメンバー参照', '([obj.x = 1, ...obj.rest] = xs); ({ a: obj.x, ...obj.rest } = data);'],
@@ -112,6 +147,14 @@ describe('v2 parser: 使える構文', () => {
 });
 
 const rejected = [
+	['NULLISH_MIX', 'a ?? b || c;'],
+	['UNARY_POWER', '-2 ** 2;'],
+	['LOGICAL_ASSIGNMENT', 'a &&= b;'],
+	['TAGGED_TEMPLATE', 'f`c`;'],
+	['TYPE_DEFINITE_ASSIGNMENT', 'let x!: number;'],
+	['TYPE_THIS_PARAMETER', 'function f(this: any) {}'],
+	['AISCRIPT_META', '### { name: "x" }'],
+
 	['UNEXPECTED_TOKEN', 'const = 1;'],
 	['INVALID_NUMBER', 'const x = 1__0;'],
 	['INVALID_ESCAPE', 'const x = "\\uZZZZ";'],
@@ -308,4 +351,67 @@ for (const [source, code] of [
 	['([(x = 1)] = xs);', 'INVALID_ASSIGNMENT_TARGET'],
 ] as const) {
 	test(source, () => diagnostic(source, code));
+}
+
+
+describe('v2 parser: レビュー指摘の境界', () => {
+	for (const source of ['a || b ?? c;', 'a && b ?? c;', 'a ?? b && c;']) {
+		test(source, () => diagnostic(source, 'NULLISH_MIX'));
+	}
+	for (const source of ['!x ** 2;', '+x ** 2;', 'typeof x ** 2;']) {
+		test(source, () => diagnostic(source, 'UNARY_POWER'));
+	}
+	for (const [source, code] of [
+		['a ||= b;', 'LOGICAL_ASSIGNMENT'],
+		['for (a &&= b;;) {}', 'LOGICAL_ASSIGNMENT'],
+		['f`a${x}b`;', 'TAGGED_TEMPLATE'],
+		['obj.f`c`;', 'TAGGED_TEMPLATE'],
+		['let x!: number = 1;', 'TYPE_DEFINITE_ASSIGNMENT'],
+		['const f = (this: any) => 1;', 'TYPE_THIS_PARAMETER'],
+		['let x: undefined;', 'UNDEFINED'],
+		['let x: number | undefined;', 'UNDEFINED'],
+		['let x: number\n[1, 2].forEach(f)', 'NEWLINE_CONTINUATION'],
+		['let x: number /*\n*/ [1].forEach(f)', 'NEWLINE_CONTINUATION'],
+		['function f() { return\n', 'UNEXPECTED_TOKEN'],
+		['a: b: function f() {}', 'LABELED_FUNCTION'],
+		['a: b: { continue a; }', 'INVALID_CONTROL_FLOW'],
+		['a: a: while (1) {}', 'INVALID_LABEL'],
+	] as const) {
+		test(source, () => diagnostic(source, code));
+	}
+	test('空文を独立したノードとして残す', () => {
+		const { program } = parse('x = 1;;');
+		assert.deepEqual(program.body.map(node => node.type), ['ExpressionStatement', 'EmptyStatement']);
+		assert.deepEqual(program.body[1]!.loc, { start: { line: 1, column: 7 }, end: { line: 1, column: 8 } });
+	});
+	test('型注釈の後の空配列を次の文として残す', () => {
+		const { program } = parse('let x: string\n[]');
+		assert.equal(program.body.length, 2);
+		const first = program.body[0]!;
+		assert.equal(first.type, 'VariableDeclaration');
+		if (first.type !== 'VariableDeclaration') assert.fail();
+		const id = first.declarations[0]!.id;
+		assert.equal(id.type, 'Identifier');
+		if (id.type !== 'Identifier') assert.fail();
+		assert.equal(id.typeAnnotation!.type, 'KeywordTypeAnnotation');
+		assert.deepEqual(first.loc.end, { line: 1, column: 14 });
+		assert.equal(program.body[1]!.type, 'ExpressionStatement');
+	});
+	test('多数の比較を後続行の型引数と混同しない', () => {
+		const source = Array.from({ length: 4000 }, (_, index) => `if (x < ${index}) f(x)`).join('\n');
+		assert.equal(parse(source).program.body.length, 4000);
+	});
+});
+
+for (const [source, code] of [
+	['const f = (x: Array<number>): number => x', 'TYPE_ARRAY_GENERIC'],
+	['const f = (this: any): number => 1', 'TYPE_THIS_PARAMETER'],
+	['f<T extends any ? number : string>(x)', 'TYPE_ARGUMENTS'],
+	['f<[number, ...string[]]>(x)', 'TYPE_ARGUMENTS'],
+] as const) {
+	test(source, () => diagnostic(source, code));
+}
+
+for (const source of ['f<\nnumber\n>(1);', 'f<{a: number; b: string}>(x);', 'f<Array<number>>(x);']) {
+	test(source, () => diagnostic(source, 'TYPE_ARGUMENTS'));
 }

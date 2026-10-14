@@ -24,9 +24,10 @@ export type CatchClause = NodeBase & { type: 'CatchClause'; param: Pattern | nul
 export type TryStatement = NodeBase & { type: 'TryStatement'; block: BlockStatement; handler: CatchClause | null; finalizer: BlockStatement | null };
 export type ThrowStatement = NodeBase & { type: 'ThrowStatement'; argument: Expression };
 export type BlockStatement = NodeBase & { type: 'BlockStatement'; body: Statement[] };
+export type EmptyStatement = NodeBase & { type: 'EmptyStatement' };
 export type ExpressionStatement = NodeBase & { type: 'ExpressionStatement'; expression: Expression };
 export type ExportMetaDeclaration = NodeBase & { type: 'ExportMetaDeclaration'; declaration: VariableDeclaration };
-export type Statement = VariableDeclaration | FunctionDeclaration | ReturnStatement | IfStatement | ForStatement | ForOfStatement | WhileStatement | DoWhileStatement | BreakStatement | ContinueStatement | LabeledStatement | SwitchStatement | TryStatement | ThrowStatement | BlockStatement | ExpressionStatement | ExportMetaDeclaration;
+export type Statement = EmptyStatement | VariableDeclaration | FunctionDeclaration | ReturnStatement | IfStatement | ForStatement | ForOfStatement | WhileStatement | DoWhileStatement | BreakStatement | ContinueStatement | LabeledStatement | SwitchStatement | TryStatement | ThrowStatement | BlockStatement | ExpressionStatement | ExportMetaDeclaration;
 
 export type TemplateElement = NodeBase & { type: 'TemplateElement'; value: { raw: string; cooked: string }; tail: boolean };
 export type TemplateLiteral = NodeBase & { type: 'TemplateLiteral'; quasis: TemplateElement[]; expressions: Expression[] };

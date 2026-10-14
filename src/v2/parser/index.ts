@@ -1,5 +1,5 @@
 import type * as A from '../ast.js';
-import { syntaxError, type Diagnostic, type DiagnosticCode } from '../diagnostics.js';
+import { syntaxError, TonerikoScriptSyntaxError, type Diagnostic, type DiagnosticCode } from '../diagnostics.js';
 import { Scanner, type Token } from './scanner.js';
 
 const assignments = new Set(['=', '+=', '-=', '*=', '/=', '%=', '**=', '??=']);
@@ -34,6 +34,7 @@ class Parser {
 	// 括弧は公開 AST から省き、演算子と代入先の構文制約にだけ使います。
 	private readonly parenthesized = new WeakSet<A.Expression>();
 	private readonly trailingComma = new WeakSet<A.Expression>();
+	private readonly failedTypeArguments = new Set<number>();
 
 	constructor(source: string) { this.scanner = new Scanner(source); }
 
@@ -90,6 +91,7 @@ class Parser {
 	private statement(topLevel = false, single = false): A.Statement {
 		const t = this.peek();
 		const word = String(t.value);
+		if (this.eat(';')) return this.node(t, { type: 'EmptyStatement' });
 		if (this.at('{')) return this.block();
 		if (this.at('const') || this.at('let')) {
 			if (single) this.fail('UNEXPECTED_TOKEN');
@@ -128,9 +130,10 @@ class Parser {
 			}
 			case 'return': {
 				this.take();
-				if (this.peek().lineBreakBefore) this.fail('NEWLINE_RETURN', t);
+				const newline = this.peek().lineBreakBefore;
+				if (newline && this.expressionStart()) this.fail('NEWLINE_RETURN', t);
 				if (!this.functionDepth) this.fail('INVALID_CONTROL_FLOW', t);
-				const argument = this.at(';') || this.at('}') || this.peek().kind === 'eof' ? null : this.expression(0, false, true);
+				const argument = newline || this.at(';') || this.at('}') || this.peek().kind === 'eof' ? null : this.expression(0, false, true);
 				this.endStatement();
 				return this.node(t, { type: 'ReturnStatement', argument });
 			}
@@ -160,21 +163,25 @@ class Parser {
 				declaration.loc.end = this.previous!.loc.end;
 				return this.node(t, { type: 'ExportMetaDeclaration', declaration });
 			}
-			case 'each': if (this.peek(1).raw === 'let') this.fail('AISCRIPT_EACH'); break;
+			case 'each': if (this.peek(1).raw === 'let' && !this.peek(1).lineBreakBefore) this.fail('AISCRIPT_EACH'); break;
 			case 'match': if (this.matchAhead()) this.fail('AISCRIPT_MATCH'); break;
 			case '@': this.fail('AISCRIPT_FUNCTION');
+			case '#': if (this.peek(1).raw === '#' && this.peek(2).raw === '#') this.fail('AISCRIPT_META'); break;
 		}
 		if (this.at('<') && this.peek(1).raw === ':') this.fail('AISCRIPT_OUTPUT');
 		if (this.at('eval') && this.peek(1).raw === '{') this.fail('AISCRIPT_EVAL');
-		if (this.at('type') && this.peek(1).kind === 'identifier') this.fail('TYPE_ALIAS');
+		if (this.at('type') && this.peek(1).kind === 'identifier' && !this.peek(1).lineBreakBefore && !reserved.has(String(this.peek(1).value))) this.fail('TYPE_ALIAS');
 		if (this.forbidden(word)) this.fail(this.forbidden(word)!, t);
 		if (t.kind === 'identifier' && this.peek(1).raw === ':') {
 			const label = this.identifier();
 			this.expect(':');
-			if (this.at('function') || (this.at('async') && this.peek(1).raw === 'function')) this.fail('LABELED_FUNCTION', t);
-			if (!['for', 'while', 'do', '{'].includes(this.peek().raw)) this.fail(this.peek().kind === 'identifier' && !reserved.has(String(this.peek().value)) ? 'AISCRIPT_NAMESPACE' : 'INVALID_LABEL', t);
+			let offset = 0;
+			while (this.peek(offset).kind === 'identifier' && this.peek(offset + 1).raw === ':') offset += 2;
+			const target = this.peek(offset).raw;
+			if (target === 'function' || (target === 'async' && this.peek(offset + 1).raw === 'function')) this.fail('LABELED_FUNCTION', t);
+			if (!['for', 'while', 'do', '{'].includes(target)) this.fail(this.peek().kind === 'identifier' && !reserved.has(String(this.peek().value)) ? 'AISCRIPT_NAMESPACE' : 'INVALID_LABEL', t);
 			if (this.labels.has(label.name)) this.fail('INVALID_LABEL', t);
-			this.labels.set(label.name, !this.at('{'));
+			this.labels.set(label.name, target !== '{');
 			const body = this.statement();
 			this.labels.delete(label.name);
 			return this.node(t, { type: 'LabeledStatement', label, body });
@@ -215,6 +222,8 @@ class Parser {
 		do {
 			const start = this.peek();
 			const id = this.binding(false);
+			if (this.at('!') && !this.peek().lineBreakBefore) this.fail('TYPE_DEFINITE_ASSIGNMENT');
+			if (!inFor && 'typeAnnotation' in id && id.typeAnnotation && this.at('[') && this.peek().lineBreakBefore && this.peek(1).raw !== ']') this.fail('NEWLINE_CONTINUATION');
 			const init = this.eat('=') ? this.expression(0, false, !inFor, !inFor) : null;
 			if (!init && (!inFor || (!this.at('of') && !this.at('in'))) && (kind === 'const' || id.type !== 'Identifier')) this.fail('UNEXPECTED_TOKEN', start);
 			declarations.push(this.node(start, { type: 'VariableDeclarator', id, init }));
@@ -268,7 +277,7 @@ class Parser {
 		while (!this.at('}')) {
 			const start = this.peek();
 			let test: A.Expression | null;
-			if (this.eat('case')) test = this.expression();
+			if (this.eat('case')) test = this.expression(0, false, false, true, false, false);
 			else {
 				this.expect('default');
 				if (hasDefault) this.fail('UNEXPECTED_TOKEN', start);
@@ -368,6 +377,7 @@ class Parser {
 		this.expect('(');
 		const params: A.Pattern[] = [];
 		while (!this.at(')')) {
+			if (this.at('this')) this.fail('TYPE_THIS_PARAMETER');
 			const param = this.binding(true, true, true);
 			params.push(param);
 			if (param.type === 'RestElement') {
@@ -400,10 +410,11 @@ class Parser {
 	}
 	private typeAnnotation(): A.TypeAnnotation {
 		const start = this.peek();
+		const leadingUnion = this.eat('|');
 		const types = [this.typeAtom()];
 		while (this.eat('|')) types.push(this.typeAtom());
 		if (this.at('&')) this.fail('UNSUPPORTED_TYPE');
-		return types.length === 1 ? types[0]! : this.node(start, { type: 'UnionTypeAnnotation', types });
+		return types.length === 1 && !leadingUnion ? types[0]! : this.node(start, { type: 'UnionTypeAnnotation', types });
 	}
 	private typeAtom(): A.TypeAnnotation {
 		const start = this.peek();
@@ -431,6 +442,7 @@ class Parser {
 			type = this.node(start, { type: 'KeywordTypeAnnotation', name: start.raw as A.KeywordTypeAnnotation['name'] });
 		} else if (this.eat('Function')) type = this.node(start, { type: 'FunctionTypeAnnotation' });
 		else {
+			if (this.at('undefined')) this.fail('UNDEFINED');
 			if (this.at('Array')) this.fail('TYPE_ARRAY_GENERIC');
 			if (this.at('Record')) this.fail('TYPE_RECORD');
 			if (this.at('[')) this.fail('TYPE_TUPLE');
@@ -438,7 +450,7 @@ class Parser {
 			if (this.at('<')) this.fail('TYPE_ARGUMENTS');
 			this.fail('UNSUPPORTED_TYPE');
 		}
-		while (this.eat('[')) {
+		while (!this.peek().lineBreakBefore && this.eat('[')) {
 			this.expect(']');
 			type = this.node(start, { type: 'ArrayTypeAnnotation', elementType: type });
 		}
@@ -446,14 +458,15 @@ class Parser {
 		return type;
 	}
 
-	private expression(min = 0, mutation = false, boundary = false, allowIn = true, cover = false): A.Expression {
+	private expression(min = 0, mutation = false, boundary = false, allowIn = true, cover = false, allowReturnType = true): A.Expression {
 		const start = this.peek();
-		let left = this.unary(mutation, boundary, min === 0);
+		let left = this.unary(mutation, boundary, min === 0, allowReturnType);
 		while (true) {
 			const operator = this.peek().raw;
 			if (bitwise.has(operator)) this.fail(operator === '^' ? 'AISCRIPT_POWER' : 'BITWISE');
 			if (operator === 'instanceof') this.fail('INSTANCEOF');
-			if (operator === 'as' || operator === 'satisfies') this.fail('TYPE_ASSERTION');
+			if ((operator === 'as' || operator === 'satisfies') && !this.peek().lineBreakBefore) this.fail('TYPE_ASSERTION');
+			if (operator === '&&=' || operator === '||=') this.fail('LOGICAL_ASSIGNMENT', this.peek(), { operator: operator.slice(0, -1) });
 			if (operator === '!' && !this.peek().lineBreakBefore) this.fail('NON_NULL_ASSERTION');
 			const priority = Object.hasOwn(precedence, operator) ? precedence[operator] : undefined;
 			if (priority === undefined || priority < min || (operator === 'in' && !allowIn)) break;
@@ -461,14 +474,14 @@ class Parser {
 			this.continuation(boundary);
 			const op = this.take();
 			if (left.type === 'UpdateExpression') this.fail('UPDATE_IN_EXPRESSION', left);
-			if (operator === '**' && (left.type === 'UnaryExpression' || left.type === 'AwaitExpression') && !this.parenthesized.has(left)) this.fail('UNEXPECTED_TOKEN', op);
-			const right = this.expression(operator === '**' ? priority : priority + 1, false, boundary, allowIn);
+			if (operator === '**' && (left.type === 'UnaryExpression' || left.type === 'AwaitExpression') && !this.parenthesized.has(left)) this.fail('UNARY_POWER', op);
+			const right = this.expression(operator === '**' ? priority : priority + 1, false, boundary, allowIn, false, allowReturnType);
 			if (operator === '==' || operator === '!=') {
 				if (!(left.type === 'Literal' && left.value === null) && !(right.type === 'Literal' && right.value === null)) this.fail('LOOSE_EQUALITY', op);
 			}
 			if (operator === '&&' || operator === '||' || operator === '??') {
 				for (const operand of [left, right]) {
-					if (operand.type === 'LogicalExpression' && !this.parenthesized.has(operand) && ((operand.operator === '??') !== (operator === '??'))) this.fail('UNEXPECTED_TOKEN', op);
+					if (operand.type === 'LogicalExpression' && !this.parenthesized.has(operand) && ((operand.operator === '??') !== (operator === '??'))) this.fail('NULLISH_MIX', op);
 				}
 				left = this.node(start, { type: 'LogicalExpression', operator, left, right });
 			} else left = this.node(start, { type: 'BinaryExpression', operator: operator as A.BinaryExpression['operator'], left, right });
@@ -476,9 +489,9 @@ class Parser {
 		if (min === 0 && this.eat('?')) {
 			if (left.type === 'ArrowFunctionExpression' && !this.parenthesized.has(left)) this.fail('UNEXPECTED_TOKEN');
 			if (left.type === 'UpdateExpression') this.fail('UPDATE_IN_EXPRESSION', left);
-			const consequent = this.expression();
+			const consequent = this.expression(0, false, false, true, false, false);
 			this.expect(':');
-			const alternate = this.expression(0, false, boundary, allowIn);
+			const alternate = this.expression(0, false, boundary, allowIn, false, allowReturnType);
 			left = this.node(start, { type: 'ConditionalExpression', test: left, consequent, alternate });
 		}
 		if (min === 0 && assignments.has(this.peek().raw)) {
@@ -494,11 +507,11 @@ class Parser {
 		return left;
 	}
 
-	private unary(mutation: boolean, boundary: boolean, allowArrow: boolean): A.Expression {
+	private unary(mutation: boolean, boundary: boolean, allowArrow: boolean, allowReturnType = true): A.Expression {
 		const t = this.peek();
 		if (['!', '-', '+', 'typeof', 'delete', 'await'].includes(t.raw)) {
 			this.take();
-			const argument = this.unary(false, boundary, false);
+			const argument = this.unary(false, boundary, false, allowReturnType);
 			if (argument.type === 'UpdateExpression') this.fail('UPDATE_IN_EXPRESSION', argument);
 			if (t.raw === 'await') return this.node(t, { type: 'AwaitExpression', argument });
 			return this.node(t, { type: 'UnaryExpression', operator: t.raw as A.UnaryExpression['operator'], prefix: true, argument });
@@ -508,11 +521,11 @@ class Parser {
 		if (this.at('++') || this.at('--')) {
 			if (!mutation) this.fail('UPDATE_IN_EXPRESSION');
 			this.take();
-			const argument = this.assignmentTarget(this.unary(false, boundary, false), false);
+			const argument = this.assignmentTarget(this.unary(false, boundary, false, allowReturnType), false);
 			if (argument.type !== 'Identifier' && argument.type !== 'MemberExpression') this.fail('INVALID_ASSIGNMENT_TARGET', argument);
 			return this.node(t, { type: 'UpdateExpression', operator: t.raw as '++' | '--', prefix: true, argument });
 		}
-		let expression = this.primary(mutation, boundary, allowArrow);
+		let expression = this.primary(mutation, boundary, allowArrow, allowReturnType);
 		expression = this.suffix(expression, boundary, t);
 		if ((this.at('++') || this.at('--')) && !this.peek().lineBreakBefore) {
 			if (!mutation) this.fail('UPDATE_IN_EXPRESSION');
@@ -529,12 +542,20 @@ class Parser {
 		try { return this.peek(offset); }
 		catch { return undefined; }
 	}
+	private expressionStart(): boolean {
+		const token = this.peek();
+		if (token.kind === 'identifier' && this.peek(1).raw === ':') return false;
+		if (token.raw === 'function' || token.raw === 'class' || (token.raw === 'async' && this.peek(1).raw === 'function' && !this.peek(1).lineBreakBefore)) return false;
+		if (['number', 'string', 'template', 'templateHead'].includes(token.kind)) return true;
+		if (token.kind === 'identifier') return !reserved.has(String(token.value)) || ['true', 'false', 'null', 'this', 'super', 'function', 'class', 'new', 'typeof', 'delete', 'void', 'await', 'yield', 'import'].includes(token.raw);
+		return ['(', '[', '{', '!', '~', '+', '-', '++', '--', '/', '/='].includes(token.raw);
+	}
 	private matchAhead(): boolean {
 		const token = this.lookahead(1);
-		return token !== undefined && ['identifier', 'number', 'string', 'template', 'templateHead'].includes(token.kind);
+		return token !== undefined && !token.lineBreakBefore && (['number', 'string', 'template', 'templateHead'].includes(token.kind) || (token.kind === 'identifier' && (!reserved.has(String(token.value)) || ['true', 'false', 'null'].includes(token.raw))));
 	}
 
-	private arrowAhead(offset = 0): boolean {
+	private arrowAhead(offset = 0, allowReturnType = true): boolean {
 		if (this.peek(offset).raw !== '(') return this.peek(offset).kind === 'identifier' && this.lookahead(offset + 1)?.raw === '=>';
 		let depth = 0;
 		for (let i = offset; ; i++) {
@@ -546,7 +567,23 @@ class Parser {
 				if (!depth) {
 					if (this.lookahead(i + 1)?.raw === '=>') return true;
 					if (this.lookahead(i + 1)?.raw !== ':') return false;
-					return this.returnTypeAhead(i + 2);
+					if (!this.returnTypeAhead(i + 2)) return false;
+					const saved = { index: this.index, previous: this.previous, functionDepth: this.functionDepth, loopDepth: this.loopDepth, switchDepth: this.switchDepth, labels: new Map(this.labels) };
+					try {
+						this.index += offset;
+						this.parameters();
+						if (allowReturnType) return true;
+						this.index = saved.index;
+						this.previous = saved.previous;
+						// 条件式の真側では、戻り値型を読んでも条件式の区切りが残る場合だけ採用します。
+						this.arrow(offset !== 0, false, false);
+						return this.at(':');
+					} catch (error) {
+						return allowReturnType && error instanceof TonerikoScriptSyntaxError && error.code !== 'UNEXPECTED_TOKEN';
+					} finally {
+						this.index = saved.index; this.previous = saved.previous;
+						this.functionDepth = saved.functionDepth; this.loopDepth = saved.loopDepth; this.switchDepth = saved.switchDepth; this.labels = saved.labels;
+					}
 				}
 			}
 		}
@@ -555,7 +592,7 @@ class Parser {
 		const closing: string[] = [];
 		for (let i = offset; ; i++) {
 			const token = this.lookahead(i);
-			if (!token || token.kind === 'eof') return false;
+			if (!token || token.kind === 'eof' || (token.kind === 'identifier' && reserved.has(String(token.value)) && !['void', 'null', 'true', 'false', 'typeof', 'this', 'new'].includes(token.raw))) return false;
 			if (!closing.length) {
 				if (token.raw === '=>') return true;
 				if ([';', ',', '=', '?', ':', ')', '}', ']'].includes(token.raw)) return false;
@@ -566,25 +603,25 @@ class Parser {
 			if (token.raw === closing.at(-1)) closing.pop();
 		}
 	}
-	private arrow(async: boolean, boundary: boolean): A.ArrowFunctionExpression {
+	private arrow(async: boolean, boundary: boolean, allowReturnType = true): A.ArrowFunctionExpression {
 		const start = this.peek();
 		if (async) this.take();
 		const params = this.at('(') ? this.parameters() : [this.identifier()];
 		const returnType = this.eat(':') ? this.typeAnnotation() : undefined;
 		if (this.peek().lineBreakBefore) this.fail('NEWLINE_ARROW');
 		this.expect('=>');
-		const body = this.at('{') ? this.functionBody() : this.expression(0, false, boundary);
+		const body = this.at('{') ? this.functionBody() : this.expression(0, false, boundary, true, false, allowReturnType);
 		return this.node(start, { type: 'ArrowFunctionExpression', params, body, async, generator: false, expression: body.type !== 'BlockStatement', ...(returnType ? { returnType } : {}) });
 	}
-	private primary(mutation: boolean, boundary: boolean, allowArrow: boolean): A.Expression {
+	private primary(mutation: boolean, boundary: boolean, allowArrow: boolean, allowReturnType: boolean): A.Expression {
 		const t = this.peek();
-		if (this.at('async') && !this.peek(1).lineBreakBefore && this.arrowAhead(1)) {
+		if (this.at('async') && !this.peek(1).lineBreakBefore && this.arrowAhead(1, allowReturnType)) {
 			if (!allowArrow) this.fail('UNEXPECTED_TOKEN');
-			return this.arrow(true, boundary);
+			return this.arrow(true, boundary, allowReturnType);
 		}
-		if ((this.at('(') || t.kind === 'identifier') && this.arrowAhead()) {
+		if ((this.at('(') || t.kind === 'identifier') && this.arrowAhead(0, allowReturnType)) {
 			if (!allowArrow) this.fail('UNEXPECTED_TOKEN');
-			return this.arrow(false, boundary);
+			return this.arrow(false, boundary, allowReturnType);
 		}
 		if (this.eat('(')) {
 			const expression = this.expression(0, mutation, false, true);
@@ -618,7 +655,7 @@ class Parser {
 		if (this.at('if')) this.fail('AISCRIPT_IF');
 		if (this.at('@')) this.fail('AISCRIPT_FUNCTION');
 		if (this.at('match') && this.matchAhead()) this.fail('AISCRIPT_MATCH');
-		if (this.at('each') && this.peek(1).raw === 'let') this.fail('AISCRIPT_EACH');
+		if (this.at('each') && this.peek(1).raw === 'let' && !this.peek(1).lineBreakBefore) this.fail('AISCRIPT_EACH');
 		if (this.at('eval') && this.peek(1).raw === '{') this.fail('AISCRIPT_EVAL');
 		if (this.at('<')) this.fail(this.peek(1).raw === ':' ? 'AISCRIPT_OUTPUT' : 'TYPE_ARGUMENTS');
 		if (t.kind === 'identifier') {
@@ -637,7 +674,7 @@ class Parser {
 		if (initial.type === 'ArrowFunctionExpression' && !this.parenthesized.has(initial)) return initial;
 		while (true) {
 			if (this.at('(') || this.at('[') || this.peek().kind === 'template' || this.peek().kind === 'templateHead') this.continuation(boundary);
-			if (this.peek().kind === 'template' || this.peek().kind === 'templateHead') this.fail('UNEXPECTED_TOKEN');
+			if (this.peek().kind === 'template' || this.peek().kind === 'templateHead') this.fail('TAGGED_TEMPLATE');
 			if (this.at('<') && this.typeArgumentsAhead()) this.fail('TYPE_ARGUMENTS');
 			let optional = false;
 			if (this.eat('?.')) { optional = true; chain = true; }
@@ -663,21 +700,63 @@ class Parser {
 		return expression;
 	}
 	private typeArgumentsAhead(): boolean {
-		let depth = 0;
-		for (let i = 0; ; i++) {
+		if (this.failedTypeArguments.has(this.index)) return false;
+		const closing = [{ raw: '>', index: this.index }];
+		const reject = (): false => {
+			// 未完の型引数列は、内側の < から再び末尾まで先読みしません。
+			this.failedTypeArguments.add(this.index);
+			for (const token of closing) if (token.raw === '>') this.failedTypeArguments.add(token.index);
+			return false;
+		};
+		let atom = false;
+		let conditional = 0;
+		let conditionalColon = 0;
+		for (let i = 1; ; i++) {
 			const token = this.lookahead(i);
-			if (!token || token.kind === 'eof' || [';', '=', '=>', '}'].includes(token.raw)) return false;
-			if (token.raw === '<') depth++;
-			if (token.raw === '>') {
-				depth--;
-				if (!depth) return this.lookahead(i + 1)?.raw === '(';
+			if (!token || token.kind === 'eof' || token.kind.startsWith('template')) return reject();
+			const raw = token.raw;
+			if (raw === '>' || raw === '>>' || raw === '>>>') {
+				if (!atom) return reject();
+				for (let n = 0; n < raw.length; n++) {
+					if (closing.at(-1)?.raw !== '>') return reject();
+					closing.pop();
+					if (!closing.length) return n === raw.length - 1 && this.lookahead(i + 1)?.raw === '(';
+				}
+				continue;
 			}
-			if (['>>', '>>>'].includes(token.raw)) {
-				depth -= token.raw.length;
-				if (depth <= 0) return this.lookahead(i + 1)?.raw === '(';
+			if (raw === 'extends') {
+				if (!atom) return reject();
+				conditional++; atom = false;
+				continue;
 			}
+			if (token.kind === 'identifier' || token.kind === 'number' || token.kind === 'string') {
+				if (atom || (token.kind === 'identifier' && reserved.has(String(token.value)) && !['void', 'null', 'true', 'false', 'typeof', 'this', 'new'].includes(raw))) return reject();
+				atom = !['typeof', 'keyof', 'readonly', 'new'].includes(raw);
+				continue;
+			}
+			if (raw === '<') {
+				if (!atom || this.failedTypeArguments.has(this.index + i)) return reject();
+				closing.push({ raw: '>', index: this.index + i }); atom = false;
+			} else if (raw === '(' || raw === '{' || raw === '[') {
+				if (atom && raw !== '[') return reject();
+				closing.push({ raw: raw === '(' ? ')' : raw === '{' ? '}' : ']', index: this.index + i }); atom = false;
+			} else if (raw === ')' || raw === '}' || raw === ']') {
+				if (closing.at(-1)?.raw !== raw) return reject();
+				closing.pop(); atom = true;
+			} else if (raw === '?') {
+				if (conditional) { conditional--; conditionalColon++; }
+				else if (!['}', ']', ')'].includes(closing.at(-1)!.raw)) return reject();
+				atom = false;
+			} else if (raw === '...') {
+				if (atom || closing.at(-1)?.raw !== ']') return reject();
+			} else if (['|', '&', ',', ':', ';', '.', '=>'].includes(raw)) {
+				if (raw === ':' && conditionalColon) conditionalColon--;
+				else if ([':', ';'].includes(raw) && !closing.some(c => c.raw === '}' || c.raw === ')')) return reject();
+				atom = false;
+			} else return reject();
 		}
 	}
+
 	private arguments(): (A.Expression | A.SpreadElement)[] {
 		this.expect('(');
 		const args: (A.Expression | A.SpreadElement)[] = [];

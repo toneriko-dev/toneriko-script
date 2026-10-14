@@ -1,4 +1,4 @@
-import { AiScriptSyntaxError } from '../../error.js';
+import { TonerikoScriptSyntaxError } from '../../error.js';
 import { CALL_NODE, NODE, unexpectedTokenError } from '../utils.js';
 import { TokenKind } from '../token.js';
 import { parseBlock, parseDest, parseLabel, parseParams } from './common.js';
@@ -236,7 +236,7 @@ function parseStatementWithLabel(s: ITokenStream): Ast.Each | Ast.For | Ast.Loop
 			return statement;
 		}
 		default: {
-			throw new AiScriptSyntaxError(
+			throw new TonerikoScriptSyntaxError(
 				'cannot use label for statement other than eval / if / match / for / each / while / do-while / loop',
 				statement.loc.start,
 			);
@@ -270,7 +270,7 @@ function parseEach(s: ITokenStream): Ast.Each {
 	if (s.is(TokenKind.Comma)) {
 		s.next();
 	} else {
-		throw new AiScriptSyntaxError('separator expected', s.getPos());
+		throw new TonerikoScriptSyntaxError('separator expected', s.getPos());
 	}
 
 	const items = parseExpr(s, false);
@@ -335,7 +335,7 @@ function parseFor(s: ITokenStream): Ast.For {
 		if (s.is(TokenKind.Comma)) {
 			s.next();
 		} else {
-			throw new AiScriptSyntaxError('separator expected', s.getPos());
+			throw new TonerikoScriptSyntaxError('separator expected', s.getPos());
 		}
 
 		const to = parseExpr(s, false);
@@ -417,7 +417,7 @@ export function parseStatementWithAttr(s: ITokenStream): Ast.Definition {
 	const statement = parseStatement(s);
 
 	if (statement.type !== 'def') {
-		throw new AiScriptSyntaxError('invalid attribute.', statement.loc.start);
+		throw new TonerikoScriptSyntaxError('invalid attribute.', statement.loc.start);
 	}
 	if (statement.attr != null) {
 		statement.attr.push(...attrs);
@@ -562,7 +562,7 @@ function parseBreak(s: ITokenStream): Ast.Break {
 		label = parseLabel(s);
 
 		if (s.is(TokenKind.Colon)) {
-			throw new AiScriptSyntaxError('cannot omit label from break if expression is given', startPos);
+			throw new TonerikoScriptSyntaxError('cannot omit label from break if expression is given', startPos);
 		} else if (!isStatementTerminator(s)) {
 			expr = parseExpr(s, false);
 		}

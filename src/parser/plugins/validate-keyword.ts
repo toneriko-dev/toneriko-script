@@ -1,4 +1,4 @@
-import { AiScriptSyntaxError } from '../../error.js';
+import { TonerikoScriptSyntaxError } from '../../error.js';
 import { visitNode } from '../visit.js';
 import type * as Ast from '../../node.js';
 
@@ -82,7 +82,7 @@ function validateTypeName(name: string, pos: Ast.Pos): void {
 }
 
 function throwReservedWordError(name: string, pos: Ast.Pos): never {
-	throw new AiScriptSyntaxError(`Reserved word "${name}" cannot be used as variable name.`, pos);
+	throw new TonerikoScriptSyntaxError(`Reserved word "${name}" cannot be used as variable name.`, pos);
 }
 
 function validateDest(node: Ast.Node): Ast.Node {

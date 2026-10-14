@@ -3,7 +3,7 @@ import { describe, expect, test } from 'vitest';
 import { Interpreter, Parser, utils } from '../src';
 import { T_FN, T_GENERIC, T_PARAM, T_SIMPLE, T_UNION } from '../src/type';
 import { NUM, STR, NULL, ARR, OBJ, BOOL, TRUE, FALSE, ERROR ,FN_NATIVE } from '../src/interpreter/value';
-import { AiScriptRuntimeError, AiScriptSyntaxError } from '../src/error';
+import { TonerikoScriptRuntimeError, TonerikoScriptSyntaxError } from '../src/error';
 import { exe, getMeta, eq } from './testutils';
 
 describe('function types', () => {
@@ -155,7 +155,7 @@ describe('generics', () => {
 		test.concurrent('duplicate (no param and ret types)', async () => {
 			await expect(() => exe(`
 			@f<T, T>() {}
-			`)).rejects.toThrow(AiScriptSyntaxError);
+			`)).rejects.toThrow(TonerikoScriptSyntaxError);
 		});
 
 		test.concurrent('empty', async () => {
@@ -167,7 +167,7 @@ describe('generics', () => {
 		test.concurrent('cannot have inner type', async () => {
 			await expect(() => exe(`
 			@f<T>(v: T<num>) {}
-			`)).rejects.toThrow(AiScriptSyntaxError);
+			`)).rejects.toThrow(TonerikoScriptSyntaxError);
 		});
 	});
 });
@@ -267,5 +267,5 @@ test.concurrent('in break', async () => {
 			let x: invalid = 0
 		}
 	}
-	`)).rejects.toThrow(AiScriptSyntaxError);
+	`)).rejects.toThrow(TonerikoScriptSyntaxError);
 });

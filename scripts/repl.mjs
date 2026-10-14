@@ -9,8 +9,8 @@ const i = readline.createInterface({
 });
 
 console.log(
-	`Welcome to AiScript!
-https://github.com/syuilo/aiscript
+	`Welcome to Toneriko Script!
+https://github.com/toneriko-dev/toneriko-script
 
 Type '.exit' to end this session.`,
 );
@@ -56,7 +56,7 @@ async function getAst() {
 			script = '';
 			return ast;
 		} catch (e) {
-			if (e instanceof errors.AiScriptUnexpectedEOFError) {
+			if (e instanceof errors.TonerikoScriptUnexpectedEOFError) {
 				script += '\n';
 				a = await i.question('... ');
 			} else {

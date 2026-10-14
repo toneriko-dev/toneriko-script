@@ -3,7 +3,7 @@ import * as assert from 'assert';
 import { describe, test } from 'vitest';
 import { Parser, Interpreter, Ast } from '../src';
 import { NUM, STR, NULL, ARR, OBJ, BOOL, TRUE, FALSE, ERROR ,FN_NATIVE } from '../src/interpreter/value';
-import { AiScriptSyntaxError, AiScriptRuntimeError, AiScriptIndexOutOfRangeError } from '../src/error';
+import { TonerikoScriptSyntaxError, TonerikoScriptRuntimeError, TonerikoScriptIndexOutOfRangeError } from '../src/error';
 import { exeSync, eq } from './testutils';
 
 test.concurrent('Hello, world!', () => {
@@ -41,8 +41,8 @@ test.each([
 	['positive infinity', 'Math:Infinity'],
 	['negative infinity', '-Math:Infinity'],
 ])('rejects %s array indices in sync execution', (_name, index) => {
-	assert.throws(() => exeSync(`[1, 2][${index}]`), AiScriptIndexOutOfRangeError);
-	assert.throws(() => exeSync(`var arr = [1, 2]; arr[${index}] = 3`), AiScriptIndexOutOfRangeError);
+	assert.throws(() => exeSync(`[1, 2][${index}]`), TonerikoScriptIndexOutOfRangeError);
+	assert.throws(() => exeSync(`var arr = [1, 2]; arr[${index}] = 3`), TonerikoScriptIndexOutOfRangeError);
 });
 
 describe('extra', () => {

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import { Parser } from '../src';
-import { AiScriptSyntaxError } from '../src/error';
+import { TonerikoScriptSyntaxError } from '../src/error';
 import { eq, exe } from './testutils';
 import { NULL, NUM, STR, Value } from '../src/interpreter/value';
 
@@ -282,7 +282,7 @@ describe.each(
 	test.concurrent.each(
 		reservedWords
 	)('%s must be rejected', (word) => {
-		expect(() => parser.parse(sampleCode(word, word))).toThrow(AiScriptSyntaxError);
+		expect(() => parser.parse(sampleCode(word, word))).toThrow(TonerikoScriptSyntaxError);
 	});
 
 	test.concurrent.each(
@@ -301,7 +301,7 @@ describe.each(
 			const res = await exe(sampleCode(word, word));
 			eq(res, expected, expect);
 		} else {
-			expect(() => parser.parse(sampleCode(word, word))).toThrow(AiScriptSyntaxError);
+			expect(() => parser.parse(sampleCode(word, word))).toThrow(TonerikoScriptSyntaxError);
 			await Promise.resolve(); // https://github.com/vitest-dev/vitest/issues/4750
 		}
 	});
@@ -309,7 +309,7 @@ describe.each(
 	test.concurrent.each(
 		context === 'variable' ? escapeIdentifiers.slice(0, 5) : escapeIdentifiers.slice(0, 1)
 	)('escape sequence is not allowed: %s', async (word) => {
-		expect(() => parser.parse(sampleCode(word, word))).toThrow(AiScriptSyntaxError);
+		expect(() => parser.parse(sampleCode(word, word))).toThrow(TonerikoScriptSyntaxError);
 	});
 });
 
@@ -343,7 +343,7 @@ describe('identifier validation on obj key', () => {
 				const res = await exe(code(word, word));
 				eq(res, NUM(1), expect);
 			} else {
-				expect(() => parser.parse(code(word, word))).toThrow(AiScriptSyntaxError);
+				expect(() => parser.parse(code(word, word))).toThrow(TonerikoScriptSyntaxError);
 				await Promise.resolve(); // https://github.com/vitest-dev/vitest/issues/4750
 			}
 		});

@@ -1,6 +1,6 @@
-import { AiScriptSyntaxError, AiScriptUnexpectedEOFError } from '../error.js';
+import { TonerikoScriptSyntaxError, TonerikoScriptUnexpectedEOFError } from '../error.js';
 import { TokenKind } from './token.js';
-import type { AiScriptError } from '../error.js';
+import type { TonerikoScriptError } from '../error.js';
 import type * as Ast from '../node.js';
 
 export function NODE<T extends Ast.Node['type']>(
@@ -33,9 +33,9 @@ export function CALL_NODE(name: string, args: Ast.Expression[], start: Ast.Pos, 
 	);
 }
 
-export function unexpectedTokenError(token: TokenKind, pos: Ast.Pos, info?: unknown): AiScriptError {
+export function unexpectedTokenError(token: TokenKind, pos: Ast.Pos, info?: unknown): TonerikoScriptError {
 	if (token === TokenKind.EOF) {
-		return new AiScriptUnexpectedEOFError(pos, info);
+		return new TonerikoScriptUnexpectedEOFError(pos, info);
 	}
-	return new AiScriptSyntaxError(`unexpected token: ${TokenKind[token]}`, pos, info);
+	return new TonerikoScriptSyntaxError(`unexpected token: ${TokenKind[token]}`, pos, info);
 }

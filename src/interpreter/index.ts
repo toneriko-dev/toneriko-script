@@ -1,10 +1,10 @@
 import { autobind } from '../utils/mini-autobind.js';
 import {
-	AiScriptError,
-	NonAiScriptError,
-	AiScriptNamespaceError,
-	AiScriptRuntimeError,
-	AiScriptHostsideError,
+	TonerikoScriptError,
+	NonTonerikoScriptError,
+	TonerikoScriptNamespaceError,
+	TonerikoScriptRuntimeError,
+	TonerikoScriptHostsideError,
 } from '../error.js';
 import * as Ast from '../node.js';
 import { getTypeBySource } from '../type.js';
@@ -82,7 +82,7 @@ export class Interpreter {
 		private opts: {
 			in?(q: string): Promise<string>;
 			out?(value: Value): void;
-			err?(e: AiScriptError): void;
+			err?(e: TonerikoScriptError): void;
 			log?(type: string, params: LogObject): void;
 			maxStep?: number;
 			abortOnError?: boolean;
@@ -134,7 +134,7 @@ export class Interpreter {
 		};
 
 		if (!((this.opts.irqRate ?? 300) >= 0)) {
-			throw new AiScriptHostsideError(`Invalid IRQ rate (${this.opts.irqRate}): must be non-negative number`);
+			throw new TonerikoScriptHostsideError(`Invalid IRQ rate (${this.opts.irqRate}): must be non-negative number`);
 		}
 		this.irqRate = this.opts.irqRate ?? 300;
 
@@ -147,7 +147,7 @@ export class Interpreter {
 		} else if (this.opts.irqSleep >= 0) {
 			this.irqSleep = sleep(this.opts.irqSleep);
 		} else {
-			throw new AiScriptHostsideError('irqSleep must be a function or a positive number.');
+			throw new TonerikoScriptHostsideError('irqSleep must be a function or a positive number.');
 		}
 	}
 
@@ -178,7 +178,7 @@ export class Interpreter {
 	}
 
 	/**
-	 * AiScript 関数を実行する。err が設定されていれば abortOnError に応じて abort を実行し、
+	 * Toneriko Script の関数を実行する。err が設定されていれば abortOnError に応じて abort を実行し、
 	 * err を呼び出して `error<func_failed>` を返す。未設定なら例外を送出する。
 	 */
 	@autobind
@@ -194,7 +194,7 @@ export class Interpreter {
 		return this._fnSync(fn, args, createCallStack({ name: '<root>', pos: undefined }, null));
 	}
 
-	/** AiScript 関数を実行し、エラー時に err や abort を呼ばず例外をそのまま送出する。 */
+	/** Toneriko Script の関数を実行し、エラー時に err や abort を呼ばず例外をそのまま送出する。 */
 	@autobind
 	public execFnSimple(fn: VFn, args: Value[]): Promise<Value> {
 		return this._fn(fn, args, createCallStack({ name: '<root>', pos: undefined }, null));
@@ -235,10 +235,10 @@ export class Interpreter {
 			}
 			this.abort();
 		}
-		if (e instanceof AiScriptError) {
+		if (e instanceof TonerikoScriptError) {
 			this.opts.err(e);
 		} else {
-			this.opts.err(new NonAiScriptError(e));
+			this.opts.err(new NonTonerikoScriptError(e));
 		}
 	}
 
@@ -289,13 +289,13 @@ export class Interpreter {
 			switch (node.type) {
 				case 'def': {
 					if (node.dest.type !== 'identifier') {
-						throw new AiScriptNamespaceError(
+						throw new TonerikoScriptNamespaceError(
 							'Destructuring assignment is invalid in namespace declarations.',
 							node.loc.start,
 						);
 					}
 					if (node.mut) {
-						throw new AiScriptNamespaceError('No "var" in namespace declaration: ' + node.dest.name, node.loc.start);
+						throw new TonerikoScriptNamespaceError('No "var" in namespace declaration: ' + node.dest.name, node.loc.start);
 					}
 
 					let value = await this._eval(node.expr, nsScope, null);
@@ -318,7 +318,7 @@ export class Interpreter {
 				default: {
 					const n: never = node;
 					const nd = n as Ast.Node;
-					throw new AiScriptNamespaceError('invalid ns member type: ' + nd.type, nd.loc.start);
+					throw new TonerikoScriptNamespaceError('invalid ns member type: ' + nd.type, nd.loc.start);
 				}
 			}
 		}
@@ -334,13 +334,13 @@ export class Interpreter {
 			switch (node.type) {
 				case 'def': {
 					if (node.dest.type !== 'identifier') {
-						throw new AiScriptNamespaceError(
+						throw new TonerikoScriptNamespaceError(
 							'Destructuring assignment is invalid in namespace declarations.',
 							node.loc.start,
 						);
 					}
 					if (node.mut) {
-						throw new AiScriptNamespaceError('No "var" in namespace declaration: ' + node.dest.name, node.loc.start);
+						throw new TonerikoScriptNamespaceError('No "var" in namespace declaration: ' + node.dest.name, node.loc.start);
 					}
 
 					let value = this._evalSync(node.expr, nsScope, null);
@@ -363,7 +363,7 @@ export class Interpreter {
 				default: {
 					const n: never = node;
 					const nd = n as Ast.Node;
-					throw new AiScriptNamespaceError('invalid ns member type: ' + nd.type, nd.loc.start);
+					throw new TonerikoScriptNamespaceError('invalid ns member type: ' + nd.type, nd.loc.start);
 				}
 			}
 		}
@@ -422,7 +422,7 @@ export class Interpreter {
 						unregisterUnpauseHandler: this.unregisterUnpauseHandler,
 					});
 			if (result instanceof Promise) {
-				throw new AiScriptHostsideError('Native function must not return a Promise in sync mode.');
+				throw new TonerikoScriptHostsideError('Native function must not return a Promise in sync mode.');
 			}
 			return result ?? NULL;
 		}
@@ -499,7 +499,7 @@ export class Interpreter {
 			if (e.pos) {
 				throw e;
 			} else {
-				const e2 = e instanceof AiScriptError ? e : new NonAiScriptError(e);
+				const e2 = e instanceof TonerikoScriptError ? e : new NonTonerikoScriptError(e);
 				e2.pos = node.loc.start;
 				const callStackArray = callStackToArray(callStack);
 				e2.message = [
@@ -538,7 +538,7 @@ export class Interpreter {
 			callStack.execution.stepCount++;
 		}
 		if (this.opts.maxStep && (callStack?.execution.stepCount ?? this.stepCount) > this.opts.maxStep) {
-			throw new AiScriptRuntimeError('max step exceeded');
+			throw new TonerikoScriptRuntimeError('max step exceeded');
 		}
 
 		switch (node.type) {
@@ -902,7 +902,7 @@ export class Interpreter {
 					}
 					return NULL;
 				}
-				throw new AiScriptRuntimeError(`Cannot read prop (${reprValue(i)}) of ${target.type}.`);
+				throw new TonerikoScriptRuntimeError(`Cannot read prop (${reprValue(i)}) of ${target.type}.`);
 			}
 
 			case 'plus': {
@@ -1125,7 +1125,7 @@ export class Interpreter {
 			callStack.execution.stepCount++;
 		}
 		if (this.opts.maxStep && (callStack?.execution.stepCount ?? this.stepCount) > this.opts.maxStep) {
-			throw new AiScriptRuntimeError('max step exceeded');
+			throw new TonerikoScriptRuntimeError('max step exceeded');
 		}
 
 		switch (node.type) {
@@ -1487,7 +1487,7 @@ export class Interpreter {
 					}
 					return NULL;
 				}
-				throw new AiScriptRuntimeError(`Cannot read prop (${reprValue(i)}) of ${target.type}.`);
+				throw new TonerikoScriptRuntimeError(`Cannot read prop (${reprValue(i)}) of ${target.type}.`);
 			}
 
 			case 'plus': {
@@ -1874,7 +1874,7 @@ export class Interpreter {
 				break;
 			}
 			default: {
-				throw new AiScriptRuntimeError('The left-hand side of an definition expression must be a variable.');
+				throw new TonerikoScriptRuntimeError('The left-hand side of an definition expression must be a variable.');
 			}
 		}
 	}
@@ -1901,7 +1901,7 @@ export class Interpreter {
 					assertString(i);
 					return Reference.prop(assignee, i.value);
 				}
-				throw new AiScriptRuntimeError(`Cannot read prop (${reprValue(i)}) of ${assignee.type}.`);
+				throw new TonerikoScriptRuntimeError(`Cannot read prop (${reprValue(i)}) of ${assignee.type}.`);
 			}
 			case 'prop': {
 				const assignee = await this._eval(dest.target, scope, callStack);
@@ -1935,7 +1935,7 @@ export class Interpreter {
 				return Reference.obj(entries);
 			}
 			default: {
-				throw new AiScriptRuntimeError(
+				throw new TonerikoScriptRuntimeError(
 					'The left-hand side of an assignment expression must be a variable or a property/index access.',
 				);
 			}
@@ -1964,7 +1964,7 @@ export class Interpreter {
 					assertString(i);
 					return Reference.prop(assignee, i.value);
 				}
-				throw new AiScriptRuntimeError(`Cannot read prop (${reprValue(i)}) of ${assignee.type}.`);
+				throw new TonerikoScriptRuntimeError(`Cannot read prop (${reprValue(i)}) of ${assignee.type}.`);
 			}
 			case 'prop': {
 				const assignee = this._evalSync(dest.target, scope, callStack);
@@ -1998,7 +1998,7 @@ export class Interpreter {
 				return Reference.obj(entries);
 			}
 			default: {
-				throw new AiScriptRuntimeError(
+				throw new TonerikoScriptRuntimeError(
 					'The left-hand side of an assignment expression must be a variable or a property/index access.',
 				);
 			}

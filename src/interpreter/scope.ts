@@ -1,4 +1,4 @@
-import { AiScriptRuntimeError } from '../error.js';
+import { TonerikoScriptRuntimeError } from '../error.js';
 import type { TypeParam } from '../node.js';
 import type { Value } from './value.js';
 import type { Variable } from './variable.js';
@@ -77,7 +77,7 @@ export class Scope {
 			return variable.value;
 		}
 
-		throw new AiScriptRuntimeError(`No such variable '${name}' in scope '${this.name}'`, {
+		throw new TonerikoScriptRuntimeError(`No such variable '${name}' in scope '${this.name}'`, {
 			scope: this.getLayerdStates(),
 		});
 	}
@@ -121,7 +121,7 @@ export class Scope {
 	public add(name: string, variable: Variable): void {
 		this.log('add', { var: name, val: variable });
 		if (this.states.has(name)) {
-			throw new AiScriptRuntimeError(`Variable '${name}' already exists in scope '${this.name}'`, {
+			throw new TonerikoScriptRuntimeError(`Variable '${name}' already exists in scope '${this.name}'`, {
 				scope: this.getLayerdStates(),
 			});
 		}
@@ -137,7 +137,7 @@ export class Scope {
 		const own = this.states.get(name);
 		if (own != null) {
 			if (!own.isMutable) {
-				throw new AiScriptRuntimeError(`Cannot assign to an immutable variable ${name}.`);
+				throw new TonerikoScriptRuntimeError(`Cannot assign to an immutable variable ${name}.`);
 			}
 			own.value = val;
 			this.log('assign', { var: name, val: val });
@@ -150,7 +150,7 @@ export class Scope {
 			const variable = layer.states.get(name);
 			if (variable != null) {
 				if (!variable.isMutable) {
-					throw new AiScriptRuntimeError(`Cannot assign to an immutable variable ${name}.`);
+					throw new TonerikoScriptRuntimeError(`Cannot assign to an immutable variable ${name}.`);
 				}
 
 				variable.value = val;
@@ -163,7 +163,7 @@ export class Scope {
 			}
 		}
 
-		throw new AiScriptRuntimeError(`No such variable '${name}' in scope '${this.name}'`, {
+		throw new TonerikoScriptRuntimeError(`No such variable '${name}' in scope '${this.name}'`, {
 			scope: this.getLayerdStates(),
 		});
 	}
@@ -174,7 +174,7 @@ export class Scope {
 		if (own != null) {
 			const val = updater(own.value);
 			if (!own.isMutable) {
-				throw new AiScriptRuntimeError(`Cannot assign to an immutable variable ${name}.`);
+				throw new TonerikoScriptRuntimeError(`Cannot assign to an immutable variable ${name}.`);
 			}
 			own.value = val;
 			this.log('assign', { var: name, val: val });
@@ -189,7 +189,7 @@ export class Scope {
 				const val = updater(variable.value);
 
 				if (!variable.isMutable) {
-					throw new AiScriptRuntimeError(`Cannot assign to an immutable variable ${name}.`);
+					throw new TonerikoScriptRuntimeError(`Cannot assign to an immutable variable ${name}.`);
 				}
 
 				variable.value = val;
@@ -202,7 +202,7 @@ export class Scope {
 			}
 		}
 
-		throw new AiScriptRuntimeError(`No such variable '${name}' in scope '${this.name}'`, {
+		throw new TonerikoScriptRuntimeError(`No such variable '${name}' in scope '${this.name}'`, {
 			scope: this.getLayerdStates(),
 		});
 	}

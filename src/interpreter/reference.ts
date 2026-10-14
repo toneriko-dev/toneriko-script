@@ -1,4 +1,4 @@
-import { AiScriptIndexOutOfRangeError } from '../error.js';
+import { TonerikoScriptIndexOutOfRangeError } from '../error.js';
 import { assertArray, assertObject } from './util.js';
 import { ARR, NULL, OBJ } from './value.js';
 import type { VArr, VObj, Value } from './value.js';
@@ -14,7 +14,7 @@ export interface Reference {
 
 export function assertArrayIndex(index: number, length: number): void {
 	if (!Number.isInteger(index) || index < 0 || length <= index) {
-		throw new AiScriptIndexOutOfRangeError(`Index out of range. index: ${index} max: ${length - 1}`);
+		throw new TonerikoScriptIndexOutOfRangeError(`Index out of range. index: ${index} max: ${length - 1}`);
 	}
 }
 

@@ -2,7 +2,7 @@ import * as assert from 'assert';
 import { describe, expect, test } from 'vitest';
 import { utils } from '../src';
 import { NUM, STR, NULL, ARR, OBJ, BOOL, TRUE, FALSE, ERROR ,FN_NATIVE } from '../src/interpreter/value';
-import { AiScriptRuntimeError, AiScriptSyntaxError, AiScriptUnexpectedEOFError } from '../src/error';
+import { TonerikoScriptRuntimeError, TonerikoScriptSyntaxError, TonerikoScriptUnexpectedEOFError } from '../src/error';
 import { exe, getMeta, eq } from './testutils';
 
 describe('terminator', () => {
@@ -478,11 +478,11 @@ describe('Comment', () => {
 	test.concurrent('invalid EOF in multi line comment', async () => {
 		await assert.rejects(() => exe(`
 		/* comment
-		`), AiScriptUnexpectedEOFError);
+		`), TonerikoScriptUnexpectedEOFError);
 	});
 
 	test.concurrent('invalid EOF in multi line comment 2', async () => {
-		await assert.rejects(() => exe('/* comment *'), AiScriptUnexpectedEOFError);
+		await assert.rejects(() => exe('/* comment *'), TonerikoScriptUnexpectedEOFError);
 	});
 
 	test.concurrent('nested multi line comment', async () => {
@@ -497,7 +497,7 @@ describe('Comment', () => {
 	test.concurrent('invalid EOF in nested multi line comment', async () => {
 		await assert.rejects(() => exe(`
 		/* outer /* inner */
-		`), AiScriptUnexpectedEOFError);
+		`), TonerikoScriptUnexpectedEOFError);
 	});
 });
 
@@ -598,7 +598,7 @@ describe('Variable declaration', () => {
 			hoge = 4
 		`).then(() => undefined).catch(err => err);
 
-		assert.ok(err instanceof AiScriptRuntimeError);
+		assert.ok(err instanceof TonerikoScriptRuntimeError);
 	});
 	test.concurrent('destructuring declaration', async () => {
 		const res = await exe(`
@@ -979,7 +979,7 @@ describe('meta', () => {
 	});
 
 	test.concurrent('negative overflow', () => {
-		expect(() => getMeta('### x -1e309')).toThrow(AiScriptSyntaxError);
+		expect(() => getMeta('### x -1e309')).toThrow(TonerikoScriptSyntaxError);
 	});
 
 	describe('Array', () => {
@@ -1157,7 +1157,7 @@ describe('operators', () => {
 		try {
 			await exe('<: (true && null)');
 		} catch (e) {
-			assert.ok(e instanceof AiScriptRuntimeError);
+			assert.ok(e instanceof TonerikoScriptRuntimeError);
 			return;
 		}
 
@@ -1205,7 +1205,7 @@ describe('operators', () => {
 		try {
 			await exe('<: (false || null)');
 		} catch (e) {
-			assert.ok(e instanceof AiScriptRuntimeError);
+			assert.ok(e instanceof TonerikoScriptRuntimeError);
 			return;
 		}
 

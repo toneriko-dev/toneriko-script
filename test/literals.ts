@@ -2,7 +2,7 @@ import * as assert from 'assert';
 import { describe, expect, test } from 'vitest';
 import {} from '../src';
 import { NUM, STR, NULL, ARR, OBJ, BOOL, TRUE, FALSE, ERROR, FN_NATIVE } from '../src/interpreter/value';
-import { AiScriptSyntaxError } from '../src/error';
+import { TonerikoScriptSyntaxError } from '../src/error';
 import { exe, eq } from './testutils';
 
 describe('literal', () => {
@@ -95,7 +95,7 @@ describe('literal', () => {
 				exe(`
 		<: 1e309
 		`),
-			AiScriptSyntaxError,
+			TonerikoScriptSyntaxError,
 		);
 	});
 
@@ -105,7 +105,7 @@ describe('literal', () => {
 				exe(`
 		<: 1.2e+
 		`),
-			AiScriptSyntaxError,
+			TonerikoScriptSyntaxError,
 		);
 	});
 
@@ -136,7 +136,7 @@ describe('literal', () => {
 				exe(`
 		<: 0x
 		`),
-			AiScriptSyntaxError,
+			TonerikoScriptSyntaxError,
 		);
 	});
 
@@ -164,7 +164,7 @@ describe('literal', () => {
 			'0o_1',
 			'0o1_',
 		]) {
-			await assert.rejects(() => exe(`<: ${literal}`), AiScriptSyntaxError);
+			await assert.rejects(() => exe(`<: ${literal}`), TonerikoScriptSyntaxError);
 		}
 	});
 
@@ -185,7 +185,7 @@ describe('literal', () => {
 			\\u0064\\u0065\\u0066\\u0061\\u0075\\u006c\\u0074: 42,
 		}
 		`),
-		).rejects.toThrow(AiScriptSyntaxError);
+		).rejects.toThrow(TonerikoScriptSyntaxError);
 	});
 
 	test.concurrent('obj (invalid key)', async () => {

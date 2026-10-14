@@ -13,8 +13,8 @@ import {
 	assertArray,
 	reprValue,
 } from '../util.js';
-import { AiScriptRuntimeError, AiScriptUserError } from '../../error.js';
-import { AISCRIPT_VERSION, MAX_NATIVE_VALUE_SIZE } from '../../constants.js';
+import { TonerikoScriptRuntimeError, TonerikoScriptUserError } from '../../error.js';
+import { TONERIKO_SCRIPT_VERSION, MAX_NATIVE_VALUE_SIZE } from '../../constants.js';
 import { textDecoder } from '../../const.js';
 import { stdMath } from './math.js';
 import type { Value } from '../value.js';
@@ -22,10 +22,10 @@ import type { Value } from '../value.js';
 export const std: Record<string, Value> = {
 	...stdMath,
 
-	help: STR('SEE: https://github.com/syuilo/aiscript/blob/master/docs/get-started.md'),
+	help: STR('SEE: https://github.com/toneriko-dev/toneriko-script#readme'),
 
 	//#region Core
-	'Core:v': STR(AISCRIPT_VERSION),
+	'Core:v': STR(TONERIKO_SCRIPT_VERSION),
 
 	'Core:ai': STR('kawaii'),
 
@@ -142,10 +142,10 @@ export const std: Record<string, Value> = {
 		assertNumber(b);
 		const length = Math.abs(b.value - a.value) + 1;
 		if (!Number.isSafeInteger(length)) {
-			throw new AiScriptRuntimeError('Core:range expected safe integer bounds');
+			throw new TonerikoScriptRuntimeError('Core:range expected safe integer bounds');
 		}
 		if (length > MAX_NATIVE_VALUE_SIZE) {
-			throw new AiScriptRuntimeError(`Core:range size must not exceed ${MAX_NATIVE_VALUE_SIZE}`);
+			throw new TonerikoScriptRuntimeError(`Core:range size must not exceed ${MAX_NATIVE_VALUE_SIZE}`);
 		}
 		if (a.value < b.value) {
 			return ARR(Array.from({ length: b.value - a.value + 1 }, (_, i) => NUM(i + a.value)));
@@ -161,7 +161,7 @@ export const std: Record<string, Value> = {
 	}),
 	'Core:abort': FN_NATIVE(async ([message]) => {
 		assertString(message);
-		throw new AiScriptUserError(message.value);
+		throw new TonerikoScriptUserError(message.value);
 	}),
 	//#endregion
 
@@ -387,13 +387,13 @@ export const std: Record<string, Value> = {
 	'Arr:create': FN_NATIVE(([length, initial]) => {
 		assertNumber(length);
 		if (length.value < 0) {
-			throw new AiScriptRuntimeError('Arr:create expected non-negative number, got negative');
+			throw new TonerikoScriptRuntimeError('Arr:create expected non-negative number, got negative');
 		}
 		if (!Number.isInteger(length.value)) {
-			throw new AiScriptRuntimeError('Arr:create expected integer, got non-integer');
+			throw new TonerikoScriptRuntimeError('Arr:create expected integer, got non-integer');
 		}
 		if (length.value > MAX_NATIVE_VALUE_SIZE) {
-			throw new AiScriptRuntimeError(`Arr:create size must not exceed ${MAX_NATIVE_VALUE_SIZE}`);
+			throw new TonerikoScriptRuntimeError(`Arr:create size must not exceed ${MAX_NATIVE_VALUE_SIZE}`);
 		}
 		return ARR(Array(length.value).fill(initial ?? NULL));
 	}),

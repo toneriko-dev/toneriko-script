@@ -48,7 +48,7 @@ export type VFnParam = {
 	type?: Type;
 	default?: Value;
 }
-// AiScript のエラー制御対象外で呼び出す関数には topCall を使う。
+// Toneriko Script のエラー制御の対象外で呼び出す関数には topCall を使う。
 export type VNativeFn = VFnBase & {
 	native: (args: (Value | undefined)[], opts: {
 		call: (fn: VFn, args: Value[]) => Promise<Value>;

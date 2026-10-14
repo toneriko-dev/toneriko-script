@@ -1,4 +1,4 @@
-import { AiScriptSyntaxError, AiScriptUnexpectedEOFError } from '../../error.js';
+import { TonerikoScriptSyntaxError, TonerikoScriptUnexpectedEOFError } from '../../error.js';
 import { NODE, unexpectedTokenError } from '../utils.js';
 import { TokenStream } from '../streams/token-stream.js';
 import { isKeywordTokenKind, keywordTokenKindToString, TokenKind } from '../token.js';
@@ -14,7 +14,7 @@ function parseNumberLiteral(s: ITokenStream): number {
 	const pos = s.getPos();
 	const value = Number(s.getTokenValue());
 	if (!Number.isFinite(value)) {
-		throw new AiScriptSyntaxError('number literal is out of range', pos);
+		throw new TonerikoScriptSyntaxError('number literal is out of range', pos);
 	}
 	s.next();
 	return value;
@@ -375,10 +375,10 @@ function parseCall(s: ITokenStream, target: Ast.Expression): Ast.Call {
 				break;
 			}
 			case TokenKind.EOF: {
-				throw new AiScriptUnexpectedEOFError(s.getPos());
+				throw new TonerikoScriptUnexpectedEOFError(s.getPos());
 			}
 			default: {
-				throw new AiScriptSyntaxError('separator expected', s.getPos());
+				throw new TonerikoScriptSyntaxError('separator expected', s.getPos());
 			}
 		}
 	}
@@ -416,7 +416,7 @@ function parseExprWithLabel(s: ITokenStream): Ast.If | Ast.Match | Ast.Block {
 			return expr;
 		}
 		default: {
-			throw new AiScriptSyntaxError('cannot use label for expression other than eval / if / match', expr.loc.start);
+			throw new TonerikoScriptSyntaxError('cannot use label for expression other than eval / if / match', expr.loc.start);
 		}
 	}
 }
@@ -515,14 +515,14 @@ function parseMatch(s: ITokenStream): Ast.Match {
 		let sep = parseOptionalSeparator(s);
 		while (s.is(TokenKind.CaseKeyword)) {
 			if (!sep) {
-				throw new AiScriptSyntaxError('separator expected', s.getPos());
+				throw new TonerikoScriptSyntaxError('separator expected', s.getPos());
 			}
 			qs.push(parseMatchCase(s));
 			sep = parseOptionalSeparator(s);
 		}
 		if (s.is(TokenKind.DefaultKeyword)) {
 			if (!sep) {
-				throw new AiScriptSyntaxError('separator expected', s.getPos());
+				throw new TonerikoScriptSyntaxError('separator expected', s.getPos());
 			}
 			x = parseDefaultCase(s);
 			parseOptionalSeparator(s);
@@ -614,11 +614,11 @@ function parseReference(s: ITokenStream): Ast.Identifier {
 		if (segs.length > 0) {
 			if (s.is(TokenKind.Colon)) {
 				if (s.getToken().hasLeftSpacing) {
-					throw new AiScriptSyntaxError('Cannot use spaces in a reference.', s.getPos());
+					throw new TonerikoScriptSyntaxError('Cannot use spaces in a reference.', s.getPos());
 				}
 				s.next();
 				if (s.getToken().hasLeftSpacing) {
-					throw new AiScriptSyntaxError('Cannot use spaces in a reference.', s.getPos());
+					throw new TonerikoScriptSyntaxError('Cannot use spaces in a reference.', s.getPos());
 				}
 			} else {
 				break;
@@ -671,10 +671,10 @@ function parseObject(s: ITokenStream, isStatic: boolean): Ast.Obj {
 				break;
 			}
 			case TokenKind.EOF: {
-				throw new AiScriptUnexpectedEOFError(s.getPos());
+				throw new TonerikoScriptUnexpectedEOFError(s.getPos());
 			}
 			default: {
-				throw new AiScriptSyntaxError('separator expected', s.getPos());
+				throw new TonerikoScriptSyntaxError('separator expected', s.getPos());
 			}
 		}
 	}
@@ -740,10 +740,10 @@ function parseArray(s: ITokenStream, isStatic: boolean): Ast.Arr {
 				break;
 			}
 			case TokenKind.EOF: {
-				throw new AiScriptUnexpectedEOFError(s.getPos());
+				throw new TonerikoScriptUnexpectedEOFError(s.getPos());
 			}
 			default: {
-				throw new AiScriptSyntaxError('separator expected', s.getPos());
+				throw new TonerikoScriptSyntaxError('separator expected', s.getPos());
 			}
 		}
 	}

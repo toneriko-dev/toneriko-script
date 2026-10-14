@@ -1,8 +1,8 @@
 import type { Pos } from './node.js';
 
-export abstract class AiScriptError extends Error {
+export abstract class TonerikoScriptError extends Error {
 	// Error.prototype.toString が参照するため、name を上書きする。
-	public override name = 'AiScript';
+	public override name = 'TonerikoScript';
 	public info: unknown;
 	public pos?: Pos;
 
@@ -13,12 +13,12 @@ export abstract class AiScriptError extends Error {
 
 		// V8 のみ対応するため、利用可能な場合に発生箇所のスタックを保持する。
 		if (Error.captureStackTrace) {
-			Error.captureStackTrace(this, AiScriptError);
+			Error.captureStackTrace(this, TonerikoScriptError);
 		}
 	}
 }
 
-export class NonAiScriptError extends AiScriptError {
+export class NonTonerikoScriptError extends TonerikoScriptError {
 	public override name = 'Internal';
 	constructor(error: unknown) {
 		const message = String(
@@ -28,34 +28,34 @@ export class NonAiScriptError extends AiScriptError {
 	}
 }
 
-export class AiScriptSyntaxError extends AiScriptError {
+export class TonerikoScriptSyntaxError extends TonerikoScriptError {
 	public override name = 'Syntax';
 	constructor(message: string, public override pos: Pos, info?: unknown) {
 		super(`${message} (Line ${pos.line}, Column ${pos.column})`, info);
 	}
 }
 
-export class AiScriptUnexpectedEOFError extends AiScriptSyntaxError {
+export class TonerikoScriptUnexpectedEOFError extends TonerikoScriptSyntaxError {
 	constructor(pos: Pos, info?: unknown) {
 		super('unexpected EOF', pos, info);
 	}
 }
 
-export class AiScriptNamespaceError extends AiScriptError {
+export class TonerikoScriptNamespaceError extends TonerikoScriptError {
 	public override name = 'Namespace';
 	constructor(message: string, public override pos: Pos, info?: unknown) {
 		super(`${message} (Line ${pos.line}, Column ${pos.column})`, info);
 	}
 }
 
-export class AiScriptRuntimeError extends AiScriptError {
+export class TonerikoScriptRuntimeError extends TonerikoScriptError {
 	public override name = 'Runtime';
 }
-export class AiScriptIndexOutOfRangeError extends AiScriptRuntimeError {
+export class TonerikoScriptIndexOutOfRangeError extends TonerikoScriptRuntimeError {
 }
-export class AiScriptUserError extends AiScriptRuntimeError {
+export class TonerikoScriptUserError extends TonerikoScriptRuntimeError {
 	public override name = '';
 }
-export class AiScriptHostsideError extends AiScriptError {
+export class TonerikoScriptHostsideError extends TonerikoScriptError {
 	public override name = 'Host';
 }

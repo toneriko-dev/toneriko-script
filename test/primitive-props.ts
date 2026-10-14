@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import { NUM, STR, NULL, ARR, OBJ, BOOL, TRUE, FALSE, ERROR, FN_NATIVE } from '../src/interpreter/value';
-import { AiScriptRuntimeError } from '../src/error';
+import { TonerikoScriptRuntimeError } from '../src/error';
 import { MAX_ARRAY_FLAT_DEPTH, MAX_NATIVE_VALUE_SIZE } from '../src/constants';
 import { exe, eq } from './testutils';
 
@@ -32,7 +32,7 @@ describe('num', () => {
 
 	test.concurrent('to_hex rejects non-finite numbers', async () => {
 		for (const value of ['Math:Infinity', '-Math:Infinity', '0 / 0']) {
-			await expect(exe(`<: (${value}).to_hex()`)).rejects.toThrow(AiScriptRuntimeError);
+			await expect(exe(`<: (${value}).to_hex()`)).rejects.toThrow(TonerikoScriptRuntimeError);
 		}
 	});
 });

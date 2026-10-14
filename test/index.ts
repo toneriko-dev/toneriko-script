@@ -3,10 +3,10 @@ import { describe, expect, test } from 'vitest';
 import { Parser, Interpreter, Ast } from '../src';
 import { NUM, STR, NULL, ARR, OBJ, BOOL, TRUE, FALSE, ERROR, FN_NATIVE } from '../src/interpreter/value';
 import {
-	AiScriptSyntaxError,
-	AiScriptRuntimeError,
-	AiScriptIndexOutOfRangeError,
-	AiScriptUnexpectedEOFError,
+	TonerikoScriptSyntaxError,
+	TonerikoScriptRuntimeError,
+	TonerikoScriptIndexOutOfRangeError,
+	TonerikoScriptUnexpectedEOFError,
 } from '../src/error';
 import { exe, eq } from './testutils';
 
@@ -238,7 +238,7 @@ describe('Object', () => {
 
 		<: obj<key>
 		`),
-			AiScriptSyntaxError,
+			TonerikoScriptSyntaxError,
 		);
 	});
 });
@@ -273,7 +273,7 @@ describe('Array', () => {
 
 			<: null
 		`),
-			AiScriptIndexOutOfRangeError,
+			TonerikoScriptIndexOutOfRangeError,
 		);
 	});
 
@@ -283,7 +283,7 @@ describe('Array', () => {
 			<: [42][1]
 			`);
 		} catch (e) {
-			assert.equal(e instanceof AiScriptIndexOutOfRangeError, true);
+			assert.equal(e instanceof TonerikoScriptIndexOutOfRangeError, true);
 			return;
 		}
 		assert.fail();
@@ -295,8 +295,8 @@ describe('Array', () => {
 		['positive infinity', 'Math:Infinity'],
 		['negative infinity', '-Math:Infinity'],
 	])('rejects %s array indices for access and assignment', async (_name, index) => {
-		await expect(exe(`<: [1, 2][${index}]`)).rejects.toThrow(AiScriptIndexOutOfRangeError);
-		await expect(exe(`var arr = [1, 2]; arr[${index}] = 3`)).rejects.toThrow(AiScriptIndexOutOfRangeError);
+		await expect(exe(`<: [1, 2][${index}]`)).rejects.toThrow(TonerikoScriptIndexOutOfRangeError);
+		await expect(exe(`var arr = [1, 2]; arr[${index}] = 3`)).rejects.toThrow(TonerikoScriptIndexOutOfRangeError);
 	});
 });
 
@@ -588,7 +588,7 @@ describe('Function call', () => {
 			@func(a? = 1){}
 			`);
 		} catch (e) {
-			assert.ok(e instanceof AiScriptSyntaxError);
+			assert.ok(e instanceof TonerikoScriptSyntaxError);
 			return;
 		}
 		assert.fail();
@@ -601,19 +601,19 @@ describe('Function call', () => {
 			func()
 			`);
 		} catch (e) {
-			assert.ok(e instanceof AiScriptRuntimeError);
+			assert.ok(e instanceof TonerikoScriptRuntimeError);
 			return;
 		}
 		assert.fail();
 	});
 
-	test.concurrent('std: throw AiScript error when required arg missing', async () => {
+	test.concurrent('std: throw a Toneriko Script error when required arg missing', async () => {
 		try {
 			await exe(`
 			<: Core:eq(1)
 			`);
 		} catch (e) {
-			assert.ok(e instanceof AiScriptRuntimeError);
+			assert.ok(e instanceof TonerikoScriptRuntimeError);
 			return;
 		}
 		assert.fail();
@@ -788,7 +788,7 @@ describe('Attribute', () => {
 			parser.parse(`
 		#[orphan]
 		`),
-		).toThrow(AiScriptUnexpectedEOFError);
+		).toThrow(TonerikoScriptUnexpectedEOFError);
 	});
 
 	test.concurrent('single attribute (no value)', () => {
@@ -922,7 +922,7 @@ describe('Security', () => {
 			`);
 			assert.fail();
 		} catch (e) {
-			assert.ok(e instanceof AiScriptSyntaxError);
+			assert.ok(e instanceof TonerikoScriptSyntaxError);
 		}
 
 		try {
@@ -931,7 +931,7 @@ describe('Security', () => {
 			`);
 			assert.fail();
 		} catch (e) {
-			assert.ok(e instanceof AiScriptRuntimeError);
+			assert.ok(e instanceof TonerikoScriptRuntimeError);
 		}
 
 		try {
@@ -940,7 +940,7 @@ describe('Security', () => {
 			`);
 			assert.fail();
 		} catch (e) {
-			assert.ok(e instanceof AiScriptRuntimeError);
+			assert.ok(e instanceof TonerikoScriptRuntimeError);
 		}
 	});
 
@@ -967,7 +967,7 @@ describe('Security', () => {
 			`);
 			assert.fail();
 		} catch (e) {
-			assert.ok(e instanceof AiScriptRuntimeError);
+			assert.ok(e instanceof TonerikoScriptRuntimeError);
 		}
 
 		try {
@@ -976,7 +976,7 @@ describe('Security', () => {
 			`);
 			assert.fail();
 		} catch (e) {
-			assert.ok(e instanceof AiScriptRuntimeError);
+			assert.ok(e instanceof TonerikoScriptRuntimeError);
 		}
 
 		try {
@@ -985,7 +985,7 @@ describe('Security', () => {
 			`);
 			assert.fail();
 		} catch (e) {
-			assert.equal(e instanceof AiScriptRuntimeError, true);
+			assert.equal(e instanceof TonerikoScriptRuntimeError, true);
 		}
 	});
 });

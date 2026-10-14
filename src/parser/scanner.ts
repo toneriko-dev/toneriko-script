@@ -1,4 +1,4 @@
-import { AiScriptSyntaxError, AiScriptUnexpectedEOFError } from '../error.js';
+import { TonerikoScriptSyntaxError, TonerikoScriptUnexpectedEOFError } from '../error.js';
 import { decodeUnicodeEscapeSequence } from '../utils/characters.js';
 import { CharStream } from './streams/char-stream.js';
 import { TOKEN, TokenKind } from './token.js';
@@ -122,7 +122,7 @@ export class Scanner implements ITokenStream {
 							this.stream.next();
 							return TOKEN(TokenKind.Sharp3, pos, { hasLeftSpacing });
 						}
-						throw new AiScriptSyntaxError('invalid sequence of characters: "##"', pos);
+						throw new TonerikoScriptSyntaxError('invalid sequence of characters: "##"', pos);
 					} else if (!this.stream.eof && (this.stream.char as string) === '[') {
 						this.stream.next();
 						return TOKEN(TokenKind.OpenSharpBracket, pos, { hasLeftSpacing });
@@ -140,7 +140,7 @@ export class Scanner implements ITokenStream {
 						this.stream.next();
 						return TOKEN(TokenKind.And2, pos, { hasLeftSpacing });
 					}
-					throw new AiScriptSyntaxError('invalid character: "&"', pos);
+					throw new TonerikoScriptSyntaxError('invalid character: "&"', pos);
 				}
 				case '(': {
 					this.stream.next();
@@ -298,7 +298,7 @@ export class Scanner implements ITokenStream {
 						return wordToken;
 					}
 
-					throw new AiScriptSyntaxError(`invalid character: "${this.stream.char}"`, pos);
+					throw new TonerikoScriptSyntaxError(`invalid character: "${this.stream.char}"`, pos);
 				}
 			}
 		}
@@ -325,7 +325,7 @@ export class Scanner implements ITokenStream {
 
 		const value = decodeUnicodeEscapeSequence(rawValue);
 		if (value !== rawValue) {
-			throw new AiScriptSyntaxError(`Invalid identifier: "${rawValue}"`, pos);
+			throw new TonerikoScriptSyntaxError(`Invalid identifier: "${rawValue}"`, pos);
 		}
 
 		switch (value) {
@@ -432,14 +432,14 @@ export class Scanner implements ITokenStream {
 
 	private readUnicodeEscapeSequence(): `u${string}` {
 		if (this.stream.eof || (this.stream.char as string) !== 'u') {
-			throw new AiScriptSyntaxError('character "u" expected', this.stream.getPos());
+			throw new TonerikoScriptSyntaxError('character "u" expected', this.stream.getPos());
 		}
 		this.stream.next();
 
 		let code = '';
 		for (let i = 0; i < 4; i++) {
 			if (this.stream.eof || !hexDigit.test(this.stream.char)) {
-				throw new AiScriptSyntaxError('hexadecimal digit expected', this.stream.getPos());
+				throw new TonerikoScriptSyntaxError('hexadecimal digit expected', this.stream.getPos());
 			}
 			code += this.stream.char;
 			this.stream.next();
@@ -487,7 +487,7 @@ export class Scanner implements ITokenStream {
 		if (!this.stream.eof && this.stream.char === '.') {
 			this.stream.next();
 			if (this.stream.eof || !digit.test(this.stream.char as string)) {
-				throw new AiScriptSyntaxError('digit expected', pos);
+				throw new TonerikoScriptSyntaxError('digit expected', pos);
 			}
 			fractional = this.stream.char as string;
 			this.stream.next();
@@ -512,7 +512,7 @@ export class Scanner implements ITokenStream {
 				this.stream.next();
 			}
 			if (this.stream.eof || !digit.test(this.stream.char as string)) {
-				throw new AiScriptSyntaxError('exponent expected', pos);
+				throw new TonerikoScriptSyntaxError('exponent expected', pos);
 			}
 			exponentAbsolute = this.stream.char as string;
 			this.stream.next();
@@ -542,14 +542,14 @@ export class Scanner implements ITokenStream {
 		this.validateNumericSeparators(raw, pos);
 		const value = raw.replaceAll('_', '');
 		if (value.length === 0) {
-			throw new AiScriptSyntaxError(`${radixName} digit expected`, pos);
+			throw new TonerikoScriptSyntaxError(`${radixName} digit expected`, pos);
 		}
 		return value;
 	}
 
 	private validateNumericSeparators(value: string, pos: TokenPosition): void {
 		if (value.startsWith('_') || value.endsWith('_') || value.includes('__')) {
-			throw new AiScriptSyntaxError('numeric separator must be placed between digits', pos);
+			throw new TonerikoScriptSyntaxError('numeric separator must be placed between digits', pos);
 		}
 	}
 
@@ -565,7 +565,7 @@ export class Scanner implements ITokenStream {
 			switch (state) {
 				case 'string': {
 					if (this.stream.eof) {
-						throw new AiScriptUnexpectedEOFError(pos);
+						throw new TonerikoScriptUnexpectedEOFError(pos);
 					}
 					if (this.stream.char === '\\') {
 						this.stream.next();
@@ -596,7 +596,7 @@ export class Scanner implements ITokenStream {
 	 */
 	private readEscapeSequence(literalStartPos: TokenPosition): string {
 		if (this.stream.eof) {
-			throw new AiScriptUnexpectedEOFError(literalStartPos);
+			throw new TonerikoScriptUnexpectedEOFError(literalStartPos);
 		}
 		const escapeChar = this.stream.char;
 		switch (escapeChar) {
@@ -647,7 +647,7 @@ export class Scanner implements ITokenStream {
 			switch (state) {
 				case 'string': {
 					if (this.stream.eof) {
-						throw new AiScriptUnexpectedEOFError(pos);
+						throw new TonerikoScriptUnexpectedEOFError(pos);
 					}
 					if (this.stream.char === '\\') {
 						this.stream.next();
@@ -683,7 +683,7 @@ export class Scanner implements ITokenStream {
 				}
 				case 'expr': {
 					if (this.stream.eof) {
-						throw new AiScriptUnexpectedEOFError(pos);
+						throw new TonerikoScriptUnexpectedEOFError(pos);
 					}
 					if (spaceChars.includes(this.stream.char)) {
 						this.stream.next();
@@ -758,7 +758,7 @@ export class Scanner implements ITokenStream {
 		let depth = 1;
 		while (depth > 0) {
 			if (this.stream.eof) {
-				throw new AiScriptUnexpectedEOFError(this.stream.getPos());
+				throw new TonerikoScriptUnexpectedEOFError(this.stream.getPos());
 			}
 			if (this.stream.char === '/') {
 				this.stream.next();
@@ -771,7 +771,7 @@ export class Scanner implements ITokenStream {
 			if (this.stream.char === '*') {
 				this.stream.next();
 				if (this.stream.eof) {
-					throw new AiScriptUnexpectedEOFError(this.stream.getPos());
+					throw new TonerikoScriptUnexpectedEOFError(this.stream.getPos());
 				}
 				if ((this.stream.char as string) === '/') {
 					this.stream.next();

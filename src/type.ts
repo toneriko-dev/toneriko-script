@@ -1,4 +1,4 @@
-import { AiScriptSyntaxError } from './error.js';
+import { TonerikoScriptSyntaxError } from './error.js';
 import type * as Ast from './node.js';
 
 export type TSimple<N extends string = string> = {
@@ -119,7 +119,7 @@ export function getTypeBySource(typeSource: Ast.TypeSource, typeParams?: readonl
 				return T_GENERIC(typeSource.name, [innerType]);
 			}
 		}
-		throw new AiScriptSyntaxError(`Unknown type: '${getTypeNameBySource(typeSource)}'`, typeSource.loc.start);
+		throw new TonerikoScriptSyntaxError(`Unknown type: '${getTypeNameBySource(typeSource)}'`, typeSource.loc.start);
 	} else if (typeSource.type === 'fnTypeSource') {
 		let fnTypeParams = typeSource.typeParams;
 		if (typeParams != null) {

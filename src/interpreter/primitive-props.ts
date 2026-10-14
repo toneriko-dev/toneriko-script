@@ -1,5 +1,5 @@
 import { substring, length, indexOf, toArray } from '../utils/graphemes.js';
-import { AiScriptRuntimeError } from '../error.js';
+import { TonerikoScriptRuntimeError } from '../error.js';
 import { textEncoder } from '../const.js';
 import { MAX_ARRAY_FLAT_DEPTH, MAX_NATIVE_VALUE_SIZE } from '../constants.js';
 import {
@@ -42,7 +42,7 @@ const PRIMITIVE_PROPS = {
 		to_hex: (target: VNum): VFn =>
 			FN_NATIVE((_, _opts) => {
 				if (!Number.isFinite(target.value)) {
-					throw new AiScriptRuntimeError('num.to_hex cannot convert a non-finite number');
+					throw new TonerikoScriptRuntimeError('num.to_hex cannot convert a non-finite number');
 				}
 				return STR(target.value.toString(16));
 			}),
@@ -218,7 +218,7 @@ const PRIMITIVE_PROPS = {
 				assertNumber(width);
 				const s = pad ? (assertString(pad), pad.value) : ' ';
 				if (width.value > MAX_NATIVE_VALUE_SIZE) {
-					throw new AiScriptRuntimeError(`str.pad_start width must not exceed ${MAX_NATIVE_VALUE_SIZE}`);
+					throw new TonerikoScriptRuntimeError(`str.pad_start width must not exceed ${MAX_NATIVE_VALUE_SIZE}`);
 				}
 
 				return STR(target.value.padStart(width.value, s));
@@ -229,7 +229,7 @@ const PRIMITIVE_PROPS = {
 				assertNumber(width);
 				const s = pad ? (assertString(pad), pad.value) : ' ';
 				if (width.value > MAX_NATIVE_VALUE_SIZE) {
-					throw new AiScriptRuntimeError(`str.pad_end width must not exceed ${MAX_NATIVE_VALUE_SIZE}`);
+					throw new TonerikoScriptRuntimeError(`str.pad_end width must not exceed ${MAX_NATIVE_VALUE_SIZE}`);
 				}
 
 				return STR(target.value.padEnd(width.value, s));
@@ -338,7 +338,7 @@ const PRIMITIVE_PROPS = {
 					assertFunction(fn);
 					const withInitialValue = initialValue != null;
 					if (!withInitialValue && target.value.length === 0) {
-						throw new AiScriptRuntimeError('Reduce of empty array without initial value');
+						throw new TonerikoScriptRuntimeError('Reduce of empty array without initial value');
 					}
 					let accumulator = withInitialValue ? initialValue : target.value[0]!;
 					for (let i = withInitialValue ? 0 : 1; i < target.value.length; i++) {
@@ -351,7 +351,7 @@ const PRIMITIVE_PROPS = {
 					assertFunction(fn);
 					const withInitialValue = initialValue != null;
 					if (!withInitialValue && target.value.length === 0) {
-						throw new AiScriptRuntimeError('Reduce of empty array without initial value');
+						throw new TonerikoScriptRuntimeError('Reduce of empty array without initial value');
 					}
 					let accumulator = withInitialValue ? initialValue : target.value[0]!;
 					for (let i = withInitialValue ? 0 : 1; i < target.value.length; i++) {
@@ -510,16 +510,16 @@ const PRIMITIVE_PROPS = {
 			FN_NATIVE(([times], opts) => {
 				assertNumber(times);
 				if (times.value < 0) {
-					throw new AiScriptRuntimeError('arr.repeat expected non-negative number, got negative');
+					throw new TonerikoScriptRuntimeError('arr.repeat expected non-negative number, got negative');
 				}
 				if (!Number.isInteger(times.value)) {
-					throw new AiScriptRuntimeError('arr.repeat expected integer, got non-integer');
+					throw new TonerikoScriptRuntimeError('arr.repeat expected integer, got non-integer');
 				}
 				if (target.value.length === 0) {
 					return ARR([]);
 				}
 				if (target.value.length * times.value > MAX_NATIVE_VALUE_SIZE) {
-					throw new AiScriptRuntimeError(`arr.repeat size must not exceed ${MAX_NATIVE_VALUE_SIZE}`);
+					throw new TonerikoScriptRuntimeError(`arr.repeat size must not exceed ${MAX_NATIVE_VALUE_SIZE}`);
 				}
 				return ARR(Array(times.value).fill(target.value).flat());
 			}),
@@ -549,18 +549,18 @@ const PRIMITIVE_PROPS = {
 				depth = depth ?? NUM(1);
 				assertNumber(depth);
 				if (!Number.isInteger(depth.value)) {
-					throw new AiScriptRuntimeError('arr.flat expected integer, got non-integer');
+					throw new TonerikoScriptRuntimeError('arr.flat expected integer, got non-integer');
 				}
 				if (depth.value < 0) {
-					throw new AiScriptRuntimeError('arr.flat expected non-negative number, got negative');
+					throw new TonerikoScriptRuntimeError('arr.flat expected non-negative number, got negative');
 				}
 				if (depth.value > MAX_ARRAY_FLAT_DEPTH) {
-					throw new AiScriptRuntimeError(`arr.flat depth must not exceed ${MAX_ARRAY_FLAT_DEPTH}`);
+					throw new TonerikoScriptRuntimeError(`arr.flat depth must not exceed ${MAX_ARRAY_FLAT_DEPTH}`);
 				}
 				const flat = (arr: Value[], depth: number, result: Value[]) => {
 					if (depth === 0) {
 						if (result.length + arr.length > MAX_NATIVE_VALUE_SIZE) {
-							throw new AiScriptRuntimeError(`arr.flat size must not exceed ${MAX_NATIVE_VALUE_SIZE}`);
+							throw new TonerikoScriptRuntimeError(`arr.flat size must not exceed ${MAX_NATIVE_VALUE_SIZE}`);
 						}
 						result.push(...arr);
 						return;
@@ -570,7 +570,7 @@ const PRIMITIVE_PROPS = {
 							flat(v.value, depth - 1, result);
 						} else {
 							if (result.length >= MAX_NATIVE_VALUE_SIZE) {
-								throw new AiScriptRuntimeError(`arr.flat size must not exceed ${MAX_NATIVE_VALUE_SIZE}`);
+								throw new TonerikoScriptRuntimeError(`arr.flat size must not exceed ${MAX_NATIVE_VALUE_SIZE}`);
 							}
 							result.push(v);
 						}
@@ -698,8 +698,8 @@ export function getPrimProp(target: Value, name: string): Value {
 		if (Object.hasOwn(props, name)) {
 			return props[name]!(target);
 		}
-		throw new AiScriptRuntimeError(`No such prop (${name}) in ${target.type}.`);
+		throw new TonerikoScriptRuntimeError(`No such prop (${name}) in ${target.type}.`);
 	} else {
-		throw new AiScriptRuntimeError(`Cannot read prop of ${target.type}. (reading ${name})`);
+		throw new TonerikoScriptRuntimeError(`Cannot read prop of ${target.type}. (reading ${name})`);
 	}
 }

@@ -1,6 +1,6 @@
 # docs
 
-言語仕様や標準ライブラリなど、AiScript を使う人向けの文書は、専用のサイトに移しました。
+言語仕様や標準ライブラリなど、使う人向けの文書は、分かれる前の AiScript のものを参照してください。Toneriko Script は AiScript 1.2.1 から分かれたので、それ以降に加えた違いはこのリポジトリの README とコミットの履歴にあります。upstream は文書を専用のサイトに移しています。
 
 - [移行先のサイト](https://aiscript-dev.github.io/ja/)
 - [移行先のリポジトリ](https://github.com/aiscript-dev/aiscript-dev.github.io)

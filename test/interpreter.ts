@@ -4,7 +4,7 @@ import { Parser, Interpreter, values, errors, utils, Ast } from '../src';
 import { ARR, ERROR, FALSE, NUM, OBJ, STR, TRUE, Value } from '../src/interpreter/value';
 
 let { FN_NATIVE } = values;
-let { AiScriptRuntimeError, AiScriptIndexOutOfRangeError, AiScriptHostsideError } = errors;
+let { TonerikoScriptRuntimeError, TonerikoScriptIndexOutOfRangeError, TonerikoScriptHostsideError } = errors;
 
 test('maxStep is applied per top-level execution', async () => {
 	const parser = new Parser();
@@ -122,8 +122,8 @@ describe('value conversion', () => {
 
 describe('Scope', () => {
 	test.concurrent('getAll', async () => {
-		const aiscript = new Interpreter({});
-		await aiscript.exec(
+		const interpreter = new Interpreter({});
+		await interpreter.exec(
 			Parser.parse(`
 		let a = 1
 		@b() {
@@ -136,7 +136,7 @@ describe('Scope', () => {
 		var c = true
 		`),
 		);
-		const vars = aiscript.scope.getAll();
+		const vars = interpreter.scope.getAll();
 		assert.ok(vars.get('a') != null);
 		assert.ok(vars.get('b') != null);
 		assert.ok(vars.get('c') != null);
@@ -149,7 +149,7 @@ describe('error handler', () => {
 	test.concurrent('error from outside caller', async () => {
 		let outsideCaller: () => Promise<void> = async () => {};
 		let errCount: number = 0;
-		const aiscript = new Interpreter(
+		const interpreter = new Interpreter(
 			{
 				emitError: FN_NATIVE((_args, _opts) => {
 					throw Error('emitError');
@@ -167,7 +167,7 @@ describe('error handler', () => {
 				},
 			},
 		);
-		await aiscript.exec(
+		await interpreter.exec(
 			Parser.parse(`
 		genOutsideCaller(emitError)
 		`),
@@ -179,7 +179,7 @@ describe('error handler', () => {
 
 	test.concurrent('array.map calls the handler just once', async () => {
 		let errCount: number = 0;
-		const aiscript = new Interpreter(
+		const interpreter = new Interpreter(
 			{},
 			{
 				err(e) {
@@ -187,7 +187,7 @@ describe('error handler', () => {
 				},
 			},
 		);
-		await aiscript.exec(
+		await interpreter.exec(
 			Parser.parse(`
 		Core:range(1,5).map(@(){ hoge })
 		`),
@@ -246,7 +246,7 @@ describe('Async timers', () => {
 describe('error location', () => {
 	const exeAndGetErrPos = (src: string): Promise<Ast.Pos | undefined> =>
 		new Promise((ok, ng) => {
-			const aiscript = new Interpreter(
+			const interpreter = new Interpreter(
 				{
 					emitError: FN_NATIVE((_args, _opts) => {
 						throw Error('emitError');
@@ -258,10 +258,10 @@ describe('error location', () => {
 					},
 				},
 			);
-			aiscript.exec(Parser.parse(src)).then(() => ng('error has not occured.'));
+			interpreter.exec(Parser.parse(src)).then(() => ng('error has not occured.'));
 		});
 
-	test.concurrent('Non-aiscript Error', async () => {
+	test.concurrent('Non-Toneriko Script error', async () => {
 		return expect(
 			exeAndGetErrPos(`/* (の位置
 			*/
@@ -312,7 +312,7 @@ describe('error location', () => {
 describe('callstack', () => {
 	const exeAndGetErrMessage = (src: string): Promise<string> =>
 		new Promise((ok, ng) => {
-			const aiscript = new Interpreter(
+			const interpreter = new Interpreter(
 				{
 					emitError: FN_NATIVE((_args, _opts) => {
 						throw Error('emitError');
@@ -324,7 +324,7 @@ describe('callstack', () => {
 					},
 				},
 			);
-			aiscript.exec(Parser.parse(src)).then(() => ng('error has not occurred.'));
+			interpreter.exec(Parser.parse(src)).then(() => ng('error has not occurred.'));
 		});
 
 	test('error in function', async () => {
@@ -404,7 +404,7 @@ describe('IRQ', () => {
 		});
 
 		test.concurrent.each([-1, NaN])('rate = %d', async (rate, count) => {
-			return expect(countSleeps(rate)).rejects.toThrow(AiScriptHostsideError);
+			return expect(countSleeps(rate)).rejects.toThrow(TonerikoScriptHostsideError);
 		});
 	});
 
@@ -452,7 +452,7 @@ describe('IRQ', () => {
 		});
 
 		test.each([-1, NaN])('Invalid number: %d', (time) => {
-			return expect(countSleeps(time)).rejects.toThrow(AiScriptHostsideError);
+			return expect(countSleeps(time)).rejects.toThrow(TonerikoScriptHostsideError);
 		});
 	});
 });

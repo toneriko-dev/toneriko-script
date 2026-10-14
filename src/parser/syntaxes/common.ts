@@ -1,5 +1,5 @@
 import { TokenKind } from '../token.js';
-import { AiScriptSyntaxError, AiScriptUnexpectedEOFError } from '../../error.js';
+import { TonerikoScriptSyntaxError, TonerikoScriptUnexpectedEOFError } from '../../error.js';
 import { NODE } from '../utils.js';
 import { parseStatement } from './statements.js';
 import { parseExpr } from './expressions.js';
@@ -76,10 +76,10 @@ export function parseParams(s: ITokenStream): Ast.Fn['params'] {
 				break;
 			}
 			case TokenKind.EOF: {
-				throw new AiScriptUnexpectedEOFError(s.getPos());
+				throw new TonerikoScriptUnexpectedEOFError(s.getPos());
 			}
 			default: {
-				throw new AiScriptSyntaxError('separator expected', s.getPos());
+				throw new TonerikoScriptSyntaxError('separator expected', s.getPos());
 			}
 		}
 	}
@@ -119,10 +119,10 @@ export function parseBlock(s: ITokenStream): (Ast.Statement | Ast.Expression)[] 
 				break;
 			}
 			case TokenKind.EOF: {
-				throw new AiScriptUnexpectedEOFError(s.getPos());
+				throw new TonerikoScriptUnexpectedEOFError(s.getPos());
 			}
 			default: {
-				throw new AiScriptSyntaxError('Multiple statements cannot be placed on a single line.', s.getPos());
+				throw new TonerikoScriptSyntaxError('Multiple statements cannot be placed on a single line.', s.getPos());
 			}
 		}
 	}
@@ -143,7 +143,7 @@ export function parseLabel(s: ITokenStream): string {
 	s.next();
 
 	if (s.getToken().hasLeftSpacing) {
-		throw new AiScriptSyntaxError('cannot use spaces in a label', s.getPos());
+		throw new TonerikoScriptSyntaxError('cannot use spaces in a label', s.getPos());
 	}
 	s.expect(TokenKind.Identifier);
 	const label = s.getTokenValue();

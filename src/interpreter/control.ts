@@ -1,4 +1,4 @@
-import { AiScriptRuntimeError } from '../error.js';
+import { TonerikoScriptRuntimeError } from '../error.js';
 import { NULL } from './value.js';
 import type { Reference } from './reference.js';
 import type { Value } from './value.js';
@@ -60,11 +60,11 @@ export function unWrapRet(v: Value | Control): Value {
 export function assertValue(v: Value | Control): asserts v is Value {
 	switch (v.type) {
 		case 'return':
-			throw new AiScriptRuntimeError('Invalid return');
+			throw new TonerikoScriptRuntimeError('Invalid return');
 		case 'break':
-			throw new AiScriptRuntimeError('Invalid break');
+			throw new TonerikoScriptRuntimeError('Invalid break');
 		case 'continue':
-			throw new AiScriptRuntimeError('Invalid continue');
+			throw new TonerikoScriptRuntimeError('Invalid continue');
 		default:
 			v satisfies Value;
 	}

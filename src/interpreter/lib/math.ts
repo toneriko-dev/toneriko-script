@@ -1,6 +1,6 @@
 import { NUM, FN_NATIVE, NULL } from '../value.js';
 import { assertNumber, expectAny, assertArray } from '../util.js';
-import { AiScriptRuntimeError } from '../../error.js';
+import { TonerikoScriptRuntimeError } from '../../error.js';
 import { CryptoGen } from '../../utils/random/CryptoGen.js';
 import { GenerateChaCha20Random } from '../../utils/random/genrng.js';
 import type { Value } from '../value.js';
@@ -211,19 +211,19 @@ export const stdMath: Record<`Math:${string}`, Value> = {
 		if (options?.type === 'obj') {
 			const v = options.value.get('algorithm');
 			if (v?.type !== 'str') {
-				throw new AiScriptRuntimeError('`options.algorithm` must be string.');
+				throw new TonerikoScriptRuntimeError('`options.algorithm` must be string.');
 			}
 			if (v.value !== 'chacha20') {
-				throw new AiScriptRuntimeError('`options.algorithm` must be `chacha20`.');
+				throw new TonerikoScriptRuntimeError('`options.algorithm` must be `chacha20`.');
 			}
 		} else if (options?.type !== undefined) {
-			throw new AiScriptRuntimeError('`options` must be an object if specified.');
+			throw new TonerikoScriptRuntimeError('`options` must be an object if specified.');
 		}
 		if (seed.type !== 'num' && seed.type !== 'str' && seed.type !== 'null') {
-			throw new AiScriptRuntimeError('`seed` must be either number or string if specified.');
+			throw new TonerikoScriptRuntimeError('`seed` must be either number or string if specified.');
 		}
 		if (!('subtle' in crypto)) {
-			throw new AiScriptRuntimeError(
+			throw new TonerikoScriptRuntimeError(
 				'The random algorithm chacha20 cannot be used because `crypto.subtle` is not available. Maybe in non-secure context?',
 			);
 		}

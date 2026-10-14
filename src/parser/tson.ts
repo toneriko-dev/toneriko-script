@@ -1,14 +1,14 @@
 import { nodeToJs } from '../utils/node-to-js.js';
 import { Scanner } from './scanner.js';
-import { parseAiSonTopLevel } from './syntaxes/aison.js';
+import { parseTsonTopLevel } from './syntaxes/tson.js';
 import { jsToVal, stringifyObjectKey } from '../interpreter/util.js';
 import type { JsValue } from '../interpreter/util.js';
 import type { Value } from '../interpreter/value.js';
 
-export class AiSON {
+export class TSON {
 	public static parse(input: string): JsValue {
 		const scanner = new Scanner(input);
-		const ast = parseAiSonTopLevel(scanner);
+		const ast = parseTsonTopLevel(scanner);
 
 		return nodeToJs(ast);
 	}
@@ -26,7 +26,7 @@ export class AiSON {
 				return 'null';
 			case 'num': {
 				if (!Number.isFinite(value.value)) {
-					throw new TypeError('Cannot stringify non-finite number as AiSON.');
+					throw new TypeError('Cannot stringify non-finite number as TSON.');
 				}
 				return Object.is(value.value, -0) ? '-0' : value.value.toString();
 			}
@@ -37,7 +37,7 @@ export class AiSON {
 					return '[]';
 				}
 				if (processingObjects.has(value.value)) {
-					throw new TypeError('Cannot stringify circular AiSON value.');
+					throw new TypeError('Cannot stringify circular TSON value.');
 				}
 				processingObjects.add(value.value);
 				try {
@@ -61,7 +61,7 @@ export class AiSON {
 					return '{}';
 				}
 				if (processingObjects.has(value.value)) {
-					throw new TypeError('Cannot stringify circular AiSON value.');
+					throw new TypeError('Cannot stringify circular TSON value.');
 				}
 				processingObjects.add(value.value);
 				try {

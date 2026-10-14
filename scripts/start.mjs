@@ -2,7 +2,7 @@ import fs from 'fs';
 import * as readline from 'readline';
 import { styleText } from 'node:util';
 import { Parser, Interpreter, errors, utils } from 'toneriko-script';
-const { AiScriptError } = errors;
+const { TonerikoScriptError } = errors;
 const { valToString } = utils;
 
 const i = readline.createInterface({
@@ -26,12 +26,12 @@ const interpreter = new Interpreter({}, {
 	}
 });
 
-const script = fs.readFileSync('./main.ais', 'utf8');
+const script = fs.readFileSync('./main.tks', 'utf8');
 try {
 	const ast = Parser.parse(script);
 	await interpreter.exec(ast);
 } catch (e) {
-	if (e instanceof AiScriptError) {
+	if (e instanceof TonerikoScriptError) {
 		console.log(styleText('red', `${e}`));
 	} else {
 		throw e

@@ -2,12 +2,12 @@ import * as assert from 'assert';
 import { describe, expect, test } from 'vitest';
 import { errors, utils } from '../src';
 import { NUM, STR, NULL, ARR, OBJ, BOOL, TRUE, FALSE, ERROR ,FN_NATIVE } from '../src/interpreter/value';
-import { AiScriptRuntimeError, AiScriptSyntaxError } from '../src/error';
+import { TonerikoScriptRuntimeError, TonerikoScriptSyntaxError } from '../src/error';
 import { exe, getMeta, eq } from './testutils';
 
 function syntaxError(message: string, pos: { line: number; column: number }): (error: unknown) => boolean {
 	return error => {
-		assert.ok(error instanceof AiScriptSyntaxError);
+		assert.ok(error instanceof TonerikoScriptSyntaxError);
 		assert.strictEqual(error.message, `${message} (Line ${pos.line}, Column ${pos.column})`);
 		assert.deepStrictEqual(error.pos, pos);
 		return true;
@@ -490,8 +490,8 @@ describe('return', () => {
 		<: f()
 		`);
 		eq(res, NUM(1));
-		await assert.rejects(() => exe('<: @(x = eval { return 1 }){}'), errors.AiScriptSyntaxError);
-		await assert.rejects(() => exe('<: @(a = @(b = eval { return 0 }){}){}'), errors.AiScriptSyntaxError);
+		await assert.rejects(() => exe('<: @(x = eval { return 1 }){}'), errors.TonerikoScriptSyntaxError);
+		await assert.rejects(() => exe('<: @(a = @(b = eval { return 0 }){}){}'), errors.TonerikoScriptSyntaxError);
 	});
 
 	test.concurrent('in template', async () => {
@@ -534,7 +534,7 @@ describe('return', () => {
 			#l: eval {
 				break #l eval { return 1 }
 			}
-			`)).rejects.toThrow(AiScriptSyntaxError);
+			`)).rejects.toThrow(TonerikoScriptSyntaxError);
 		});
 	});
 

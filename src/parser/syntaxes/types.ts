@@ -1,4 +1,4 @@
-import { AiScriptSyntaxError, AiScriptUnexpectedEOFError } from '../../error.js';
+import { TonerikoScriptSyntaxError, TonerikoScriptUnexpectedEOFError } from '../../error.js';
 import { TokenKind } from '../token.js';
 import { NODE } from '../utils.js';
 import { parseOptionalSeparator } from './common.js';
@@ -123,10 +123,10 @@ function parseFnType(s: ITokenStream): Ast.TypeSource {
 					break;
 				}
 				case TokenKind.EOF: {
-					throw new AiScriptUnexpectedEOFError(s.getPos());
+					throw new TonerikoScriptUnexpectedEOFError(s.getPos());
 				}
 				default: {
-					throw new AiScriptSyntaxError('separator expected', s.getPos());
+					throw new TonerikoScriptSyntaxError('separator expected', s.getPos());
 				}
 			}
 		}

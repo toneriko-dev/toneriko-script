@@ -1,12 +1,12 @@
 {
 	"type": "module",
-	"name": "@syuilo/aiscript",
+	"name": "toneriko-script",
 	"version": "1.2.1",
-	"description": "AiScript implementation (Misskey fork)",
+	"description": "Toneriko Script, a fork of AiScript for Misskey (Toneriko)",
 	"author": "syuilo <syuilotan@yahoo.co.jp>",
 	"license": "MIT",
 	"private": true,
-	"homepage": "https://aiscript-dev.github.io/",
+	"homepage": "https://github.com/toneriko-dev/toneriko-script",
 	"exports": {
 		".": {
 			"import": "./built/index.js",
@@ -39,6 +39,6 @@
 	],
 	"repository": {
 		"type": "git",
-		"url": "https://github.com/toneriko-dev/aiscript.git"
+		"url": "https://github.com/toneriko-dev/toneriko-script.git"
 	}
 }

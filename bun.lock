@@ -3,7 +3,7 @@
   "configVersion": 1,
   "workspaces": {
     "": {
-      "name": "@syuilo/aiscript",
+      "name": "toneriko-script",
       "devDependencies": {
         "@types/node": "26.6.4",
         "esbuild": "0.28.2",

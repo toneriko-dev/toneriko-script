@@ -1,5 +1,5 @@
 import fs from 'fs';
-import { Parser } from '@syuilo/aiscript';
+import { Parser } from 'toneriko-script';
 import { inspect } from 'util';
 
 const script = fs.readFileSync('./main.ais', 'utf8');

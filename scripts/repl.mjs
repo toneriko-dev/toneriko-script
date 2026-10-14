@@ -1,6 +1,6 @@
 import * as readline from 'readline/promises';
 import { styleText } from 'node:util';
-import { errors, Parser, Interpreter, utils } from '@syuilo/aiscript';
+import { errors, Parser, Interpreter, utils } from 'toneriko-script';
 const { valToString } = utils;
 
 const i = readline.createInterface({

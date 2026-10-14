@@ -1,7 +1,7 @@
 import fs from 'fs';
 import * as readline from 'readline';
 import { styleText } from 'node:util';
-import { Parser, Interpreter, errors, utils } from '@syuilo/aiscript';
+import { Parser, Interpreter, errors, utils } from 'toneriko-script';
 const { AiScriptError } = errors;
 const { valToString } = utils;
 

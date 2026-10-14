@@ -1,7 +1,7 @@
 {
 	"type": "module",
 	"name": "toneriko-script",
-	"version": "1.2.1",
+	"version": "1.3.0",
 	"description": "Toneriko Script, a fork of AiScript for Misskey (Toneriko)",
 	"author": "syuilo <syuilotan@yahoo.co.jp>",
 	"license": "MIT",

@@ -6,7 +6,12 @@ import { parse } from '../../src/v2/parser/index.js';
 import type { Node, Program } from '../../src/v2/ast.js';
 
 function reference(source: string): Program {
-	const file = ts.createSourceFile('input.ts', source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+	// 単独の createSourceFile は拡張子だけではモジュールと判定しません。
+	const file = ts.createSourceFile('input.mts', source, {
+		languageVersion: ts.ScriptTarget.Latest,
+		impliedNodeFormat: ts.ModuleKind.ESNext,
+		setExternalModuleIndicator: file => { Object.assign(file, { externalModuleIndicator: true }); },
+	}, true, ts.ScriptKind.TS);
 	const diagnostics = (file as ts.SourceFile & { parseDiagnostics: readonly ts.Diagnostic[] }).parseDiagnostics;
 	assert.deepEqual(diagnostics.map(d => ts.flattenDiagnosticMessageText(d.messageText, '\n')), [], source);
 	const pos = (offset: number) => {
@@ -106,6 +111,7 @@ function reference(source: string): Program {
 			generator: false, expression: !ts.isBlock(node.body), ...returnType(node.type),
 		});
 		if (ts.isBlock(node)) return make(node, 'BlockStatement', { body: node.statements.map(convert) });
+		if (ts.isEmptyStatement(node)) return make(node, 'EmptyStatement', {});
 		if (ts.isExpressionStatement(node)) return make(node, 'ExpressionStatement', { expression: expression(node.expression) });
 		if (ts.isReturnStatement(node)) return make(node, 'ReturnStatement', { argument: node.expression ? expression(node.expression) : null });
 		if (ts.isThrowStatement(node)) return make(node, 'ThrowStatement', { argument: expression(node.expression) });
@@ -122,7 +128,7 @@ function reference(source: string): Program {
 		if (ts.isSwitchStatement(node)) return make(node, 'SwitchStatement', { discriminant: expression(node.expression), cases: node.caseBlock.clauses.map(convert) });
 		if (ts.isCaseClause(node) || ts.isDefaultClause(node)) return make(node, 'SwitchCase', { test: ts.isCaseClause(node) ? expression(node.expression) : null, consequent: node.statements.map(convert) });
 		if (ts.isTryStatement(node)) return make(node, 'TryStatement', { block: convert(node.tryBlock), handler: node.catchClause ? convert(node.catchClause) : null, finalizer: node.finallyBlock ? convert(node.finallyBlock) : null });
-		if (ts.isCatchClause(node)) return make(node, 'CatchClause', { param: node.variableDeclaration ? convert(node.variableDeclaration.name) : null, body: convert(node.block) });
+		if (ts.isCatchClause(node)) return make(node, 'CatchClause', { param: node.variableDeclaration ? binding(node.variableDeclaration.name, node.variableDeclaration.type) : null, body: convert(node.block) });
 		if (ts.isArrayBindingPattern(node)) return make(node, 'ArrayPattern', { elements: node.elements.map(el => {
 			if (ts.isOmittedExpression(el)) return null;
 			if (el.dotDotDotToken) return make(el, 'RestElement', { argument: convert(el.name) });
@@ -181,6 +187,46 @@ function compare(source: string): void {
 }
 
 const examples = [
+	'a ? !(b) : c => d; a ? -(b) : c => d;',
+	'a ? (b): number => b : c;',
+	'switch (k) { case (x): (y) => y; }',
+	'function f() { return\nlabel: {} }',
+	'function f() { return\nfunction g() {} }',
+	'function f() { return\nasync function g() {} }',
+	'const t = `${a < b}${c > (d)}`;',
+
+	'let x: string\n[]',
+	'if (a < b && c > (d)) {}',
+	'function clamp(x) { if (x < 0) return 0\nif (x > (max - 1)) return max - 1 }',
+	'function f() { return\n}',
+	'function f() { return // done\n}',
+	'function f() { return /* done\n */ }',
+	'function f() { return\n; }',
+	'function f() { if (a) return\nelse g() }',
+	'function f() { switch (k) { case 0: return\ncase 1: return\ndefault: return\n} }',
+	'a ? (b) : c => d',
+	'const onClick = disabled ? (null) : () => go()',
+	'function f() { switch (k) { case (1): return x => x } }',
+	'const fn = a ? ((x): number => x) : (y): number => y',
+	'function f() {}; if (a) {}; x = 1;;',
+	';(async () => { f() })()',
+	'foo()\nas(1)',
+	'type\nfoo()',
+	'const m = match\nfoo()',
+	'match in o',
+	'x = each\nlet y = 1',
+	'a: b: while (1) {}',
+	'let x: | number; let y: | string | null;',
+	'try {} catch (e: any) { throw e }',
+	'x = await -a',
+	'a || b && c; a && b || c;',
+	'a ?? b === c; a === b ?? c; a ?? b < c; a < b ?? c;',
+	'a in b < c; a < b in c; a === b in c; a in b === c;',
+	'a === b < c; a < b === c; a + b < c; a < b + c;',
+	'a === b !== c; a !== b === c; a === b && c; a && b === c;',
+	'a - b - c; a - b + c; a + b - c;',
+	'x\n++y',
+	'x\n--y',
 	'const each = x => x; each(xs); const match = x => x; match(xs); match;',
 	'const constructor = toString; constructor(); const o = { constructor, toString };',
 	'([obj.x = 1, ...obj.rest] = xs); ({ a: obj.x, ...obj.rest } = data);',
@@ -237,9 +283,25 @@ const atom = fc.oneof(fc.integer({ min: 0, max: 10000 }).map(String), fc.constan
 function generatedExpression(depth: number): fc.Arbitrary<string> {
 	if (depth === 0) return atom;
 	const child = generatedExpression(depth - 1);
+	const operand = fc.oneof(atom, child.map(value => `(${value})`));
+	// < と > を同じ列に作ると、参照側が型引数として読む場合があります。
+	const arithmetic = ['+', '-', '*', '/', '%', '**', '===', '!==', '<', '<=', 'in'] as const;
+	// ?? と &&・|| の混在だけは括弧が必須なので、演算子の集合を先に選びます。
+	const operator = fc.oneof(
+		fc.constant(fc.constantFrom(...arithmetic, '&&', '||')),
+		fc.constant(fc.constantFrom(...arithmetic, '??')),
+	);
+	const binary = operator.chain(operators => fc.tuple(
+		operand,
+		fc.array(fc.tuple(operators, fc.constantFrom(' ', '\n', ' /* next */\n'), operand), { minLength: 1, maxLength: 4 }),
+		fc.boolean(),
+	).map(([first, rest, parentheses]) => {
+		const value = first + rest.map(([op, space, right]) => ` ${op}${space}${right}`).join('');
+		return parentheses ? `(${value})` : value;
+	}));
 	return fc.oneof(
 		atom,
-		fc.tuple(child, fc.constantFrom('+', '-', '*', '/', '%', '**', '===', '!==', '<', '<=', '>', '>=', '&&', '||', '??'), child).map(([a, op, b]) => `(${a} ${op} ${b})`),
+		binary,
 		fc.tuple(fc.constantFrom('!', '-', '+', 'typeof'), child).map(([op, value]) => `(${op} (${value}))`),
 		fc.tuple(child, child, child).map(([a, b, c]) => `(${a} ? ${b} : ${c})`),
 		fc.array(child, { maxLength: 3 }).map(values => `[${values.join(', ')}]`),
@@ -251,15 +313,17 @@ function generatedExpression(depth: number): fc.Arbitrary<string> {
 	);
 }
 
+const statementEnd = fc.constantFrom(';', '\n');
 const generatedStatement = fc.oneof(
-	generatedExpression(3).map(value => `const value = ${value};`),
-	generatedExpression(2).map(value => `x = ${value};`),
-	generatedExpression(2).map(value => `function f(x) { return ${value}; }`),
-	fc.tuple(generatedExpression(2), generatedExpression(2)).map(([a, b]) => `if (${a}) { f(${b}); } else { g(); }`),
-	generatedExpression(2).map(value => `for (let i = 0; i < 3; i++) { f(${value}); }`),
-	generatedExpression(2).map(value => `for (const x of xs) { f(${value}); }`),
-	generatedExpression(2).map(value => `while (ok) { f(${value}); break; }`),
-	generatedExpression(2).map(value => `try { f(${value}); } catch (e) { g(e); }`),
+	fc.tuple(generatedExpression(3), statementEnd).map(([value, end]) => `const value = ${value}${end}`),
+	fc.tuple(generatedExpression(2), statementEnd).map(([value, end]) => `x = ${value}${end}`),
+	fc.tuple(generatedExpression(2), statementEnd).map(([value, end]) => `function f(x) { return ${value}${end} }`),
+	fc.tuple(generatedExpression(2), generatedExpression(2), statementEnd).map(([a, b, end]) => `if (${a}) { f(${b})${end} } else { g()${end} }`),
+	fc.tuple(generatedExpression(2), statementEnd).map(([value, end]) => `for (let i = 0; i < 3; i++) { f(${value})${end} }`),
+	fc.tuple(generatedExpression(2), statementEnd).map(([value, end]) => `for (const x of xs) { f(${value})${end} }`),
+	fc.tuple(generatedExpression(2), statementEnd).map(([value, end]) => `while (ok) { f(${value})${end} break${end} }`),
+	fc.tuple(generatedExpression(2), statementEnd).map(([value, end]) => `try { f(${value})${end} } catch (e) { g(e)${end} }`),
+	statementEnd.map(end => `x${end}\n++y${end}`),
 );
 
 function generatedType(depth: number): fc.Arbitrary<string> {

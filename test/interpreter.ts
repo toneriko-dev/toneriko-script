@@ -202,6 +202,8 @@ describe('Async timers', () => {
 	});
 
 	afterEach(() => {
+		// 偽のタイマーは performance.now も止めるので、後のテストへ残さない
+		vi.useRealTimers();
 		vi.restoreAllMocks();
 	});
 
@@ -365,95 +367,402 @@ describe('callstack', () => {
 	});
 });
 
-describe('IRQ', () => {
-	describe('irqSleep is function', () => {
-		async function countSleeps(irqRate: number): Promise<number> {
-			let count = 0;
-			const interpreter = new Interpreter(
-				{},
-				{
-					irqRate,
-					// 大規模なループを実行しないテストでのみ安全に使える。
-					irqSleep: async () => count++,
-				},
-			);
-			await interpreter.exec(
-				Parser.parse(`
-			'Ai-chan kawaii'
-			'Ai-chan kawaii'
-			'Ai-chan kawaii'
-			'Ai-chan kawaii'
-			'Ai-chan kawaii'
-			'Ai-chan kawaii'
-			'Ai-chan kawaii'
-			'Ai-chan kawaii'
-			'Ai-chan kawaii'
-			'Ai-chan kawaii'`),
-			);
-			return count;
-		}
+describe('yield and busy time', () => {
+	// 実行する環境に左右されない重い処理。ms だけ同期で CPU を使う
+	const burn = FN_NATIVE(([ms]) => {
+		const until = performance.now() + (ms as values.VNum).value;
+		while (performance.now() < until);
+	});
 
-		test.concurrent.each([
-			[0, 0],
-			[1, 10],
-			[2, 5],
-			[10, 1],
-			[Infinity, 0],
-		])('rate = %d', async (rate, count) => {
-			return expect(countSleeps(rate)).resolves.toEqual(count);
+	// 上限を計算の時間から決めるテスト用。最初の数回は JIT が温まらず遅いので、何回か動かした中で最も短い時間を使う
+	async function soloTime(source: string): Promise<number> {
+		let min = Infinity;
+		for (let i = 0; i < 4; i++) {
+			const start = performance.now();
+			await new Interpreter({}).exec(Parser.parse(source));
+			min = Math.min(min, performance.now() - start);
+		}
+		return min;
+	}
+
+	test('yields to the host after running for yieldInterval', async () => {
+		let yields = 0;
+		const interpreter = new Interpreter({}, { yieldInterval: 5, yieldToHost: async () => void yields++ });
+		const start = performance.now();
+		await interpreter.exec(Parser.parse('var s = 0\nfor (let i, 100000) { s += 1 }'));
+		const elapsed = performance.now() - start;
+		// 5ms ごとに 1 回なので、経過時間から見込める回数を超えない
+		expect(yields).toBeGreaterThanOrEqual(1);
+		expect(yields).toBeLessThanOrEqual(Math.ceil(elapsed / 5) + 1);
+	});
+
+	test('never yields when yieldInterval is 0', async () => {
+		let yields = 0;
+		const interpreter = new Interpreter({}, { yieldInterval: 0, yieldToHost: async () => void yields++ });
+		await interpreter.exec(Parser.parse('var s = 0\nfor (let i, 100000) { s += 1 }'));
+		expect(yields).toBe(0);
+	});
+
+	test('runs to the end with the default yield', async () => {
+		const interpreter = new Interpreter({}, { yieldInterval: 1 });
+		await interpreter.exec(Parser.parse('var s = 0\nfor (let i, 50000) { s += 1 }'));
+	});
+
+	test.each([-1, NaN])('rejects yieldInterval %d', (yieldInterval) => {
+		expect(() => new Interpreter({}, { yieldInterval })).toThrow(TonerikoScriptHostsideError);
+	});
+
+	test.each([0, -1, NaN])('rejects maxBusyTime %d', (maxBusyTime) => {
+		expect(() => new Interpreter({}, { maxBusyTime })).toThrow(TonerikoScriptHostsideError);
+	});
+
+	test('stops an execution that runs without waiting for longer than maxBusyTime', async () => {
+		const interpreter = new Interpreter({}, { maxBusyTime: 50 });
+		await expect(interpreter.exec(Parser.parse('loop {}'))).rejects.toThrow(/busy time exceeded/);
+	});
+
+	test('stops a synchronous execution after maxBusyTime', () => {
+		const interpreter = new Interpreter({}, { maxBusyTime: 50 });
+		expect(() => interpreter.execSync(Parser.parse('loop {}'))).toThrow(/busy time exceeded/);
+	});
+
+	test('abort stops a loop with an empty body', async () => {
+		const interpreter = new Interpreter({}, { maxBusyTime: 60_000 });
+		const execution = interpreter.exec(Parser.parse('loop {}'));
+		setTimeout(() => interpreter.abort(), 20);
+		await execution;
+	});
+
+	test('waiting with Core:sleep starts the busy time over', async () => {
+		const interpreter = new Interpreter({}, { maxBusyTime: 50 });
+		const start = performance.now();
+		await interpreter.exec(Parser.parse('for (let i, 20) { Core:sleep(10) }'));
+		expect(performance.now() - start).toBeGreaterThan(150);
+	});
+
+	test('waiting for callbacks of map does not start the busy time over', async () => {
+		// map は渡した関数を呼ぶ間 Promise を返すが、その間も実行は進んでいるのでホストを待ったことにならない
+		const interpreter = new Interpreter({}, { maxBusyTime: 50 });
+		const start = performance.now();
+		await expect(interpreter.exec(Parser.parse('loop { [1, 2, 3].map(@(x) { x * 2 }) }'))).rejects.toThrow(
+			/busy time exceeded/,
+		);
+		// map から戻るたびに動いた時間を捨てると、上限に届くまでに何倍もかかる
+		expect(performance.now() - start).toBeLessThan(200);
+	});
+
+	test('stops a namespace initializer that runs without waiting', async () => {
+		const source = ':: Ns {\n\tlet x = eval { loop {} }\n}';
+		await expect(new Interpreter({}, { maxBusyTime: 50 }).exec(Parser.parse(source))).rejects.toThrow(/busy time exceeded/);
+		expect(() => new Interpreter({}, { maxBusyTime: 50 }).execSync(Parser.parse(source))).toThrow(/busy time exceeded/);
+	});
+
+	test('time spent paused is not busy time', async () => {
+		const interpreter = new Interpreter({}, { maxBusyTime: 50 });
+		interpreter.pause();
+		const execution = interpreter.exec(Parser.parse('for (let i, 100) { 1 }'));
+		await new Promise((resolve) => setTimeout(resolve, 100));
+		interpreter.unpause();
+		await execution;
+	});
+
+	test('sleeps in callbacks of map running side by side start the busy time over', async () => {
+		// map は渡した関数を並行して動かす。片方が待つ間にもう片方が進んでも、待ちは待ちとして数える
+		const interpreter = new Interpreter({}, { maxBusyTime: 50 });
+		await interpreter.exec(Parser.parse('[1, 2].map(@(x) {\n\tCore:sleep(x * 100)\n\tfor (let i, 100) { 1 }\n})'));
+	});
+
+	test('waiting for a promise from another realm starts the busy time over', async () => {
+		const vm = await import('node:vm');
+		const interpreter = new Interpreter(
+			{
+				wait: FN_NATIVE(() => vm.runInNewContext('new Promise((resolve) => setTimeout(resolve, 100))', { setTimeout })),
+			},
+			{ maxBusyTime: 50 },
+		);
+		await interpreter.exec(Parser.parse('wait()\nfor (let i, 100) { 1 }'));
+	});
+
+	describe('executions running side by side', () => {
+		// 単独で動かした時間の 1.6 倍を上限にする。2 つ分を合わせると上限を超える
+		const source = 'var s = 0\nfor (let i, 100000) { s += 1 }';
+
+		test('another interpreter does not add to the busy time', async () => {
+			const maxBusyTime = (await soloTime(source)) * 1.6;
+			await Promise.all([
+				new Interpreter({}, { maxBusyTime }).exec(Parser.parse(source)),
+				new Interpreter({}, { maxBusyTime }).exec(Parser.parse(source)),
+			]);
 		});
 
-		test.concurrent.each([-1, NaN])('rate = %d', async (rate, count) => {
-			return expect(countSleeps(rate)).rejects.toThrow(TonerikoScriptHostsideError);
+		test('executions of one interpreter add up', async () => {
+			// 1 つのインタプリタ (ページのスクリプト) がホストを待たずに使った時間を合わせて数える
+			const maxBusyTime = (await soloTime(source)) * 1.6;
+			const interpreter = new Interpreter({}, { maxBusyTime });
+			await interpreter.exec(Parser.parse(`@work() {\n${source}\n}`));
+			const work = interpreter.scope.get('work') as values.VFn;
+			const results = await Promise.allSettled([interpreter.execFnSimple(work, []), interpreter.execFnSimple(work, [])]);
+			expect(results.some((r) => r.status === 'rejected' && /busy time exceeded/.test(String(r.reason)))).toBe(true);
 		});
 	});
 
-	describe('irqSleep is number', () => {
-		// この関数はIRQを10回実行するため、合計で10 * irqSleepミリ秒かかる。
-		async function countSleeps(irqSleep: number): Promise<void> {
-			const interpreter = new Interpreter(
-				{},
-				{
-					irqRate: 1,
-					irqSleep,
-				},
-			);
-			await interpreter.exec(
-				Parser.parse(`
-			'Ai-chan kawaii'
-			'Ai-chan kawaii'
-			'Ai-chan kawaii'
-			'Ai-chan kawaii'
-			'Ai-chan kawaii'
-			'Ai-chan kawaii'
-			'Ai-chan kawaii'
-			'Ai-chan kawaii'
-			'Ai-chan kawaii'
-			'Ai-chan kawaii'`),
-			);
+	test('waiting inside a function called from a namespace initializer starts the busy time over', async () => {
+		const source = ':: Ns {\n\t@w() { Core:sleep(5) }\n\tlet x = eval { for (let i, 40) { w() } }\n}';
+		await new Interpreter({}, { maxBusyTime: 50 }).exec(Parser.parse(source));
+	});
+
+	test('waiting after calling back is not busy time', async () => {
+		// 表示時に関数を呼び、押されるまで待つダイアログのような関数
+		const interpreter = new Interpreter(
+			{
+				callThenWait: FN_NATIVE(async ([callback], opts) => {
+					await opts.call(callback as values.VFn, []);
+					await new Promise((resolve) => setTimeout(resolve, 100));
+				}),
+			},
+			{ maxBusyTime: 50 },
+		);
+		await interpreter.exec(Parser.parse('callThenWait(@() { 1 })\nfor (let i, 100) { 1 }'));
+	});
+
+	test.each([
+		['callbacks of map that all run away', '[1, 2].map(@(x) { loop {} })'],
+		['many callbacks of map that run away', 'Arr:create(50, 0).map(@(x) { loop { 1 } })'],
+		['callbacks of map that call quick functions', 'let a = Arr:create(20000, 0)\nloop { a.map(@(x) { [].map(@(y) { y })\nfor (let i, 20) { 1 } }) }'],
+	])('stops %s', async (_name, source) => {
+		const interpreter = new Interpreter({}, { maxBusyTime: 50 });
+		const start = performance.now();
+		try {
+			await expect(interpreter.exec(Parser.parse(source))).rejects.toThrow(/busy time exceeded/);
+		} finally {
+			interpreter.abort();
 		}
+		expect(performance.now() - start).toBeLessThan(1000);
+	});
 
-		beforeEach(() => {
-			vi.useFakeTimers();
-		});
+	test('a sleeping callback of map does not start a runaway callback over', async () => {
+		const interpreter = new Interpreter({}, { maxBusyTime: 30 });
+		try {
+			await expect(
+				interpreter.exec(Parser.parse('[1, 2].map(@(x) { if x == 1 { loop { Core:sleep(1) } } else { loop {} } })')),
+			).rejects.toThrow(/busy time exceeded/);
+		} finally {
+			interpreter.abort();
+		}
+	});
 
-		afterEach(() => {
-			vi.restoreAllMocks();
-		});
+	test('waiting in callbacks of map starts the caller over', async () => {
+		// 毎回 map の中で待つアニメーションのようなループは、呼んだ側の時間が積み上がって止まってはいけない。
+		// 1 周の計算の 3 倍を上限にし、10 周で積み上がれば止まる
+		const work = 'for (let j, 20000) { 1 }';
+		const maxBusyTime = (await soloTime(work)) * 3;
+		const interpreter = new Interpreter({}, { maxBusyTime });
+		await interpreter.exec(Parser.parse(`for (let i, 10) {\n${work}\n[1].map(@(x) { Core:sleep(5) })\n}`));
+	});
 
-		test('finishes after all sleeps', async () => {
-			const countSleepsSpy = vi.fn(countSleeps);
-			const execution = countSleepsSpy(100);
-			await vi.advanceTimersByTimeAsync(999);
-			expect(countSleepsSpy).not.toHaveResolved();
-			await vi.advanceTimersByTimeAsync(1);
-			await execution;
-			expect(countSleepsSpy).toHaveResolved();
-		});
+	test('time of callbacks of map is busy time of the caller', async () => {
+		// 呼び返した関数の中で計算を繰り返す暴走は、呼んだ側に時間が積み上がって止まる
+		const interpreter = new Interpreter({}, { maxBusyTime: 50 });
+		const start = performance.now();
+		await expect(
+			interpreter.exec(Parser.parse('loop { [1].map(@(x) { for (let i, 1000) { 1 } }) }')),
+		).rejects.toThrow(/busy time exceeded/);
+		expect(performance.now() - start).toBeLessThan(300);
+	});
 
-		test.each([-1, NaN])('Invalid number: %d', (time) => {
-			return expect(countSleeps(time)).rejects.toThrow(TonerikoScriptHostsideError);
+	test('waiting before calling back is not busy time', async () => {
+		const interpreter = new Interpreter(
+			{
+				later: FN_NATIVE(async ([callback], opts) => {
+					await new Promise((resolve) => setTimeout(resolve, 100));
+					return opts.call(callback as values.VFn, []);
+				}),
+			},
+			{ maxBusyTime: 50 },
+		);
+		// 呼び返した関数は時刻を確かめるところまで動く。待っていた 100ms を数えると、その確認で止まる
+		await interpreter.exec(Parser.parse('later(@() { for (let i, 2000) { 1 } })'));
+	});
+
+	test('callbacks called one after another add up', async () => {
+		// reduce は 1 つずつ呼び返す。1 回ずつは短くても、合計が上限を超えたところで止まる
+		const interpreter = new Interpreter({}, { maxBusyTime: 30 });
+		const start = performance.now();
+		await expect(
+			interpreter.exec(Parser.parse('Core:range(1, 100000).reduce(@(acc, x) { for (let i, 100) { 1 }\nacc }, 0)')),
+		).rejects.toThrow(/busy time exceeded/);
+		expect(performance.now() - start).toBeLessThan(300);
+	});
+
+	test('recursion through map adds up', async () => {
+		const interpreter = new Interpreter({}, { maxBusyTime: 30 });
+		const start = performance.now();
+		await expect(
+			interpreter.exec(Parser.parse('@f() {\n\tfor (let i, 300) { 1 }\n\t[1].map(@(x) { f() })\n}\nf()')),
+		).rejects.toThrow(/busy time exceeded/);
+		expect(performance.now() - start).toBeLessThan(300);
+	});
+
+	test('computation after a wait in a callback counts toward the caller', async () => {
+		// 子が待った後の計算と、戻ってからの呼んだ側の計算はどちらも待っていない。1 回の計算の 1.6 倍を上限にすると、2 回分で止まる
+		const work = 'for (let i, 30000) { 1 }';
+		const maxBusyTime = (await soloTime(work)) * 1.6;
+		const interpreter = new Interpreter({}, { maxBusyTime });
+		await expect(
+			interpreter.exec(Parser.parse(`[1].map(@(x) {\nCore:sleep(5)\n${work}\n})\n${work}`)),
+		).rejects.toThrow(/busy time exceeded/);
+	});
+
+	describe('a function that calls back and waits starts the caller over', () => {
+		// 計算 1 回分の 2.5 倍を上限にする。関数の中の待ちで数え直さないと、5 回分が積み上がって止まる
+		const work = 'for (let i, 30000) { 1 }';
+		const wait = () => new Promise((resolve) => setTimeout(resolve, 20));
+		test.each([
+			['waits before calling back', async (callback: values.VFn, call: (fn: values.VFn, args: Value[]) => Promise<Value>) => {
+				await wait();
+				return call(callback, []);
+			}],
+			['waits after calling back', async (callback: values.VFn, call: (fn: values.VFn, args: Value[]) => Promise<Value>) => {
+				await call(callback, []);
+				await wait();
+			}],
+		])('%s', async (_name, body) => {
+			const maxBusyTime = (await soloTime(work)) * 2.5;
+			const interpreter = new Interpreter(
+				{ callAndWait: FN_NATIVE(([callback], opts) => body(callback as values.VFn, opts.call)) },
+				{ maxBusyTime },
+			);
+			await interpreter.exec(Parser.parse(`for (let n, 5) {\n${work}\ncallAndWait(@() { 1 })\n}`));
 		});
+	});
+
+	test('a wait that ends while another execution yields does not start a runaway execution over', async () => {
+		// 譲っている間 (ブラウザで画面を描く間など) に、別の実行が待ち明けて動く
+		let other: values.VFn | undefined;
+		let runningOther = false;
+		const interpreter: Interpreter = new Interpreter(
+			{},
+			{
+				maxBusyTime: 50,
+				yieldInterval: 1,
+				yieldToHost: async () => {
+					// 別の実行の中でまた譲ったときは、重ねて動かさない
+					if (other == null || runningOther) return;
+					runningOther = true;
+					try {
+						await interpreter.execFnSimple(other, []);
+					} finally {
+						runningOther = false;
+					}
+				},
+			},
+		);
+		await interpreter.exec(Parser.parse('@other() {\n\tCore:sleep(2)\n\tfor (let i, 200) { 1 }\n}'));
+		other = interpreter.scope.get('other') as values.VFn;
+		const start = performance.now();
+		await expect(interpreter.exec(Parser.parse('loop {}'))).rejects.toThrow(/busy time exceeded/);
+		expect(performance.now() - start).toBeLessThan(1000);
+	});
+
+	test('time spent in synchronous host functions is busy time', async () => {
+		// ホストを待たない関数がいくら時間を使っても、待ったことにはならない
+		const interpreter = new Interpreter({ burn }, { maxBusyTime: 50 });
+		const start = performance.now();
+		await expect(interpreter.exec(Parser.parse('loop { burn(2) }'))).rejects.toThrow(/busy time exceeded/);
+		expect(performance.now() - start).toBeLessThan(1000);
+	});
+
+	test.each([
+		['map', 'loop { [1].map(@(x) { s.replace("a", "bb") }) }'],
+		['reduce', 'loop { [1, 2].reduce(@(acc, x) { s.replace("a", "bb") }, 0) }'],
+		['an execution started on the spot', 'loop {\n\ts.replace("a", "bb")\n\tlet cancel = Async:interval(100000, @() {}, true)\n\tcancel()\n}'],
+	])('heavy synchronous work in %s is busy time', async (_name, body) => {
+		// 置き換えは 1 回で 1ms を超える。時刻の確認の間隔が空いても、ホストを待ったことにはならない
+		const interpreter = new Interpreter({}, { maxBusyTime: 30 });
+		const start = performance.now();
+		try {
+			await expect(
+				interpreter.exec(Parser.parse(`let s = Arr:create(200000, "a").join()\n${body}`)),
+			).rejects.toThrow(/busy time exceeded/);
+		} finally {
+			interpreter.abort();
+		}
+		expect(performance.now() - start).toBeLessThan(1000);
+	});
+
+	test.each([
+		['at the start of an execution', ''],
+		['after a wait', 'Core:sleep(5)\n'],
+	])('heavy work right after resuming %s is busy time', async (_name, prefix) => {
+		const interpreter = new Interpreter({ burn }, { maxBusyTime: 30 });
+		const source = `${prefix}burn(40)\nfor (let i, 100) { 1 }`;
+		await expect(interpreter.exec(Parser.parse(source))).rejects.toThrow(/busy time exceeded/);
+	});
+
+	test('heavy work right after unpausing is busy time', async () => {
+		const interpreter = new Interpreter({ burn }, { maxBusyTime: 30 });
+		interpreter.pause();
+		const execution = interpreter.exec(Parser.parse('burn(40)\nfor (let i, 100) { 1 }'));
+		await new Promise((resolve) => setTimeout(resolve, 20));
+		interpreter.unpause();
+		await expect(execution).rejects.toThrow(/busy time exceeded/);
+	});
+
+	test('heavy work in a function called back after a wait is busy time', async () => {
+		const interpreter = new Interpreter(
+			{
+				burn,
+				later: FN_NATIVE(async ([callback], opts) => {
+					await new Promise((resolve) => setTimeout(resolve, 20));
+					return opts.call(callback as values.VFn, []);
+				}),
+			},
+			{ maxBusyTime: 30 },
+		);
+		const source = 'later(@() {\n\tburn(40)\n\tfor (let i, 100) { 1 }\n})';
+		await expect(interpreter.exec(Parser.parse(source))).rejects.toThrow(/busy time exceeded/);
+	});
+
+	test('callbacks that are native functions are checked', async () => {
+		// Core:sub を渡した sort はノードを評価せずに比較を繰り返す。その途中でも時間を確かめて止める
+		const interpreter = new Interpreter({}, { maxBusyTime: 30 });
+		await expect(interpreter.exec(Parser.parse('let a = Arr:create(20000, 1)\na.sort(Core:sub)'))).rejects.toThrow(
+			/busy time exceeded/,
+		);
+	});
+
+	test('callbacks that are native functions are checked in a synchronous execution', () => {
+		const interpreter = new Interpreter({}, { maxBusyTime: 30 });
+		expect(() => interpreter.execSync(Parser.parse('Core:range(1, 200000).sort(Core:sub)'))).toThrow(/busy time exceeded/);
+	});
+
+	test('an execution that starts after the interpreter was idle does not yield right away', async () => {
+		let yields = 0;
+		const interpreter = new Interpreter({}, { yieldToHost: async () => void yields++ });
+		await interpreter.exec(Parser.parse('@work() { for (let i, 40) { 1 } }'));
+		await new Promise((resolve) => setTimeout(resolve, 50));
+		await interpreter.execFnSimple(interpreter.scope.get('work') as values.VFn, []);
+		expect(yields).toBe(0);
+	});
+
+	test('an execution that starts after the interpreter was idle starts over', async () => {
+		const work = 'for (let i, 30000) { 1 }';
+		const maxBusyTime = (await soloTime(work)) * 1.6;
+		const interpreter = new Interpreter({}, { maxBusyTime });
+		await interpreter.exec(Parser.parse(`@work() {\n${work}\n}\nwork()`));
+		await new Promise((resolve) => setTimeout(resolve, 20));
+		await interpreter.execFnSimple(interpreter.scope.get('work') as values.VFn, []);
+	});
+
+	test('callbacks from Async:interval do not start the busy time of another execution over', async () => {
+		const interpreter = new Interpreter({}, { maxBusyTime: 100 });
+		try {
+			await expect(
+				interpreter.exec(Parser.parse('Async:interval(5, @() { Core:sleep(1) })\nloop {}')),
+			).rejects.toThrow(/busy time exceeded/);
+		} finally {
+			interpreter.abort();
+		}
 	});
 });
 
@@ -467,7 +776,8 @@ describe('pause', () => {
 					count++;
 				}),
 			},
-			{},
+			// 譲る処理も偽のタイマーで進むので、時刻を進め終えた時点で残った譲りが回数の確認とずれないよう譲らない
+			{ yieldInterval: 0 },
 		);
 
 		await interpreter.exec(Parser.parse(`Async:interval(100, @() { count() })`));
@@ -485,6 +795,8 @@ describe('pause', () => {
 	});
 
 	afterEach(() => {
+		// 偽のタイマーは performance.now も止めるので、後のテストへ残さない
+		vi.useRealTimers();
 		vi.restoreAllMocks();
 	});
 

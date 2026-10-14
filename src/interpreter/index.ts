@@ -10,6 +10,7 @@ import * as Ast from '../node.js';
 import { getTypeBySource } from '../type.js';
 import { nodeToJs } from '../utils/node-to-js.js';
 import { Scope } from './scope.js';
+import { defaultYieldToHost, macrotaskTick } from './host-yield.js';
 import { std } from './lib/std.js';
 import { RETURN, unWrapRet, BREAK, CONTINUE, assertValue, isControl, unWrapLabeledBreak } from './control.js';
 import type { Control } from './control.js';
@@ -54,6 +55,12 @@ function createCallStack(info: CallInfo, parent: CallStack): NonNullable<CallSta
 	return { info, parent, execution: parent?.execution ?? { stepCount: 0 } };
 }
 
+/**
+ * 時刻を見る間隔 (ノードの評価とネイティブ関数の呼び出しの回数)。1 回は数百 ns なので、64 回でも数十 µs ごとに見ることになる。
+ * 1 回の呼び出しの中で長くかかるネイティブ関数 (コールバックを使わない巨大な配列の処理など) は、その間は見られない。
+ */
+const CLOCK_CHECK_STEPS = 64;
+
 function callStackToArray(callStack: CallStack): CallInfo[] {
 	const arr: CallInfo[] = [];
 	for (let node = callStack; node != null; node = node.parent) {
@@ -74,8 +81,33 @@ export class Interpreter {
 	private pauseHandlers: (() => void)[] = [];
 	private unpauseHandlers: (() => void)[] = [];
 	private vars: Record<string, Variable> = {};
-	private irqRate: number;
-	private irqSleep: () => Promise<void>;
+	private yieldInterval: number;
+	private yieldToHost: () => Promise<void>;
+	private maxBusyTime: number;
+	private lastYield = performance.now();
+	private clockSteps = 0;
+	/**
+	 * busy は、インタプリタが最後にホストを待って何もしていなかった時から動き続けた時間 (ms)。並行する実行や
+	 * map の関数の時間も合わせて数える。lastClock は前回時刻を確かめた時刻で、確かめるたびにその間の時間を busy に足す。
+	 * 自分が譲った後と一時停止の後は lastClock を進めて、その間を数えない。
+	 *
+	 * 何もしていなかったかは、イベントループの 1 周の境目 (マクロタスク) で見る。境目では動いている処理も積まれた
+	 * マイクロタスクも無いので、譲っている途中の実行 (yielding) が無ければ、どの実行もホストの何かを待っている。
+	 * 時刻を確かめるとき・譲った後・ホストの待ちから戻ったときに境目の確認を 1 つ予約し (idleTickPending)、
+	 * そこで何もしていなければ busy を 0 にして、何もしていなかったと記録する (resumedFromIdle)。
+	 * 何もしていない状態から戻るのは、ネイティブ関数が返した Promise の待ちが明けたとき、ネイティブ関数が渡された関数を
+	 * 呼び返したとき、実行が始まったとき、一時停止が解けたときなので、そこで lastClock を合わせ、何もしていなかった間を
+	 * 足さない (resumeFromHost)。
+	 * 何もしていない間は予約しないので、待つ間に CPU を使わない。作った直後は何もしていない状態から始める。
+	 * 譲っている途中に別の実行がホストを待ち明けた場合は数え直さない。
+	 */
+	private busy = 0;
+	private lastClock = performance.now();
+	private yielding = 0;
+	private idleTickPending = false;
+	private resumedFromIdle = true;
+	/** 名前空間の初期化式を評価する実行。exec / execSync の始めに作り直す。根なので、エラーの位置の表示はトップレベルと同じになる。 */
+	private nsCallStack: NonNullable<CallStack> = createCallStack({ name: '<root>', pos: undefined }, null);
 
 	constructor(
 		consts: Record<string, Value>,
@@ -86,8 +118,16 @@ export class Interpreter {
 			log?(type: string, params: LogObject): void;
 			maxStep?: number;
 			abortOnError?: boolean;
-			irqRate?: number;
-			irqSleep?: number | (() => Promise<void>);
+			/** この時間 (ms) 続けて動いたら、ホストに 1 回処理を譲る。0 なら譲らない。既定は 8。 */
+			yieldInterval?: number;
+			/** ホストに処理を譲る関数。既定は setImmediate (Node, Bun)、MessageChannel (ブラウザ)、setTimeout(0) の順に使えるもの。 */
+			yieldToHost?: () => Promise<void>;
+			/**
+			 * インタプリタがホストを待たずに動き続けてよい時間 (ms)。超えたら実行時エラーにする。既定は 5000。
+			 * 並行する実行の時間も合わせて数え、譲った間は含まない。Core:sleep や入力待ちのようにホストを待ち、
+			 * インタプリタに動ける処理が無くなったら 0 から数え直す。
+			 */
+			maxBusyTime?: number;
 		} = {},
 	) {
 		const io = {
@@ -133,22 +173,15 @@ export class Interpreter {
 			}
 		};
 
-		if (!((this.opts.irqRate ?? 300) >= 0)) {
-			throw new TonerikoScriptHostsideError(`Invalid IRQ rate (${this.opts.irqRate}): must be non-negative number`);
+		this.yieldInterval = this.opts.yieldInterval ?? 8;
+		if (!(this.yieldInterval >= 0)) {
+			throw new TonerikoScriptHostsideError(`Invalid yieldInterval (${this.opts.yieldInterval}): must be non-negative number`);
 		}
-		this.irqRate = this.opts.irqRate ?? 300;
-
-		const sleep = (time: number) => (): Promise<void> => new Promise((resolve) => setTimeout(resolve, time));
-
-		if (typeof this.opts.irqSleep === 'function') {
-			this.irqSleep = this.opts.irqSleep;
-		} else if (this.opts.irqSleep === undefined) {
-			this.irqSleep = sleep(5);
-		} else if (this.opts.irqSleep >= 0) {
-			this.irqSleep = sleep(this.opts.irqSleep);
-		} else {
-			throw new TonerikoScriptHostsideError('irqSleep must be a function or a positive number.');
+		this.maxBusyTime = this.opts.maxBusyTime ?? 5000;
+		if (!(this.maxBusyTime > 0)) {
+			throw new TonerikoScriptHostsideError(`Invalid maxBusyTime (${this.opts.maxBusyTime}): must be positive number`);
 		}
+		this.yieldToHost = this.opts.yieldToHost ?? defaultYieldToHost;
 	}
 
 	@autobind
@@ -157,8 +190,9 @@ export class Interpreter {
 			return;
 		}
 		try {
+			this.nsCallStack = this.startExecution();
 			await this.collectNs(script);
-			const result = await this._run(script, this.scope, createCallStack({ name: '<root>', pos: undefined }, null));
+			const result = await this._run(script, this.scope, this.startExecution());
 			assertValue(result);
 			this.log('end', { val: result });
 		} catch (e) {
@@ -171,8 +205,9 @@ export class Interpreter {
 		if (script == null || script.length === 0) {
 			return;
 		}
+		this.nsCallStack = this.startExecution();
 		this.collectNsSync(script);
-		const result = this._runSync(script, this.scope, createCallStack({ name: '<root>', pos: undefined }, null));
+		const result = this._runSync(script, this.scope, this.startExecution());
 		assertValue(result);
 		return result;
 	}
@@ -183,7 +218,7 @@ export class Interpreter {
 	 */
 	@autobind
 	public async execFn(fn: VFn, args: Value[]): Promise<Value> {
-		return await this._fn(fn, args, createCallStack({ name: '<root>', pos: undefined }, null)).catch((e) => {
+		return await this._fn(fn, args, this.startExecution()).catch((e) => {
 			this.handleError(e);
 			return ERROR('func_failed');
 		});
@@ -191,13 +226,13 @@ export class Interpreter {
 
 	@autobind
 	public execFnSync(fn: VFn, args: Value[]): Value {
-		return this._fnSync(fn, args, createCallStack({ name: '<root>', pos: undefined }, null));
+		return this._fnSync(fn, args, this.startExecution());
 	}
 
 	/** Toneriko Script の関数を実行し、エラー時に err や abort を呼ばず例外をそのまま送出する。 */
 	@autobind
 	public execFnSimple(fn: VFn, args: Value[]): Promise<Value> {
-		return this._fn(fn, args, createCallStack({ name: '<root>', pos: undefined }, null));
+		return this._fn(fn, args, this.startExecution());
 	}
 
 	@autobind
@@ -298,10 +333,10 @@ export class Interpreter {
 						throw new TonerikoScriptNamespaceError('No "var" in namespace declaration: ' + node.dest.name, node.loc.start);
 					}
 
-					let value = await this._eval(node.expr, nsScope, null);
+					let value = await this._eval(node.expr, nsScope, this.nsCallStack);
 					assertValue(value);
 
-					value = await this.evalAndSetAttr(node.attr, value, scope, null);
+					value = await this.evalAndSetAttr(node.attr, value, scope, this.nsCallStack);
 
 					if (node.expr.type === 'fn' && isFunction(value) && !value.native) {
 						value.name = nsScope.getNsPrefix() + node.dest.name;
@@ -343,10 +378,10 @@ export class Interpreter {
 						throw new TonerikoScriptNamespaceError('No "var" in namespace declaration: ' + node.dest.name, node.loc.start);
 					}
 
-					let value = this._evalSync(node.expr, nsScope, null);
+					let value = this._evalSync(node.expr, nsScope, this.nsCallStack);
 					assertValue(value);
 
-					value = this.evalAndSetAttrSync(node.attr, value, scope, null);
+					value = this.evalAndSetAttrSync(node.attr, value, scope, this.nsCallStack);
 
 					if (node.expr.type === 'fn' && isFunction(value) && !value.native) {
 						value.name = nsScope.getNsPrefix() + node.dest.name;
@@ -372,9 +407,17 @@ export class Interpreter {
 	@autobind
 	private async _fn(fn: VFn, args: Value[], callStack: CallStack, pos?: Ast.Pos): Promise<Value> {
 		if (fn.native) {
+			// ネイティブ関数を渡したコールバック (arr.sort(Core:sub) など) はノードの評価を通らないので、ここでも時刻を確かめる
+			if (this.clockDue()) {
+				await this.onClock();
+			}
 			const info: CallInfo = { name: '<native>', pos };
 			const result = fn.native(args, {
-				call: (fn, args) => this._fn(fn, args, createCallStack(info, callStack)),
+				call: (fn, args) => {
+					// ホストを待ってから呼び返されることがある
+					this.resumeFromHost();
+					return this._fn(fn, args, createCallStack(info, callStack));
+				},
 				topCall: this.execFn,
 				registerAbortHandler: this.registerAbortHandler,
 				registerPauseHandler: this.registerPauseHandler,
@@ -383,6 +426,13 @@ export class Interpreter {
 				unregisterPauseHandler: this.unregisterPauseHandler,
 				unregisterUnpauseHandler: this.unregisterUnpauseHandler,
 			});
+			// undefined に解決する Promise を返す関数でも値を null にそろえる。
+			// 別の realm (iframe など) の Promise は instanceof Promise を満たさないので、then の有無で見る
+			if (result != null && typeof (result as Partial<PromiseLike<unknown>>).then === 'function') {
+				const value = await result;
+				this.resumeFromHost();
+				return value ?? NULL;
+			}
 			return result ?? NULL;
 		}
 		const fnScope = fn.scope.createChildScope(new Map(), undefined, fn.typeParams);
@@ -399,6 +449,10 @@ export class Interpreter {
 	@autobind
 	private _fnSync(fn: VFn, args: Value[], callStack: CallStack, pos?: Ast.Pos): Value {
 		if (fn.native) {
+			// ネイティブ関数を渡したコールバック (arr.sort(Core:sub) など) はノードの評価を通らないので、ここでも時刻を確かめる
+			if (this.clockDue()) {
+				this.checkBusyTime(performance.now());
+			}
 			const info: CallInfo = { name: '<native>', pos };
 			const result = fn.nativeSync
 				? fn.nativeSync(args, {
@@ -516,6 +570,86 @@ export class Interpreter {
 		});
 	}
 
+	/** CLOCK_CHECK_STEPS 回に 1 回 true を返す。 */
+	private clockDue(): boolean {
+		if (++this.clockSteps < CLOCK_CHECK_STEPS) return false;
+		this.clockSteps = 0;
+		return true;
+	}
+
+	/** 動いた時間を確かめ、yieldInterval を過ぎていればホストに譲る。 */
+	private async onClock(): Promise<void> {
+		const now = performance.now();
+		this.checkBusyTime(now);
+		if (this.yieldInterval !== 0 && now - this.lastYield >= this.yieldInterval) {
+			this.yielding++;
+			try {
+				await this.yieldToHost();
+			} finally {
+				this.yielding--;
+			}
+			this.lastYield = performance.now();
+			this.lastClock = this.lastYield;
+			// 譲っている間に境目の確認が動いても何もしていないとは言えないので、ここから改めて確かめる
+			this.armIdleTick();
+		}
+	}
+
+	private startExecution(): NonNullable<CallStack> {
+		this.resumeFromHost();
+		return createCallStack({ name: '<root>', pos: undefined }, null);
+	}
+
+	/** 一時停止していた時間は、何もしていなかったと確かめられなくても動いた時間に数えない。 */
+	private resumeFromPause(): void {
+		this.resumeFromHost();
+		this.lastClock = performance.now();
+	}
+
+	/**
+	 * ホストを待った後や実行の始めに呼ぶ。何もしていなかった状態から戻ったなら、ここから数え、譲るまでの時間も数え直す。
+	 * 別の実行が譲っている間に始まった実行 (Async:interval の関数など) は、譲っていた間のホストの時間 (描画など) も
+	 * 数える。その間かどうかを、マイクロタスクで並行して進む処理 (sort の比較など) と確実には見分けられないため。
+	 * このとき止まるのは、描画の時間を含めて maxBusyTime を超えて動き続けた場合だけで、暴走を見逃す方向には働かない。
+	 */
+	private resumeFromHost(): void {
+		if (this.resumedFromIdle) {
+			this.resumedFromIdle = false;
+			this.lastClock = performance.now();
+			this.lastYield = this.lastClock;
+		}
+		// 時刻の確認まで届かずにまた待っても、何もしていないことを確かめられるようにする
+		this.armIdleTick();
+	}
+
+	/** 前回の確認からの時間を busy に足し、ホストを待たずに maxBusyTime を超えて動いたら止める。 */
+	private checkBusyTime(now: number): void {
+		if (this.resumedFromIdle) {
+			// 戻ったところ (resumeFromHost) を通らずに確かめた。何もしていなかった間を足さないよう、ここから数える
+			this.resumedFromIdle = false;
+		} else {
+			this.busy += now - this.lastClock;
+		}
+		this.lastClock = now;
+		this.armIdleTick();
+		if (this.busy > this.maxBusyTime) {
+			throw new TonerikoScriptRuntimeError(`busy time exceeded: ran for more than ${this.maxBusyTime} ms without waiting`);
+		}
+	}
+
+	/** 次のマクロタスクの境目で、インタプリタが何もせずホストを待っているかを確かめる。 */
+	private armIdleTick(): void {
+		if (this.idleTickPending) return;
+		this.idleTickPending = true;
+		void macrotaskTick().then(() => {
+			this.idleTickPending = false;
+			if (this.yielding === 0) {
+				this.busy = 0;
+				this.resumedFromIdle = true;
+			}
+		});
+	}
+
 	@autobind
 	private _evalSync(node: Ast.Node, scope: Scope, callStack: CallStack): Value | Control {
 		return this.__evalSync(node, scope, callStack);
@@ -528,10 +662,10 @@ export class Interpreter {
 		}
 		if (this.pausing) {
 			await this.pausing.promise;
+			this.resumeFromPause();
 		}
-		// irqRateが小数の場合は不等間隔になる
-		if (this.irqRate !== 0 && this.stepCount % this.irqRate >= this.irqRate - 1) {
-			await this.irqSleep();
+		if (this.clockDue()) {
+			await this.onClock();
 		}
 		this.stepCount++;
 		if (callStack != null) {
@@ -616,6 +750,17 @@ export class Interpreter {
 
 			case 'loop': {
 				while (true) {
+					// 本体の文が無いとノードの入口を通らないので、止める・一時停止・時間の確認を 1 周ごとにここでも行う
+					if (this.stop) {
+						return NULL;
+					}
+					if (this.pausing) {
+						await this.pausing.promise;
+						this.resumeFromPause();
+					}
+					if (this.clockDue()) {
+						await this.onClock();
+					}
 					const v = await this._run(node.statements, scope.createChildScope(), callStack);
 					if (v.type === 'break') {
 						if (v.label != null && v.label !== node.label) {
@@ -1119,6 +1264,10 @@ export class Interpreter {
 		if (this.stop) {
 			return NULL;
 		}
+		// 同期の実行は途中で譲れないので、走り続けた時間だけを見る
+		if (this.clockDue()) {
+			this.checkBusyTime(performance.now());
+		}
 
 		this.stepCount++;
 		if (callStack != null) {
@@ -1203,6 +1352,13 @@ export class Interpreter {
 
 			case 'loop': {
 				while (true) {
+					// 本体の文が無いとノードの入口を通らないので、止める・時間の確認を 1 周ごとにここでも行う
+					if (this.stop) {
+						return NULL;
+					}
+					if (this.clockDue()) {
+						this.checkBusyTime(performance.now());
+					}
 					const v = this._runSync(node.statements, scope.createChildScope(), callStack);
 					if (v.type === 'break') {
 						if (v.label != null && v.label !== node.label) {

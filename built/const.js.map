@@ -1,0 +1,1 @@
+{"version":3,"file":"const.js","names":[],"sources":["../src/const.ts"],"sourcesContent":["export const textEncoder = new TextEncoder();\nexport const textDecoder = new TextDecoder();\n"],"mappings":";AAAA,MAAa,cAAc,IAAI,YAAY;AAC3C,MAAa,cAAc,IAAI,YAAY"}

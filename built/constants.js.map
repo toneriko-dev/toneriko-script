@@ -1,0 +1,1 @@
+{"version":3,"file":"constants.js","names":[],"sources":["../src/constants.ts"],"sourcesContent":["import { pkg } from './pkg.js';\nexport const TONERIKO_SCRIPT_VERSION = pkg.version;\n\nexport const MAX_NATIVE_VALUE_SIZE = 1_000_000;\nexport const MAX_ARRAY_FLAT_DEPTH = 100;\n"],"mappings":";;;AACA,MAAa,0BAA0B,IAAI;AAE3C,MAAa,wBAAwB;AACrC,MAAa,uBAAuB"}

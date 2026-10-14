@@ -1,0 +1,1 @@
+{"version":3,"file":"validate-jump-statements.d.ts","names":["Ast","Ast.Node"],"sources":["../../../src/parser/plugins/validate-jump-statements.ts"],"mappings":";;wBAgJgB,uBAAuB,OAAOC,SAAaA"}

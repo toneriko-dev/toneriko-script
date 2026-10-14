@@ -1,0 +1,1 @@
+{"version":3,"file":"common.d.ts","names":["Ast","Ast.Expression","Ast.Fn","Ast.Statement"],"sources":["../../../src/parser/syntaxes/common.ts"],"mappings":";;;;;;;;wBAegB,UAAU,GAAG,eAAeC;;;;;;;wBAiB5B,YAAY,GAAG,eAAeC;;;;;;wBAiE9B,WAAW,GAAG,gBAAgBC,YAAgBF;;;;;;wBA2C9C,WAAW,GAAG;;;;;;wBAmBd,uBAAuB,GAAG"}

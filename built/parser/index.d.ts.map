@@ -1,0 +1,1 @@
+{"version":3,"file":"index.d.ts","names":["Ast","Ast.Node"],"sources":["../../src/parser/index.ts"],"mappings":";;YASY,gBAAgB,OAAOC,WAAeA;YACtC;qBAEC;iBACG;UACP;EAKR;SAYc,MAAM,gBAAgBA;EAO7B,UAAU,MAAM,YAAY,QAAQ;EAapC,MAAM,gBAAgBA"}

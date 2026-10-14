@@ -28,6 +28,6 @@ upstream には追従せず、同期もしません。このフォークを使�
 
 ## Misskey から使う
 
-[Misskey (Toneriko)](https://github.com/haru0416-dev/misskey) は、このリポジトリのタグを git の依存として `"toneriko-script": "github:toneriko-dev/toneriko-script#v<版>"` の形で参照します。main には `built/` を置かず、タグのコミットにだけビルド済みの `built/` が入ります。依存として入れるときにビルドが走らないので、利用側に tsdown や TypeScript は要りません。npm には公開していません。
+[Misskey (Toneriko)](https://github.com/toneriko-dev/toneriko) は、このリポジトリのタグを git の依存として `"toneriko-script": "github:toneriko-dev/toneriko-script#v<版>"` の形で参照します。main には `built/` を置かず、タグのコミットにだけビルド済みの `built/` が入ります。依存として入れるときにビルドが走らないので、利用側に tsdown や TypeScript は要りません。npm には公開していません。
 
 タグは GitHub Actions の release workflow で作ります。`package.json` の `version` を上げて main に push してから、workflow を手動で実行します。workflow はテストとビルドを通したあと、`built/` を足したコミットに `v<版>` のタグを付けて push します。同じ版のタグがあれば止まります。

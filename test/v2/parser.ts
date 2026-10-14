@@ -9,6 +9,11 @@ const accepted = [
 
 	['条件式の単項演算と括弧', 'a ? !(b) : c => d; a ? -(b) : c => d;'],
 	['条件式の真側の戻り値型', 'a ? (b): number => b : c;'],
+	['条件式の入れ子の戻り値型', 'x = a ? (p): number => b ? (q): number => q : z : y'],
+	['条件式の async アローの戻り値型', 'x = a ? async (p): number => p : y'],
+	['試し読み後のアロー内の制御文', 'x = a ? (p): number => { label: while (p) { if (p) continue label; break label; } return p; } : y'],
+	['試し読み後のアロー内のブロックラベル', 'x = a ? (p): number => { label: { break label; } return p; } : y'],
+	['型付きアローを読めない条件式の区切り', 'x = a ? (p) : number => b ? (q) : string => r'],
 	['case の式と括弧付きのアロー文', 'switch (k) { case (x): (y) => y; }'],
 	['return の次の行のラベル', 'function f() { return\nlabel: {} }'],
 	['return の次の行の関数宣言', 'function f() { return\nfunction g() {} }'],
@@ -370,12 +375,16 @@ describe('v2 parser: レビュー指摘の境界', () => {
 		['const f = (this: any) => 1;', 'TYPE_THIS_PARAMETER'],
 		['let x: undefined;', 'UNDEFINED'],
 		['let x: number | undefined;', 'UNDEFINED'],
-		['let x: number\n[1, 2].forEach(f)', 'NEWLINE_CONTINUATION'],
-		['let x: number /*\n*/ [1].forEach(f)', 'NEWLINE_CONTINUATION'],
 		['function f() { return\n', 'UNEXPECTED_TOKEN'],
 		['a: b: function f() {}', 'LABELED_FUNCTION'],
 		['a: b: { continue a; }', 'INVALID_CONTROL_FLOW'],
 		['a: a: while (1) {}', 'INVALID_LABEL'],
+		['a: b: if (x) {}', 'INVALID_LABEL'],
+		['a: b: c: if (x) {}', 'INVALID_LABEL'],
+		['a: b: switch (x) {}', 'INVALID_LABEL'],
+		['while (ok) { x = a ? (p): number => { break; } : y }', 'INVALID_CONTROL_FLOW'],
+		['outer: while (ok) { x = a ? (p): number => { continue outer; } : y }', 'INVALID_CONTROL_FLOW'],
+		['outer: { x = a ? (p): number => { break outer; } : y }', 'INVALID_CONTROL_FLOW'],
 	] as const) {
 		test(source, () => diagnostic(source, code));
 	}
@@ -401,6 +410,149 @@ describe('v2 parser: レビュー指摘の境界', () => {
 		const source = Array.from({ length: 4000 }, (_, index) => `if (x < ${index}) f(x)`).join('\n');
 		assert.equal(parse(source).program.body.length, 4000);
 	});
+	for (const source of [
+		'let x: number\n[1, 2].forEach(f)',
+		'let x: number /*\n*/ [1].forEach(f)',
+		'let x\n[1, 2].forEach(f)',
+		'let x: number\n(f)()',
+		'let x: number\n+x',
+	]) {
+		test(`初期値のない宣言の後で文を区切る: ${source}`, () => {
+			const { program } = parse(source);
+			assert.deepEqual(program.body.map(node => node.type), ['VariableDeclaration', 'ExpressionStatement']);
+			const declaration = program.body[0]!;
+			if (declaration.type !== 'VariableDeclaration') assert.fail();
+			assert.equal(declaration.declarations[0]!.init, null);
+		});
+	}
+	for (const source of [
+		'f = () => {}\n+x',
+		'f = () => {} /*\n*/ -x',
+		'const f = () => {}\n+x',
+		'f = async () => {}\n+x',
+		'const f = (p = (q): number => q): number => {}\n+x',
+	]) {
+		test(`ブロック本体のアローの後で文を区切る: ${source}`, () => {
+			const { program } = parse(source);
+			assert.equal(program.body.length, 2);
+			const second = program.body[1]!;
+			if (second.type !== 'ExpressionStatement') assert.fail();
+			assert.equal(second.expression.type, 'UnaryExpression');
+		});
+	}
+	for (const source of ['f = () => {} +x', 'f = () => {}\n*x']) {
+		test(`アローの後に演算子を続けられない: ${source}`, () => diagnostic(source, 'UNEXPECTED_TOKEN'));
+	}
+	for (const source of [
+		'let x: number = 1\n[1, 2].forEach(f)',
+		'f = (() => {})\n+x',
+		'const f = (p = (q): number => q): number => p\n+x',
+	]) {
+		test(`実際に前の行を継続する式: ${source}`, () => diagnostic(source, 'NEWLINE_CONTINUATION'));
+	}
+});
+
+function nested(depth: number, wrap: (body: string) => string): string {
+	let source = 'z';
+	for (let i = 0; i < depth; i++) source = wrap(source);
+	return source;
+}
+
+function countNodes(value: unknown, type: string): number {
+	let count = 0;
+	const pending = [value];
+	while (pending.length) {
+		const node = pending.pop();
+		if (node === null || typeof node !== 'object') continue;
+		if ('type' in node && node.type === type) count++;
+		pending.push(...Object.values(node));
+	}
+	return count;
+}
+
+describe('v2 parser: 入れ子の試し読みの上限', () => {
+	for (const context of ['代入', 'case'] as const) {
+		for (const depth of [20, 200]) {
+			test(`${context} の型付きアロー ${depth} 段`, () => {
+				const source = nested(depth, body => `a ? (p): number => ${body} : y`);
+				const wrap = (body: string) => context === '代入' ? `x = ${body}` : `switch (k) { case ${body}: }`;
+				parse(wrap(nested(2, body => `a ? (p): number => ${body} : y`)));
+				const started = performance.now();
+				const { program } = parse(wrap(source));
+				const elapsed = performance.now() - started;
+				assert.ok(elapsed < 100, `${depth} 段: ${elapsed}ms`);
+				assert.equal(countNodes(program, 'ArrowFunctionExpression'), depth);
+				assert.equal(countNodes(program, 'ConditionalExpression'), depth);
+			});
+		}
+	}
+	for (const depth of [20, 200]) {
+		test(`既定値の試し読みで最深部の型が使えない ${depth} 段`, () => {
+			const inner = '(q: Unknown): number => q';
+			let source = inner;
+			for (let i = 0; i < depth; i++) source = `(p = ${source}): number => p`;
+			let original: TonerikoScriptSyntaxError | undefined;
+			assert.throws(() => parse(`x = ${inner}`), (error: unknown) => {
+				assert.ok(error instanceof TonerikoScriptSyntaxError);
+				original = error;
+				return true;
+			});
+			assert.ok(original);
+			assert.equal(original.code, 'UNSUPPORTED_TYPE');
+			assert.deepEqual(original.pos, { line: 1, column: 9 });
+			const started = performance.now();
+			let actual: unknown;
+			try { parse(`x = ${source}`); } catch (error) { actual = error; }
+			const elapsed = performance.now() - started;
+			assert.ok(elapsed < 100, `${depth} 段: ${elapsed}ms`);
+			assert.ok(actual instanceof TonerikoScriptSyntaxError);
+			assert.equal(actual.code, original.code);
+			assert.equal(actual.hint, original.hint);
+			assert.ok(actual.hint.length > 0);
+			assert.deepEqual(actual.pos, { line: 1, column: original.pos.column + '(p = '.length * depth });
+		});
+		test(`型付きアローとして採用しない試し読み ${depth} 段`, () => {
+			const wrap = (body: string) => `a ? (p): number => ${body}`;
+			parse(`x = ${nested(2, wrap)}`);
+			const source = `x = ${nested(depth, wrap)}`;
+			const started = performance.now();
+			const { program } = parse(source);
+			const elapsed = performance.now() - started;
+			assert.ok(elapsed < 100, `${depth} 段: ${elapsed}ms`);
+			assert.equal(countNodes(program, 'ConditionalExpression'), depth);
+			assert.equal(countNodes(program, 'ArrowFunctionExpression'), depth);
+			assert.equal(countNodes(program, 'KeywordTypeAnnotation'), 0);
+		});
+		test(`既定値の型付きアロー ${depth} 段`, () => {
+			const wrap = (body: string) => `(p = ${body}): number => p`;
+			parse(`x = ${nested(2, wrap)}`);
+			const source = `x = ${nested(depth, wrap)}`;
+			const started = performance.now();
+			const { program } = parse(source);
+			const elapsed = performance.now() - started;
+			assert.ok(elapsed < 100, `${depth} 段: ${elapsed}ms`);
+			assert.equal(countNodes(program, 'ArrowFunctionExpression'), depth);
+			assert.equal(countNodes(program, 'AssignmentPattern'), depth);
+		});
+		test(`括弧のアロー判定 ${depth} 段`, () => {
+			const source = `x = ${nested(depth, body => `(${body})`)}`;
+			parse('x = ((z))');
+			const started = performance.now();
+			const { program } = parse(source);
+			const elapsed = performance.now() - started;
+			assert.ok(elapsed < 100, `${depth} 段: ${elapsed}ms`);
+			assert.equal(countNodes(program, 'AssignmentExpression'), 1);
+			assert.equal(countNodes(program, 'ArrowFunctionExpression'), 0);
+		});
+		test(`入れ子の型引数の判定 ${depth} 段`, () => {
+			const source = `f<${nested(depth, body => `Array<${body}>`)}>(x)`;
+			diagnostic('f<Array<number>>(x)', 'TYPE_ARGUMENTS');
+			const started = performance.now();
+			diagnostic(source, 'TYPE_ARGUMENTS');
+			const elapsed = performance.now() - started;
+			assert.ok(elapsed < 100, `${depth} 段: ${elapsed}ms`);
+		});
+	}
 });
 
 for (const [source, code] of [

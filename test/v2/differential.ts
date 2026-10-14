@@ -196,6 +196,21 @@ const examples = [
 	'const t = `${a < b}${c > (d)}`;',
 
 	'let x: string\n[]',
+	'let x: number\n[1, 2].forEach(f)',
+	'let x: number /*\n*/ [1].forEach(f)',
+	'let x\n[1, 2].forEach(f)',
+	'let x: number\n(f)()',
+	'let x: number\n+x',
+	'f = () => {}\n+x',
+	'f = () => {} /*\n*/ -x',
+	'const f = () => {}\n+x',
+	'f = async () => {}\n+x',
+	'const f = (p = (q): number => q): number => {}\n+x',
+	'x = a ? (p): number => b ? (q): number => q : z : y',
+	'x = a ? async (p): number => p : y',
+	'x = a ? (p): number => { label: while (p) { if (p) continue label; break label; } return p; } : y',
+	'x = a ? (p): number => { label: { break label; } return p; } : y',
+	'x = a ? (p) : number => b ? (q) : string => r',
 	'if (a < b && c > (d)) {}',
 	'function clamp(x) { if (x < 0) return 0\nif (x > (max - 1)) return max - 1 }',
 	'function f() { return\n}',
@@ -382,6 +397,19 @@ function generatedControlStatement(depth: number): fc.Arbitrary<string> {
 describe('v2 parser: TypeScript パーサーとの差分', () => {
 	for (const [index, source] of examples.entries()) {
 		test(`手書きの構文 ${index + 1}`, () => compare(source));
+	}
+	for (const depth of [20, 200]) {
+		for (const context of ['代入', 'case', '既定値', 'async', '不採用'] as const) {
+			test(`試し読み ${context} ${depth} 段の構文木`, () => {
+				let source = 'z';
+				for (let i = 0; i < depth; i++) {
+					source = context === '既定値' ? `(p = ${source}): number => p`
+						: context === '不採用' ? `a ? (p): number => ${source}`
+						: `a ? ${context === 'async' ? 'async ' : ''}(p): number => ${source} : y`;
+				}
+				compare(context === 'case' ? `switch (k) { case ${source}: }` : `x = ${source}`);
+			});
+		}
 	}
 	test('生成した式を含む文と文の組み合わせ', () => {
 		let compared = 0;

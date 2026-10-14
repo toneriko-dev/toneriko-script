@@ -35,6 +35,10 @@ class Parser {
 	private readonly parenthesized = new WeakSet<A.Expression>();
 	private readonly trailingComma = new WeakSet<A.Expression>();
 	private readonly failedTypeArguments = new Set<number>();
+	private readonly parenthesisEnds = new Map<number, number | null>();
+	private readonly arrowLookaheads = new Map<number, boolean>();
+	private readonly parameterLists = new Map<number, { params: A.Pattern[]; end: number } | { error: unknown }>();
+	private readonly arrows = new Map<number, { expression: A.ArrowFunctionExpression; end: number }>();
 
 	constructor(source: string) { this.scanner = new Scanner(source); }
 
@@ -179,7 +183,7 @@ class Parser {
 			while (this.peek(offset).kind === 'identifier' && this.peek(offset + 1).raw === ':') offset += 2;
 			const target = this.peek(offset).raw;
 			if (target === 'function' || (target === 'async' && this.peek(offset + 1).raw === 'function')) this.fail('LABELED_FUNCTION', t);
-			if (!['for', 'while', 'do', '{'].includes(target)) this.fail(this.peek().kind === 'identifier' && !reserved.has(String(this.peek().value)) ? 'AISCRIPT_NAMESPACE' : 'INVALID_LABEL', t);
+			if (!['for', 'while', 'do', '{'].includes(target)) this.fail(this.peek(offset).kind === 'identifier' && !reserved.has(String(this.peek(offset).value)) ? 'AISCRIPT_NAMESPACE' : 'INVALID_LABEL', t);
 			if (this.labels.has(label.name)) this.fail('INVALID_LABEL', t);
 			this.labels.set(label.name, target !== '{');
 			const body = this.statement();
@@ -223,7 +227,6 @@ class Parser {
 			const start = this.peek();
 			const id = this.binding(false);
 			if (this.at('!') && !this.peek().lineBreakBefore) this.fail('TYPE_DEFINITE_ASSIGNMENT');
-			if (!inFor && 'typeAnnotation' in id && id.typeAnnotation && this.at('[') && this.peek().lineBreakBefore && this.peek(1).raw !== ']') this.fail('NEWLINE_CONTINUATION');
 			const init = this.eat('=') ? this.expression(0, false, !inFor, !inFor) : null;
 			if (!init && (!inFor || (!this.at('of') && !this.at('in'))) && (kind === 'const' || id.type !== 'Identifier')) this.fail('UNEXPECTED_TOKEN', start);
 			declarations.push(this.node(start, { type: 'VariableDeclarator', id, init }));
@@ -374,20 +377,35 @@ class Parser {
 	}
 
 	private parameters(): A.Pattern[] {
-		this.expect('(');
-		const params: A.Pattern[] = [];
-		while (!this.at(')')) {
-			if (this.at('this')) this.fail('TYPE_THIS_PARAMETER');
-			const param = this.binding(true, true, true);
-			params.push(param);
-			if (param.type === 'RestElement') {
-				if (this.at(',')) this.fail('UNEXPECTED_TOKEN');
-				break;
-			}
-			if (!this.eat(',')) break;
+		const start = this.index;
+		// 既定値にも試し読みを伴う関数が入るため、引数列の再解析も避けます。
+		const cached = this.parameterLists.get(start);
+		if (cached) {
+			if ('error' in cached) throw cached.error;
+			this.index = cached.end;
+			this.previous = this.tokens[this.index - 1];
+			return cached.params;
 		}
-		this.expect(')');
-		return params;
+		try {
+			this.expect('(');
+			const params: A.Pattern[] = [];
+			while (!this.at(')')) {
+				if (this.at('this')) this.fail('TYPE_THIS_PARAMETER');
+				const param = this.binding(true, true, true);
+				params.push(param);
+				if (param.type === 'RestElement') {
+					if (this.at(',')) this.fail('UNEXPECTED_TOKEN');
+					break;
+				}
+				if (!this.eat(',')) break;
+			}
+			this.expect(')');
+			this.parameterLists.set(start, { params, end: this.index });
+			return params;
+		} catch (error) {
+			this.parameterLists.set(start, { error });
+			throw error;
+		}
 	}
 	private functionBody(): A.BlockStatement {
 		const saved = { loop: this.loopDepth, switch: this.switchDepth, labels: this.labels };
@@ -470,7 +488,7 @@ class Parser {
 			if (operator === '!' && !this.peek().lineBreakBefore) this.fail('NON_NULL_ASSERTION');
 			const priority = Object.hasOwn(precedence, operator) ? precedence[operator] : undefined;
 			if (priority === undefined || priority < min || (operator === 'in' && !allowIn)) break;
-			if (left.type === 'ArrowFunctionExpression' && !this.parenthesized.has(left)) this.fail('UNEXPECTED_TOKEN');
+			if (left.type === 'ArrowFunctionExpression' && !this.parenthesized.has(left)) break;
 			this.continuation(boundary);
 			const op = this.take();
 			if (left.type === 'UpdateExpression') this.fail('UPDATE_IN_EXPRESSION', left);
@@ -556,36 +574,54 @@ class Parser {
 	}
 
 	private arrowAhead(offset = 0, allowReturnType = true): boolean {
-		if (this.peek(offset).raw !== '(') return this.peek(offset).kind === 'identifier' && this.lookahead(offset + 1)?.raw === '=>';
-		let depth = 0;
+		const key = this.index * 4 + offset * 2 + Number(allowReturnType);
+		const cached = this.arrowLookaheads.get(key);
+		if (cached !== undefined) return cached;
+		const result = this.detectArrow(offset, allowReturnType);
+		this.arrowLookaheads.set(key, result);
+		return result;
+	}
+	private closingParenthesis(offset: number): number | undefined {
+		const start = this.index + offset;
+		const cached = this.parenthesisEnds.get(start);
+		if (cached !== undefined) return cached ?? undefined;
+		const opening: number[] = [];
 		for (let i = offset; ; i++) {
 			const token = this.lookahead(i);
-			if (!token || token.kind === 'eof') return false;
-			if (token.raw === '(') depth++;
-			if (token.raw === ')') {
-				depth--;
-				if (!depth) {
-					if (this.lookahead(i + 1)?.raw === '=>') return true;
-					if (this.lookahead(i + 1)?.raw !== ':') return false;
-					if (!this.returnTypeAhead(i + 2)) return false;
-					const saved = { index: this.index, previous: this.previous, functionDepth: this.functionDepth, loopDepth: this.loopDepth, switchDepth: this.switchDepth, labels: new Map(this.labels) };
-					try {
-						this.index += offset;
-						this.parameters();
-						if (allowReturnType) return true;
-						this.index = saved.index;
-						this.previous = saved.previous;
-						// 条件式の真側では、戻り値型を読んでも条件式の区切りが残る場合だけ採用します。
-						this.arrow(offset !== 0, false, false);
-						return this.at(':');
-					} catch (error) {
-						return allowReturnType && error instanceof TonerikoScriptSyntaxError && error.code !== 'UNEXPECTED_TOKEN';
-					} finally {
-						this.index = saved.index; this.previous = saved.previous;
-						this.functionDepth = saved.functionDepth; this.loopDepth = saved.loopDepth; this.switchDepth = saved.switchDepth; this.labels = saved.labels;
-					}
-				}
+			if (!token || token.kind === 'eof') {
+				for (const index of opening) this.parenthesisEnds.set(index, null);
+				return undefined;
 			}
+			if (token.raw === '(') opening.push(this.index + i);
+			if (token.raw === ')') {
+				// 外側を走査したときに内側の対応も残し、既定値の入れ子を再走査しません。
+				this.parenthesisEnds.set(opening.pop()!, this.index + i);
+				if (!opening.length) return this.index + i;
+			}
+		}
+	}
+	private detectArrow(offset: number, allowReturnType: boolean): boolean {
+		if (this.peek(offset).raw !== '(') return this.peek(offset).kind === 'identifier' && this.lookahead(offset + 1)?.raw === '=>';
+		const end = this.closingParenthesis(offset);
+		if (end === undefined) return false;
+		const after = end - this.index + 1;
+		if (this.lookahead(after)?.raw === '=>') return true;
+		if (this.lookahead(after)?.raw !== ':' || !this.returnTypeAhead(after + 1)) return false;
+		const saved = { index: this.index, previous: this.previous, functionDepth: this.functionDepth, loopDepth: this.loopDepth, switchDepth: this.switchDepth, labels: new Map(this.labels) };
+		try {
+			if (allowReturnType) {
+				this.index += offset;
+				this.parameters();
+				return true;
+			}
+			// 条件式の真側では、戻り値型を読んでも条件式の区切りが残る場合だけ採用します。
+			this.arrow(offset !== 0, false, false);
+			return this.at(':');
+		} catch (error) {
+			return allowReturnType && error instanceof TonerikoScriptSyntaxError && error.code !== 'UNEXPECTED_TOKEN';
+		} finally {
+			this.index = saved.index; this.previous = saved.previous;
+			this.functionDepth = saved.functionDepth; this.loopDepth = saved.loopDepth; this.switchDepth = saved.switchDepth; this.labels = saved.labels;
 		}
 	}
 	private returnTypeAhead(offset: number): boolean {
@@ -604,6 +640,14 @@ class Parser {
 		}
 	}
 	private arrow(async: boolean, boundary: boolean, allowReturnType = true): A.ArrowFunctionExpression {
+		// 改行と条件式の区切りの扱いが違う解析結果は共有しません。
+		const key = this.index * 4 + Number(boundary) * 2 + Number(allowReturnType);
+		const cached = this.arrows.get(key);
+		if (cached) {
+			this.index = cached.end;
+			this.previous = this.tokens[this.index - 1];
+			return { ...cached.expression };
+		}
 		const start = this.peek();
 		if (async) this.take();
 		const params = this.at('(') ? this.parameters() : [this.identifier()];
@@ -611,7 +655,10 @@ class Parser {
 		if (this.peek().lineBreakBefore) this.fail('NEWLINE_ARROW');
 		this.expect('=>');
 		const body = this.at('{') ? this.functionBody() : this.expression(0, false, boundary, true, false, allowReturnType);
-		return this.node(start, { type: 'ArrowFunctionExpression', params, body, async, generator: false, expression: body.type !== 'BlockStatement', ...(returnType ? { returnType } : {}) });
+		const expression = this.node(start, { type: 'ArrowFunctionExpression', params, body, async, generator: false, expression: body.type !== 'BlockStatement', ...(returnType ? { returnType } : {}) });
+		// 試し読みした本体は再解析せず、外側の括弧の印が漏れないよう根だけ複製します。
+		this.arrows.set(key, { expression, end: this.index });
+		return { ...expression };
 	}
 	private primary(mutation: boolean, boundary: boolean, allowArrow: boolean, allowReturnType: boolean): A.Expression {
 		const t = this.peek();

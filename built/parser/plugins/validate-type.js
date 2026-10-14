@@ -1,0 +1,41 @@
+import { TonerikoScriptSyntaxError } from "../../error.js";
+import { getTypeBySource } from "../../type.js";
+import { visitNode } from "../visit.js";
+
+//#region src/parser/plugins/validate-type.ts
+function validateTypeParams(node) {
+	const typeParamNames = /* @__PURE__ */ new Set();
+	for (const typeParam of node.typeParams) {
+		if (typeParamNames.has(typeParam.name)) throw new TonerikoScriptSyntaxError(`type parameter name ${typeParam.name} is duplicate`, node.loc.start);
+		typeParamNames.add(typeParam.name);
+	}
+}
+function collectTypeParams(node, ancestors) {
+	const items = [];
+	if (node.type === "fn") items.push(...node.typeParams);
+	for (let i = ancestors.length - 1; i >= 0; i--) {
+		const ancestor = ancestors[i];
+		if (ancestor.type === "fn") items.push(...ancestor.typeParams);
+	}
+	return items;
+}
+function validateNode(node, ancestors) {
+	switch (node.type) {
+		case "def":
+			if (node.varType != null) getTypeBySource(node.varType, collectTypeParams(node, ancestors));
+			break;
+		case "fn":
+			validateTypeParams(node);
+			for (const param of node.params) if (param.argType != null) getTypeBySource(param.argType, collectTypeParams(node, ancestors));
+			if (node.retType != null) getTypeBySource(node.retType, collectTypeParams(node, ancestors));
+	}
+	return node;
+}
+function validateType(nodes) {
+	for (const node of nodes) visitNode(node, validateNode);
+	return nodes;
+}
+
+//#endregion
+export { validateType };
+//# sourceMappingURL=validate-type.js.map

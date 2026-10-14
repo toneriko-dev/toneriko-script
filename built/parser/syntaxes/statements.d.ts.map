@@ -1,0 +1,1 @@
+{"version":3,"file":"statements.d.ts","names":["Ast","Ast.Statement","Ast.Expression","Ast.Definition"],"sources":["../../../src/parser/syntaxes/statements.ts"],"mappings":";;;wBAUgB,eAAe,GAAG,eAAeC,YAAgBC;;;;;;wBA2DjD,kBAAkB,GAAG,eAAeC;;;;;;wBAoBpC,sBAAsB,GAAG,eAAeF,YAAgBC;;;;;;wBA+TxD,uBAAuB,GAAG,eAAeC"}

@@ -1,0 +1,1 @@
+{"version":3,"file":"visit.d.ts","names":["Ast","Ast.Node"],"sources":["../../src/parser/visit.ts"],"mappings":";;wBAEgB,UAAU,MAAMC,MAAU,KAAK,MAAMA,MAAU,WAAWA,WAAeA,OAAWA"}

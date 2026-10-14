@@ -1,0 +1,1 @@
+{"version":3,"file":"token-stream.d.ts","names":[],"sources":["../../../src/parser/streams/token-stream.ts"],"mappings":";;iBAIiB;EAChB,YAAY;EAEZ,GAAG,MAAM;EAET,gBAAgB;EAEhB;EAEA,UAAU;EAEV;EAEA,UAAU,iBAAiB;EAE3B,OAAO,MAAM;;qBAGD,uBAAuB;UAC3B;UACA;UACA;EAER,YAAY,QAAQ;cAMR;EAIL,YAAY;EAOZ,GAAG,MAAM;EAIT;EAIA,gBAAgB;EAIhB,UAAU;EAIV;EAOA,UAAU,iBAAiB;EAO3B,OAAO,MAAM;UAMZ"}

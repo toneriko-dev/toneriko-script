@@ -1,0 +1,1 @@
+{"version":3,"file":"tson.d.ts","names":["Ast","Ast.Node"],"sources":["../../../src/parser/syntaxes/tson.ts"],"mappings":";;;wBAMgB,kBAAkB,GAAG,eAAeC"}

@@ -1,0 +1,7 @@
+[install]
+linker = "isolated"
+saveTextLockfile = true
+auto = "disable"
+exact = true
+# 公開から 7 日たった版だけを入れる (乗っ取られた版を避けるため)
+minimumReleaseAge = 604800

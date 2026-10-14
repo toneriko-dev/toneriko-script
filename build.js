@@ -3,12 +3,22 @@ import { fileURLToPath } from 'node:url';
 import { dirname } from 'node:path';
 import * as esbuild from 'esbuild';
 import { build } from 'esbuild';
-import { spawnChecked } from '../../scripts/spawn-checked.mjs';
 
 const _filename = fileURLToPath(import.meta.url);
 const _dirname = dirname(_filename);
 const _package = JSON.parse(fs.readFileSync(_dirname + '/package.json', 'utf-8'));
-const tscNative = fileURLToPath(new URL('../../scripts/tsc-native.mjs', import.meta.url));
+
+// 型定義は TypeScript 7 (ネイティブ版) の tsc で出力する。子プロセスが失敗したらビルドを止める。
+// typescript の exports は bin/tsc を公開していないので、package.json の場所から辿る。
+const tsc = fileURLToPath(new URL('bin/tsc', import.meta.resolve('typescript/package.json')));
+
+async function spawnChecked(command) {
+	const subprocess = Bun.spawn(command, { stdin: 'ignore', stdout: 'inherit', stderr: 'inherit' });
+	const exitCode = await subprocess.exited;
+	if (exitCode !== 0) {
+		throw new Error(`${command.join(' ')} exited with code ${exitCode}`);
+	}
+}
 
 const entryPoints = fs.globSync('./src/**/**.ts');
 
@@ -59,9 +69,7 @@ async function buildSrc() {
 function buildDts() {
 	return spawnChecked([
 		process.execPath,
-		'run',
-		'--bun',
-		tscNative,
+		tsc,
 		'--project',
 		'tsconfig.json',
 		'--outDir',

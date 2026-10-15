@@ -272,7 +272,7 @@ JavaScript と同じ名前、同じ引数、同じ結果にします(文字列�
 
 JSON.parse は reviver を子から順に呼びます。基本値には原文の source を第 3 引数で渡します。null を返した場合は JSON の null とし、削除指示にはしません。JSON.stringify は replacer・space・toJSON を扱い、関数は辞書のプロパティなら省略、配列内なら null、最上位なら null を返します。循環は TypeError です。利用者の関数は逐次呼び、元のキー順や数の表現は JavaScript に合わせます。replacer 配列は開始時の長さで添字を読み、Symbol.iterator や原型の添字 getter は呼びません。
 
-structuredClone は共有参照と循環を保存し、関数は DataCloneError です。未対応の型と transfer 指定はエラーです。deepEqual は基本値を Object.is 相当で比べ、配列の順序・辞書の own key と内容を比較します。循環を扱い、関数は参照の同一性で比べます。エラーは通常の辞書と区別し、name と message も比較します。ホストのクラスのインスタンスは原型が同じときだけ等しくなりえます。
+structuredClone は共有参照と循環を保存し、関数は DataCloneError です。未対応の型と transfer 指定はエラーです。deepEqual は基本値を Object.is 相当で比べ、配列の順序・辞書の own key と内容を比較します。循環を扱い、関数は参照の同一性で比べます。エラーは通常の辞書と区別し、name と message に加えて、own cause の有無と値も比較します。cause は非列挙でも対象とし、入れ子と循環を扱います。ホストのクラスのインスタンスは原型が同じときだけ等しくなりえます。
 
 Object.groupBy のキーには数・文字列・真偽値を受け、真偽値は "true" / "false" にします。countBy も同じ文字列化を行います。
 

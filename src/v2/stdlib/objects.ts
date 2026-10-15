@@ -265,6 +265,14 @@ function* deepEqual(ctx: StdContext, a: Value, b: Value): StdFrame {
 		if (leftError) {
 			pairs.push([ctx.properties.get(left, 'name', ctx.pos), ctx.properties.get(right, 'name', ctx.pos)]);
 			pairs.push([ctx.properties.get(left, 'message', ctx.pos), ctx.properties.get(right, 'message', ctx.pos)]);
+			const leftCause = Object.getOwnPropertyDescriptor(left, 'cause'), rightCause = Object.getOwnPropertyDescriptor(right, 'cause');
+			if (Boolean(leftCause) !== Boolean(rightCause)) return false;
+			if (leftCause && rightCause) {
+				const leftValue = ctx.properties.get(left, 'cause', ctx.pos), rightValue = ctx.properties.get(right, 'cause', ctx.pos);
+				// ホストの undefined は取得時に null になるため、元のデータ記述子でも区別する。
+				if ((leftCause.value === undefined) !== (rightCause.value === undefined)) return false;
+				pairs.push([leftValue, rightValue]);
+			}
 		}
 		const xs = yield* own(ctx, left), ys = yield* own(ctx, right);
 		if (xs.length !== ys.length) return false;

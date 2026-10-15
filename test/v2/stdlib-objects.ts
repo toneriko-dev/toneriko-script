@@ -194,3 +194,38 @@ describe('レビュー回帰: オブジェクトのホスト境界と比較', ()
 		expect(await execute('out(Object.groupBy([true, "true", false, "false"], x => x));')).toEqual([{ true: [true, 'true'], false: [false, 'false'] }]);
 	});
 });
+
+describe('deepEqual のエラー cause の比較', () => {
+	test('非列挙 cause の有無と値を比較する', async () => {
+		expect(await execute('out([deepEqual(new Error("a",{cause:1}),new Error("a",{cause:2})),deepEqual(new Error("a"),new Error("a",{cause:1}))]);')).toEqual([[false,false]]);
+		const without = new Error('outer');
+		const one = new Error('outer', { cause: 1 }), two = new Error('outer', { cause: 2 });
+		expect(Object.keys(one)).not.toContain('cause');
+		expect(await execute('out([deepEqual(without, one), deepEqual(one, without), deepEqual(one, two), deepEqual(one, same)]);', { without, one, two, same: new Error('outer', { cause: 1 }) })).toEqual([[false, false, false, true]]);
+	});
+	test('cause の省略・undefined・null を区別する', async () => {
+		const without = new Error('outer'), undefinedCause = new Error('outer', { cause: undefined }), nullCause = new Error('outer', { cause: null });
+		expect(await execute('out([deepEqual(without, undefinedCause), deepEqual(undefinedCause, nullCause), deepEqual(undefinedCause, sameUndefined), deepEqual(nullCause, sameNull)]);', { without, undefinedCause, nullCause, sameUndefined: new Error('outer', { cause: undefined }), sameNull: new Error('outer', { cause: null }) })).toEqual([[false, false, true, true]]);
+	});
+	test('cause の入れ子のエラーと循環を比較する', async () => {
+		const a = new Error('outer', { cause: new Error('inner') });
+		const b = new Error('outer', { cause: new Error('different') });
+		const same = new Error('outer', { cause: new Error('inner') });
+		const cycleA = new Error('cycle'), cycleB = new Error('cycle');
+		Object.defineProperty(cycleA, 'cause', { value: cycleA });
+		Object.defineProperty(cycleB, 'cause', { value: cycleB });
+		expect(await execute('out([deepEqual(a, b), deepEqual(a, same), deepEqual(cycleA, cycleB)]);', { a, b, same, cycleA, cycleB })).toEqual([[false, true, true]]);
+	});
+	test('cause の accessor を実行せず拒否する', async () => {
+		let calls = 0;
+		const accessor = new Error('outer');
+		Object.defineProperty(accessor, 'cause', { get() { calls++; return 1; } });
+		const data = new Error('outer', { cause: 1 });
+		await expect(execute('deepEqual(a, b);', { a: accessor, b: data })).rejects.toMatchObject({ code: 'ACCESSOR_PROPERTY' });
+		await expect(execute('deepEqual(a, b);', { a: data, b: accessor })).rejects.toMatchObject({ code: 'ACCESSOR_PROPERTY' });
+		expect(calls).toBe(0);
+	});
+	test('スクリプトのエラーに代入された cause も比較する', async () => {
+		expect(await execute('let a = new Error("outer"); let b = new Error("outer"); a.cause = {value: 1}; b.cause = {value: 2}; out(deepEqual(a, b)); b.cause.value = 1; out(deepEqual(a, b));')).toEqual([false, true]);
+	});
+});

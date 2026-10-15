@@ -112,7 +112,7 @@ fetchTimeline()
 
 ## 意図した違い
 
-JavaScript として書いたコードが、違う結果になるのは次の 6 つだけです。
+JavaScript として書いたコードが、違う結果になる所と、構文の受理に上限がある所は次の 7 つです。
 
 | 違い | JavaScript | Toneriko Script | 理由 |
 |---|---|---|---|
@@ -122,6 +122,7 @@ JavaScript として書いたコードが、違う結果になるのは次の 6 
 | 配列の範囲外 | `arr[10]` は `undefined` | エラー。`arr.at(10)` は `null` | 添字の誤りに気付けるようにする |
 | 実行の上限 | 無い | 5 秒待たずに動き続けるか、決めた回数を超えるとエラー | 無限ループで画面を止めない |
 | オブジェクトの原型 | `{}` にも `toString` などがある | 無い。書いたキーだけがある。スクリプトのエラーも原型を持たず、`name` と `message` の既定値だけを返す。`e.toString`・`e.constructor` は `null`。ホスト由来も含め、エラーの `stack` とエンジンの位置のキー（`fileName`・`lineNumber`・`columnNumber`・`sourceURL`・`line`・`column`・`originalLine`・`originalColumn`）は `null` | 利用者の文字列をキーにする辞書として使うため |
+| 構文の入れ子 | エンジンのスタックの上限まで読む | 括弧、配列、オブジェクト、関数、ブロック、分割代入のパターンなどは 256 段まで。左結合の演算やメンバーの連鎖は数えない。単項演算と右結合の演算は別に 1,024 段まで | ブラウザのスタックを溢れさせないため |
 
 文字列の単位の違いは、次の操作に関わります: `length`、`s[i]`、`at`、`slice`、`substring`、`indexOf`、`split("")`、`for … of`、`padStart` と `padEnd` の長さ。
 

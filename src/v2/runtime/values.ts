@@ -47,8 +47,33 @@ const domExceptionPrototype = typeof DOMException === 'undefined' ? undefined : 
 const domExceptionName = domExceptionPrototype && Object.getOwnPropertyDescriptor(domExceptionPrototype, 'name')?.get;
 const hiddenErrorKeys = new Set(['stack', 'sourceURL', 'line', 'column', 'originalLine', 'originalColumn', 'fileName', 'lineNumber', 'columnNumber']);
 
+let errorKinds = new WeakMap<object, boolean>();
+
+/** ホストが値の原型を変更できる境界で、判定だけを一括して破棄する。 */
+export function invalidateErrorKinds(): void { errorKinds = new WeakMap(); }
+
+/** スクリプトで作る辞書と配列は、ホストへ渡るまではエラーにならない。 */
+export function scriptObject<T extends object>(value: T): T { errorKinds.set(value, false); return value; }
+
+export function errorValue(value: unknown, pos: AST.Pos = { line: 1, column: 1 }): value is object {
+	if (typeof value !== 'object' || value === null) return false;
+	const cached = errorKinds.get(value);
+	if (cached !== undefined) return cached;
+	const result = classifyError(value, pos);
+	errorKinds.set(value, result);
+	return result;
+}
+
+/** 位置情報のキーは、Proxy の罠が原型を変えた場合にも古い判定で公開しない。 */
+function propertyError(value: unknown, key: string, pos: AST.Pos): value is object {
+	if (!hiddenErrorKeys.has(key) || typeof value !== 'object' || value === null) return errorValue(value, pos);
+	const result = classifyError(value, pos);
+	errorKinds.set(value, result);
+	return result;
+}
+
 /** 情報を隠す判定は広く取り、利用者の toStringTag の getter は呼ばない。 */
-export function errorValue(value: unknown, _pos: AST.Pos = { line: 1, column: 1 }): value is object {
+function classifyError(value: unknown, _pos: AST.Pos = { line: 1, column: 1 }): value is object {
 	if (isScriptErrorValue(value)) return true;
 	if (typeof value !== 'object' || value === null) return false;
 	if (domExceptionName) {
@@ -154,7 +179,7 @@ export class PropertyAccess {
 			if (!own && key !== 'length' && index === null) return registeredMethod('array', key, pos);
 		}
 		if (opaqueFunction(value)) throw runtimeError('UNSUPPORTED_VALUE', pos, { key }, 'TypeError');
-		const error = errorValue(value, pos);
+		const error = propertyError(value, key, pos);
 		if (error && hiddenErrorKey(value, key)) return null;
 		const own = Object.getOwnPropertyDescriptor(Object(value), key);
 		if (own) {
@@ -178,7 +203,7 @@ export class PropertyAccess {
 		const key = this.key(property, pos);
 		if (value === null || value === undefined) throw runtimeError('NULL_PROPERTY_ACCESS', pos, { key }, 'TypeError');
 		if (opaqueFunction(value)) throw runtimeError('UNSUPPORTED_VALUE', pos, { key }, 'TypeError');
-		if (typeof value !== 'object' || (errorValue(value, pos) && hiddenErrorKey(value, key))) {
+		if (typeof value !== 'object' || (propertyError(value, key, pos) && hiddenErrorKey(value, key))) {
 			throw runtimeError('READONLY_PROPERTY', pos, { key }, 'TypeError');
 		}
 		const normalized = this.normalize(next, pos);
@@ -216,7 +241,7 @@ export class PropertyAccess {
 		if (value === null || (typeof value !== 'object' && typeof value !== 'function')) throw runtimeError('INVALID_RECEIVER', pos, {}, 'TypeError');
 		if (opaqueFunction(value)) throw runtimeError('UNSUPPORTED_VALUE', pos, { key }, 'TypeError');
 		if (Array.isArray(value) && !Object.hasOwn(value, key)) return registeredMethod('array', key, pos) !== null;
-		if (errorValue(value, pos)) {
+		if (propertyError(value, key, pos)) {
 			if (hiddenErrorKey(value, key)) return false;
 			if (isScriptErrorValue(value) && (key === 'name' || key === 'message')) return true;
 			const own = Object.getOwnPropertyDescriptor(value, key);
@@ -229,7 +254,7 @@ export class PropertyAccess {
 		const key = this.key(property, pos);
 		if (value === null || value === undefined) throw runtimeError('NULL_PROPERTY_ACCESS', pos, { key }, 'TypeError');
 		if (opaqueFunction(value)) throw runtimeError('UNSUPPORTED_VALUE', pos, { key }, 'TypeError');
-		if (errorValue(value, pos) && hiddenErrorKey(value, key)) return true;
+		if (propertyError(value, key, pos) && hiddenErrorKey(value, key)) return true;
 		if (Array.isArray(value) && (indexOf(key) !== null || key === 'length')) throw runtimeError('ARRAY_DELETE', pos);
 		if (typeof value === 'string' && (indexOf(key) !== null || key === 'length')) throw runtimeError('READONLY_PROPERTY', pos, { key }, 'TypeError');
 		if (!Reflect.deleteProperty(Object(value), key)) throw runtimeError('READONLY_PROPERTY', pos, { key }, 'TypeError');
@@ -251,10 +276,10 @@ export class PropertyAccess {
 			return;
 		}
 		if (opaqueFunction(value)) throw runtimeError('UNSUPPORTED_VALUE', pos, {}, 'TypeError');
-		const error = errorValue(value, pos);
+		errorValue(value, pos);
 		for (const key of Object.keys(Object(value))) {
 			this.onStep();
-			if (error && hiddenErrorKey(value, key)) continue;
+			if (hiddenErrorKeys.has(key) && propertyError(value, key, pos) && hiddenErrorKey(value, key)) continue;
 			this.key(key, pos);
 			yield [key, this.get(value, key, pos)];
 		}

@@ -55,7 +55,10 @@ function scope(body: A.Statement[], parameters: A.Pattern[] = [], functionBody =
 }
 
 export function checkEarlyErrors(program: A.Program): void {
-	function visit(node: A.Node): void {
+	const pending: A.Node[] = [program];
+	while (pending.length) {
+		const node = pending.pop()!;
+		const begin = pending.length;
 		switch (node.type) {
 			case 'Program': scope(node.body); break;
 			case 'BlockStatement': scope(node.body); break;
@@ -64,17 +67,17 @@ export function checkEarlyErrors(program: A.Program): void {
 			case 'ArrowFunctionExpression': {
 				checkDirective(node);
 				scope(node.body.type === 'BlockStatement' ? node.body.body : [], node.params, true);
-				for (const param of node.params) visit(param);
+				for (const param of node.params) pending.push(param);
 				// 本体を通常のブロックとして再検査すると、許される関数宣言の重複も拒否してしまいます。
-				if (node.body.type === 'BlockStatement') for (const statement of node.body.body) visit(statement);
-				else visit(node.body);
-				return;
+				if (node.body.type === 'BlockStatement') for (const statement of node.body.body) pending.push(statement);
+				else pending.push(node.body);
+				break;
 			}
 			case 'CatchClause':
 				scope(node.body.body, node.param ? [node.param] : []);
-				if (node.param) visit(node.param);
-				for (const statement of node.body.body) visit(statement);
-				return;
+				if (node.param) pending.push(node.param);
+				for (const statement of node.body.body) pending.push(statement);
+				break;
 			case 'ForStatement':
 				if (node.init?.type === 'VariableDeclaration') scope([node.init]);
 				break;
@@ -82,12 +85,18 @@ export function checkEarlyErrors(program: A.Program): void {
 				if (node.left.type === 'VariableDeclaration') scope([node.left]);
 				break;
 		}
-		for (const [key, value] of Object.entries(node)) {
-			if (key === 'loc' || key === 'typeAnnotation' || key === 'returnType') continue;
-			if (Array.isArray(value)) {
-				for (const child of value) if (child && typeof child === 'object' && 'type' in child) visit(child as A.Node);
-			} else if (value && typeof value === 'object' && 'type' in value) visit(value as A.Node);
+		if (node.type !== 'FunctionDeclaration' && node.type !== 'ArrowFunctionExpression' && node.type !== 'CatchClause') {
+			for (const key in node) {
+				if (key === 'loc' || key === 'typeAnnotation' || key === 'returnType') continue;
+				const value = (node as unknown as Record<string, unknown>)[key];
+				if (Array.isArray(value)) {
+					for (const child of value) if (child && typeof child === 'object' && 'type' in child) pending.push(child as A.Node);
+				} else if (value && typeof value === 'object' && 'type' in value) pending.push(value as A.Node);
+			}
+		}
+		// 子は元の順で検査し、構文木の長い連鎖も再帰呼び出しにしません。
+		for (let left = begin, right = pending.length - 1; left < right; left++, right--) {
+			[pending[left], pending[right]] = [pending[right]!, pending[left]!];
 		}
 	}
-	visit(program);
 }

@@ -3,9 +3,10 @@ import { syntaxError, TonerikoScriptSyntaxError, type Diagnostic, type Diagnosti
 import { Scanner, type Token } from './scanner.js';
 import { checkEarlyErrors } from './early-errors.js';
 
-// 構文解析の再帰と、同期評価がたどる構文木の高さを同じ上限で制限します。
-// 256 は Chromium 153・Firefox 155・WebKit 26.6 で、19 種の構文を受理上限まで
-// 解析し、同期評価する式もスタックを溢れさせずに実行できる深さです。
+// 括弧・配列・関数など、再帰下降で入れ子を読む構文だけを数えます。
+// 左結合の連鎖や else if の並びは反復で読み、この深さには含めません。
+// 256 は Chromium 153・Firefox 155・WebKit 26.6 で、括弧・配列・関数・
+// 分割代入などの構文を上限まで解析・評価してスタックを溢れさせない深さです。
 // 再現手順は scripts/v2-browser-depth.mjs にあります。
 const MAX_SYNTAX_DEPTH = 256;
 
@@ -35,7 +36,7 @@ class Parser {
 	private readonly tokens: Token[] = [];
 	private index = 0;
 	private syntaxDepth = 0;
-	private readonly nodeDepths = new WeakMap<object, number>();
+	private chainDepth = 0;
 	private previous: Token | undefined;
 	private lexicalError: unknown;
 	private functionDepth = 0;
@@ -82,25 +83,15 @@ class Parser {
 		try { return read(); }
 		finally { this.syntaxDepth--; }
 	}
-	private nodeDepth(node: A.NodeBase & { type: string }): number {
-		const cached = this.nodeDepths.get(node);
-		if (cached !== undefined) return cached;
-		let depth = 1;
-		for (const value of Object.values(node)) {
-			const children = Array.isArray(value) ? value : [value];
-			for (const child of children) {
-				if (child && typeof child === 'object' && 'type' in child && 'loc' in child) {
-					depth = Math.max(depth, this.nodeDepth(child) + 1);
-				}
-			}
-		}
-		if (depth > MAX_SYNTAX_DEPTH) this.fail('NESTING_TOO_DEEP', node);
-		this.nodeDepths.set(node, depth);
-		return depth;
+	// 単項演算と右結合のべき乗は別に制限し、左結合の長さを入れ子の深さと混同しません。
+	private recursiveChain<T>(read: () => T): T {
+		if (this.chainDepth >= 1024) this.fail('NESTING_TOO_DEEP');
+		this.chainDepth++;
+		try { return read(); }
+		finally { this.chainDepth--; }
 	}
 	private node<const T extends { type: string }>(start: A.NodeBase, fields: T): T & A.NodeBase {
 		const node = { ...fields, loc: { start: start.loc.start, end: this.previous?.loc.end ?? start.loc.end } };
-		this.nodeDepth(node);
 		return node;
 	}
 	private identifier(property = false): A.Identifier {
@@ -125,12 +116,11 @@ class Parser {
 		const body: A.Statement[] = [];
 		while (this.peek().kind !== 'eof') body.push(this.statement(true));
 		const program: A.Program = { type: 'Program', sourceType: 'module', body, loc: { start: { line: 1, column: 1 }, end: this.peek().loc.end } };
-		this.nodeDepth(program);
 		return program;
 	}
 
 	private statement(topLevel = false, single = false): A.Statement {
-		return this.nested(() => this.statementBody(topLevel, single));
+		return this.statementBody(topLevel, single);
 	}
 	private statementBody(topLevel = false, single = false): A.Statement {
 		const t = this.peek();
@@ -149,14 +139,7 @@ class Parser {
 			return this.functionDeclaration();
 		}
 		switch (t.raw) {
-			case 'if': {
-				this.take();
-				if (!this.at('(')) this.fail('AISCRIPT_IF', t);
-				const test = this.condition();
-				const consequent = this.statement(false, true);
-				const alternate = this.eat('else') ? this.statement(false, true) : null;
-				return this.node(t, { type: 'IfStatement', test, consequent, alternate });
-			}
+			case 'if': return this.ifStatement();
 			case 'for': return this.forStatement();
 			case 'while': {
 				this.take();
@@ -226,7 +209,7 @@ class Parser {
 			if (!['for', 'while', 'do', '{'].includes(target)) this.fail(this.peek(offset).kind === 'identifier' && !reserved.has(String(this.peek(offset).value)) ? 'AISCRIPT_NAMESPACE' : 'INVALID_LABEL', t);
 			if (this.labels.has(label.name)) this.fail('INVALID_LABEL', t);
 			this.labels.set(label.name, target !== '{');
-			const body = this.statement();
+			const body = this.nested(() => this.statement());
 			this.labels.delete(label.name);
 			return this.node(t, { type: 'LabeledStatement', label, body });
 		}
@@ -236,7 +219,29 @@ class Parser {
 		return this.node(t, { type: 'ExpressionStatement', expression });
 	}
 
+	private ifStatement(): A.IfStatement {
+		const branches: { start: Token; test: A.Expression; consequent: A.Statement }[] = [];
+		let alternate: A.Statement | null = null;
+		do {
+			const start = this.expect('if');
+			if (!this.at('(')) this.fail('AISCRIPT_IF', start);
+			const test = this.condition();
+			const consequent = this.nested(() => this.statement(false, true));
+			branches.push({ start, test, consequent });
+			if (!this.eat('else')) break;
+			if (!this.at('if')) { alternate = this.nested(() => this.statement(false, true)); break; }
+		} while (true);
+		for (let i = branches.length - 1; i >= 0; i--) {
+			const { start, test, consequent } = branches[i]!;
+			alternate = this.node(start, { type: 'IfStatement', test, consequent, alternate });
+		}
+		return alternate as A.IfStatement;
+	}
+
 	private block(): A.BlockStatement {
+		return this.nested(() => this.blockBody());
+	}
+	private blockBody(): A.BlockStatement {
 		const t = this.expect('{');
 		const body: A.Statement[] = [];
 		while (!this.at('}')) {
@@ -255,7 +260,7 @@ class Parser {
 	}
 	private loopBody(): A.Statement {
 		this.loopDepth++;
-		const body = this.statement(false, true);
+		const body = this.nested(() => this.statement(false, true));
 		this.loopDepth--;
 		return body;
 	}
@@ -311,6 +316,9 @@ class Parser {
 		return this.node(t, { type: 'ForStatement', init, test, update, body });
 	}
 	private switchStatement(): A.SwitchStatement {
+		return this.nested(() => this.switchStatementBody());
+	}
+	private switchStatementBody(): A.SwitchStatement {
 		const t = this.take();
 		const discriminant = this.condition();
 		this.expect('{');
@@ -361,7 +369,9 @@ class Parser {
 	}
 
 	private binding(defaultValue: boolean, parameter = false, allowRest = false, annotation: 'allow' | 'forbid' | 'rest' = 'allow'): A.Pattern {
-		return this.nested(() => this.bindingBody(defaultValue, parameter, allowRest, annotation));
+		return this.at('[') || this.at('{')
+			? this.nested(() => this.bindingBody(defaultValue, parameter, allowRest, annotation))
+			: this.bindingBody(defaultValue, parameter, allowRest, annotation);
 	}
 	private bindingBody(defaultValue: boolean, parameter = false, allowRest = false, annotation: 'allow' | 'forbid' | 'rest' = 'allow'): A.Pattern {
 		const start = this.peek();
@@ -413,8 +423,6 @@ class Parser {
 		if (annotation === 'forbid' && this.at(':')) this.fail('UNEXPECTED_TOKEN');
 		if (annotation === 'allow' && this.eat(':')) {
 			pattern.typeAnnotation = this.typeAnnotation();
-			this.nodeDepths.delete(pattern);
-			this.nodeDepth(pattern);
 		}
 		pattern.loc.end = this.previous!.loc.end;
 		if (defaultValue && this.eat('=')) {
@@ -458,11 +466,14 @@ class Parser {
 	private functionBody(): A.BlockStatement {
 		const saved = { loop: this.loopDepth, switch: this.switchDepth, labels: this.labels };
 		this.loopDepth = 0; this.switchDepth = 0; this.labels = new Map(); this.functionDepth++;
-		const body = this.block();
+		const body = this.blockBody();
 		this.functionDepth--; this.loopDepth = saved.loop; this.switchDepth = saved.switch; this.labels = saved.labels;
 		return body;
 	}
 	private functionDeclaration(): A.FunctionDeclaration {
+		return this.nested(() => this.functionDeclarationBody());
+	}
+	private functionDeclarationBody(): A.FunctionDeclaration {
 		const start = this.peek();
 		const async = this.eat('async');
 		this.expect('function');
@@ -475,7 +486,7 @@ class Parser {
 		return this.node(start, { type: 'FunctionDeclaration', id, params, body, async, generator: false, ...(returnType ? { returnType } : {}) });
 	}
 	private typeAnnotation(): A.TypeAnnotation {
-		return this.nested(() => this.typeAnnotationBody());
+		return this.typeAnnotationBody();
 	}
 	private typeAnnotationBody(): A.TypeAnnotation {
 		const start = this.peek();
@@ -486,10 +497,13 @@ class Parser {
 		return types.length === 1 && !leadingUnion ? types[0]! : this.node(start, { type: 'UnionTypeAnnotation', types });
 	}
 	private typeAtom(): A.TypeAnnotation {
+		return this.at('{') ? this.nested(() => this.typeAtomBody()) : this.typeAtomBody();
+	}
+	private typeAtomBody(): A.TypeAnnotation {
 		const start = this.peek();
 		let type: A.TypeAnnotation;
 		if (this.eat('(')) {
-			const typeAnnotation = this.typeAnnotation();
+			const typeAnnotation = this.nested(() => this.typeAnnotation());
 			this.expect(')');
 			type = this.node(start, { type: 'ParenthesizedTypeAnnotation', typeAnnotation });
 		} else if (this.eat('{')) {
@@ -528,9 +542,9 @@ class Parser {
 	}
 
 	private expression(min = 0, mutation = false, boundary = false, allowIn = true, cover = false, allowReturnType = true): A.Expression {
-		return this.nested(() => this.expressionBody(min, mutation, boundary, allowIn, cover, allowReturnType));
+		return this.expressionBody(min, mutation, boundary, allowIn, cover, allowReturnType);
 	}
-	private expressionBody(min = 0, mutation = false, boundary = false, allowIn = true, cover = false, allowReturnType = true): A.Expression {
+	private expressionBody(min = 0, mutation = false, boundary = false, allowIn = true, cover = false, allowReturnType = true, conditional = true): A.Expression {
 		const start = this.peek();
 		let left = this.unary(mutation, boundary, min === 0, allowReturnType);
 		while (true) {
@@ -547,7 +561,9 @@ class Parser {
 			const op = this.take();
 			if (left.type === 'UpdateExpression') this.fail('UPDATE_IN_EXPRESSION', left);
 			if (operator === '**' && (left.type === 'UnaryExpression' || left.type === 'AwaitExpression') && !this.parenthesized.has(left)) this.fail('UNARY_POWER', op);
-			const right = this.expression(operator === '**' ? priority : priority + 1, false, boundary, allowIn, false, allowReturnType);
+			const right = operator === '**'
+				? this.recursiveChain(() => this.expression(priority, false, boundary, allowIn, false, allowReturnType))
+				: this.expression(priority + 1, false, boundary, allowIn, false, allowReturnType);
 			if (operator === '===' || operator === '!==' || operator === '==' || operator === '!=') {
 				if (this.undefinedText(left) || this.undefinedText(right)) this.fail('TYPEOF_UNDEFINED_COMPARISON', op);
 			}
@@ -561,13 +577,22 @@ class Parser {
 				left = this.node(start, { type: 'LogicalExpression', operator, left, right });
 			} else left = this.node(start, { type: 'BinaryExpression', operator: operator as A.BinaryExpression['operator'], left, right });
 		}
-		if (min === 0 && this.eat('?')) {
-			if (left.type === 'ArrowFunctionExpression' && !this.parenthesized.has(left)) this.fail('UNEXPECTED_TOKEN');
-			if (left.type === 'UpdateExpression') this.fail('UPDATE_IN_EXPRESSION', left);
-			const consequent = this.expression(0, false, false, true, false, false);
-			this.expect(':');
-			const alternate = this.expression(0, false, boundary, allowIn, false, allowReturnType);
-			left = this.node(start, { type: 'ConditionalExpression', test: left, consequent, alternate });
+		if (conditional && min === 0 && this.at('?')) {
+			const branches: { start: A.NodeBase; test: A.Expression; consequent: A.Expression }[] = [];
+			let branchStart: A.NodeBase = start;
+			while (this.eat('?')) {
+				if (left.type === 'ArrowFunctionExpression' && !this.parenthesized.has(left)) this.fail('UNEXPECTED_TOKEN');
+				if (left.type === 'UpdateExpression') this.fail('UPDATE_IN_EXPRESSION', left);
+				const consequent = this.nested(() => this.expression(0, false, false, true, false, false));
+				this.expect(':');
+				branches.push({ start: branchStart, test: left, consequent });
+				branchStart = this.peek();
+				left = this.expressionBody(0, false, boundary, allowIn, false, allowReturnType, false);
+			}
+			for (let i = branches.length - 1; i >= 0; i--) {
+				const branch = branches[i]!;
+				left = this.node(branch.start, { type: 'ConditionalExpression', test: branch.test, consequent: branch.consequent, alternate: left });
+			}
 		}
 		if (min === 0 && assignments.has(this.peek().raw)) {
 			const op = this.peek();
@@ -589,7 +614,7 @@ class Parser {
 		const t = this.peek();
 		if (['!', '-', '+', 'typeof', 'delete', 'await'].includes(t.raw)) {
 			this.take();
-			const argument = this.nested(() => this.unary(false, boundary, false, allowReturnType));
+			const argument = this.recursiveChain(() => this.unary(false, boundary, false, allowReturnType));
 			if (t.raw === 'delete' && argument.type === 'Identifier') this.fail('STRICT_DELETE_IDENTIFIER', argument);
 			if (argument.type === 'UpdateExpression') this.fail('UPDATE_IN_EXPRESSION', argument);
 			if (t.raw === 'await') return this.node(t, { type: 'AwaitExpression', argument });
@@ -600,7 +625,7 @@ class Parser {
 		if (this.at('++') || this.at('--')) {
 			if (!mutation) this.fail('UPDATE_IN_EXPRESSION');
 			this.take();
-			const argument = this.assignmentTarget(this.nested(() => this.unary(false, boundary, false, allowReturnType)), false);
+			const argument = this.assignmentTarget(this.recursiveChain(() => this.unary(false, boundary, false, allowReturnType)), false);
 			if (argument.type !== 'Identifier' && argument.type !== 'MemberExpression') this.fail('INVALID_ASSIGNMENT_TARGET', argument);
 			return this.node(t, { type: 'UpdateExpression', operator: t.raw as '++' | '--', prefix: true, argument });
 		}
@@ -672,7 +697,8 @@ class Parser {
 		try {
 			if (allowReturnType) {
 				this.index += offset;
-				this.parameters();
+				// 試し読みも実際のアローと同じ深さで行い、引数列のキャッシュで上限を回避させません。
+				this.nested(() => this.parameters());
 				return true;
 			}
 			// 条件式の真側では、戻り値型を読んでも条件式の区切りが残る場合だけ採用します。
@@ -701,6 +727,9 @@ class Parser {
 		}
 	}
 	private arrow(async: boolean, boundary: boolean, allowReturnType = true): A.ArrowFunctionExpression {
+		return this.nested(() => this.arrowBody(async, boundary, allowReturnType));
+	}
+	private arrowBody(async: boolean, boundary: boolean, allowReturnType = true): A.ArrowFunctionExpression {
 		// 改行と条件式の区切りの扱いが違う解析結果は共有しません。
 		const key = this.index * 4 + Number(boundary) * 2 + Number(allowReturnType);
 		const cached = this.arrows.get(key);
@@ -737,7 +766,7 @@ class Parser {
 			return this.arrow(false, boundary, allowReturnType);
 		}
 		if (this.eat('(')) {
-			const expression = this.expression(0, mutation, false, true);
+			const expression = this.nested(() => this.expression(0, mutation, false, true));
 			if (this.at(',')) this.fail('COMMA_OPERATOR');
 			this.expect(')');
 			this.parenthesized.add(expression);
@@ -798,7 +827,7 @@ class Parser {
 				const args = this.arguments();
 				expression = this.node(start, { type: 'CallExpression', callee: expression, arguments: args, optional });
 			} else if (this.eat('[')) {
-				const property = this.expression();
+				const property = this.nested(() => this.expression());
 				this.expect(']');
 				expression = this.node(start, { type: 'MemberExpression', object: expression, property, computed: true, optional });
 			} else if (optional || this.eat('.')) {
@@ -871,6 +900,9 @@ class Parser {
 	}
 
 	private arguments(): (A.Expression | A.SpreadElement)[] {
+		return this.nested(() => this.argumentsBody());
+	}
+	private argumentsBody(): (A.Expression | A.SpreadElement)[] {
 		this.expect('(');
 		const args: (A.Expression | A.SpreadElement)[] = [];
 		while (!this.at(')')) {
@@ -889,6 +921,9 @@ class Parser {
 		return this.node(t, { type: 'Literal', value, raw: t.raw });
 	}
 	private template(): A.TemplateLiteral {
+		return this.nested(() => this.templateBody());
+	}
+	private templateBody(): A.TemplateLiteral {
 		const start = this.peek();
 		const expressions: A.Expression[] = [];
 		const quasis: A.TemplateElement[] = [];
@@ -904,6 +939,9 @@ class Parser {
 		return this.node(start, { type: 'TemplateLiteral', expressions, quasis });
 	}
 	private array(mutation: boolean): A.ArrayExpression {
+		return this.nested(() => this.arrayBody(mutation));
+	}
+	private arrayBody(mutation: boolean): A.ArrayExpression {
 		const start = this.expect('[');
 		const elements: (A.Expression | A.SpreadElement | null)[] = [];
 		while (!this.at(']')) {
@@ -922,13 +960,16 @@ class Parser {
 	}
 	private propertyKey(): { key: A.Expression; computed: boolean } {
 		if (this.eat('[')) {
-			const key = this.expression();
+			const key = this.nested(() => this.expression());
 			this.expect(']');
 			return { key, computed: true };
 		}
 		return { key: this.peek().kind === 'number' || this.peek().kind === 'string' ? this.literal() : this.identifier(true), computed: false };
 	}
 	private object(mutation: boolean): A.ObjectExpression {
+		return this.nested(() => this.objectBody(mutation));
+	}
+	private objectBody(mutation: boolean): A.ObjectExpression {
 		const start = this.expect('{');
 		const properties: (A.Property | A.SpreadElement)[] = [];
 		while (!this.at('}')) {
@@ -959,32 +1000,42 @@ class Parser {
 		return object;
 	}
 	// 分割代入の左辺が確定するまでは、既定値と式中の代入を区別できません。
-	private checkExpression(node: A.Node, root = false): void {
-		if (node.type === 'ArrowFunctionExpression') return;
-		if (node.type === 'AssignmentPattern') this.fail('ASSIGNMENT_IN_EXPRESSION', node);
-		if (node.type === 'AssignmentExpression') {
-			if (!root) this.fail('ASSIGNMENT_IN_EXPRESSION', node);
-			this.checkExpression(node.right);
-			return;
-		}
-		if (node.type === 'UpdateExpression') {
-			if (!root) this.fail('UPDATE_IN_EXPRESSION', node);
-			return;
-		}
-		if (node.type === 'ObjectExpression') {
-			let proto = false;
-			for (const property of node.properties) {
-				if (property.type === 'Property' && !property.computed && !property.shorthand && ((property.key.type === 'Identifier' && property.key.name === '__proto__') || (property.key.type === 'Literal' && property.key.value === '__proto__'))) {
-					if (proto) this.fail('UNEXPECTED_TOKEN', property);
-					proto = true;
+	private checkExpression(initial: A.Node, root = false): void {
+		const pending: A.Node[] = [initial];
+		while (pending.length) {
+			const node = pending.pop()!;
+			if (node.type === 'ArrowFunctionExpression') continue;
+			if (node.type === 'AssignmentPattern') this.fail('ASSIGNMENT_IN_EXPRESSION', node);
+			if (node.type === 'AssignmentExpression') {
+				if (node !== initial || !root) this.fail('ASSIGNMENT_IN_EXPRESSION', node);
+				pending.push(node.right);
+				continue;
+			}
+			if (node.type === 'UpdateExpression') {
+				if (node !== initial || !root) this.fail('UPDATE_IN_EXPRESSION', node);
+				continue;
+			}
+			if (node.type === 'ObjectExpression') {
+				let proto = false;
+				for (const property of node.properties) {
+					if (property.type === 'Property' && !property.computed && !property.shorthand && ((property.key.type === 'Identifier' && property.key.name === '__proto__') || (property.key.type === 'Literal' && property.key.value === '__proto__'))) {
+						if (proto) this.fail('UNEXPECTED_TOKEN', property);
+						proto = true;
+					}
 				}
 			}
-		}
-		for (const [key, value] of Object.entries(node)) {
-			if (key === 'loc' || key === 'typeAnnotation') continue;
-			if (Array.isArray(value)) {
-				for (const child of value) if (child && typeof child === 'object' && 'type' in child) this.checkExpression(child as A.Node);
-			} else if (value && typeof value === 'object' && 'type' in value) this.checkExpression(value as A.Node);
+			const begin = pending.length;
+			for (const key in node) {
+				if (key === 'loc' || key === 'typeAnnotation') continue;
+				const value = (node as unknown as Record<string, unknown>)[key];
+				if (Array.isArray(value)) {
+					for (const child of value) if (child && typeof child === 'object' && 'type' in child) pending.push(child as A.Node);
+				} else if (value && typeof value === 'object' && 'type' in value) pending.push(value as A.Node);
+			}
+			// 診断は元の字句順を保ち、長い左結合の連鎖は JavaScript のスタックに積みません。
+			for (let left = begin, right = pending.length - 1; left < right; left++, right--) {
+				[pending[left], pending[right]] = [pending[right]!, pending[left]!];
+			}
 		}
 	}
 

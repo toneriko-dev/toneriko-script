@@ -47,35 +47,52 @@ const domExceptionPrototype = typeof DOMException === 'undefined' ? undefined : 
 const domExceptionName = domExceptionPrototype && Object.getOwnPropertyDescriptor(domExceptionPrototype, 'name')?.get;
 const hiddenErrorKeys = new Set(['stack', 'sourceURL', 'line', 'column', 'originalLine', 'originalColumn', 'fileName', 'lineNumber', 'columnNumber']);
 
-let errorKinds = new WeakMap<object, boolean>();
+let scriptObjects = new WeakSet<object>();
+const createdScriptObjects = new WeakSet<object>();
 
 /** ホストが値の原型を変更できる境界で、判定だけを一括して破棄する。 */
-export function invalidateErrorKinds(): void { errorKinds = new WeakMap(); }
+export function invalidateErrorKinds(): void { scriptObjects = new WeakSet(); }
 
 /** スクリプトで作る辞書と配列は、ホストへ渡るまではエラーにならない。 */
-export function scriptObject<T extends object>(value: T): T { errorKinds.set(value, false); return value; }
+export function scriptObject<T extends object>(value: T): T {
+	createdScriptObjects.add(value);
+	scriptObjects.add(value);
+	return value;
+}
 
 export function errorValue(value: unknown, pos: AST.Pos = { line: 1, column: 1 }): value is object {
 	if (typeof value !== 'object' || value === null) return false;
-	const cached = errorKinds.get(value);
-	if (cached !== undefined) return cached;
-	const result = classifyError(value, pos);
-	errorKinds.set(value, result);
-	return result;
+	if (scriptObjects.has(value)) return false;
+	const error = classifyError(value, pos);
+	// 中断後も、作成元がスクリプトと分かる値だけを検証して近道へ戻します。
+	if (!error && createdScriptObjects.has(value)) scriptObjects.add(value);
+	return error;
 }
 
 /** 位置情報のキーは、Proxy の罠が原型を変えた場合にも古い判定で公開しない。 */
 function propertyError(value: unknown, key: string, pos: AST.Pos): value is object {
 	if (!hiddenErrorKeys.has(key) || typeof value !== 'object' || value === null) return errorValue(value, pos);
-	const result = classifyError(value, pos);
-	errorKinds.set(value, result);
-	return result;
+	return classifyError(value, pos, false);
 }
 
 /** 情報を隠す判定は広く取り、利用者の toStringTag の getter は呼ばない。 */
-function classifyError(value: unknown, _pos: AST.Pos = { line: 1, column: 1 }): value is object {
+function classifyError(value: unknown, _pos: AST.Pos = { line: 1, column: 1 }, plain = true): value is object {
 	if (isScriptErrorValue(value)) return true;
 	if (typeof value !== 'object' || value === null) return false;
+	// 通常の辞書は例外を使うブランド検査や原型の全走査を省きます。
+	// ホストの Proxy は操作の間にも値を変えられるため、判定結果は保存しません。
+	if (plain) {
+		const prototype = Object.getPrototypeOf(value);
+		const array = prototype === Array.prototype && Array.isArray(value)
+			&& Object.getPrototypeOf(prototype) === Object.prototype
+			&& !Object.getOwnPropertyDescriptor(prototype, Symbol.toStringTag);
+		if ((prototype === null || prototype === Object.prototype || array)
+			&& !Object.getOwnPropertyDescriptor(value, Symbol.toStringTag)
+			&& (prototype === null || !Object.getOwnPropertyDescriptor(Object.prototype, Symbol.toStringTag))) {
+			// 原型を外されたネイティブ Error の内部ブランドは残っています。
+			return !array && Object.prototype.toString.call(value) === '[object Error]';
+		}
+	}
 	if (domExceptionName) {
 		try { Reflect.apply(domExceptionName, value, []); return true; } catch { /* 通常の Error 判定を続ける。 */ }
 	}

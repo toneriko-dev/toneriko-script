@@ -1,6 +1,7 @@
 import { strict as assert } from 'node:assert';
 import { describe, test, vi } from 'vitest';
 import { parse } from '../../src/v2/parser/index.js';
+import { Scanner } from '../../src/v2/parser/scanner.js';
 import { Interpreter } from '../../src/v2/interpreter.js';
 import { formatDiagnostic, TonerikoScriptSyntaxError } from '../../src/v2/diagnostics.js';
 
@@ -31,6 +32,42 @@ function globals(depth: number) {
 	return { data, objectData, identity: (value: unknown) => value, lookup: { 0: 0 } };
 }
 
+// 各段が全優先順位を含んでも、演算子の数は再帰のフレームを増やしません。
+const operators = 'true || false && 0 === 1 < 2 + 3 * 1 ** - ';
+const mixedForms: [string, (depth: number) => string][] = [
+	['全優先順位を含む括弧', n => (operators + '(').repeat(n) + '1' + ')'.repeat(n)],
+	['全優先順位を含む配列', n => ('[' + operators).repeat(n) + '1' + ']'.repeat(n)],
+	['全優先順位を含む呼び出し', n => ('identity(' + operators).repeat(n) + '1' + ')'.repeat(n)],
+	['全優先順位を含む型付きアローの既定値', n => 'const f = ' + ('(p: number = false ? ' + operators + '1 : ').repeat(n - 1) + '(p: number = 1): number => p' + '): number => p'.repeat(n - 1)],
+	['全優先順位を含むテンプレート', n => ('`${' + operators).repeat(n) + '1' + '}`'.repeat(n)],
+	['全優先順位と構文を混ぜた入れ子', n => {
+		const pairs: [string, string, number][] = [['(' + operators, ')', 1], ['[' + operators, ']', 1], ['identity(' + operators, ')', 1], ['`${' + operators, '}`', 1], ['(([p]: number[] = false ? ' + operators + '1 : ', '): number => p)', 3]];
+		let prefix = '', suffix = '';
+		for (let i = 0, depth = 0; depth < n; i++) {
+			const pair = pairs[i % pairs.length]!;
+			if (depth + pair[2] > n || (pair[2] === 3 && depth + 3 === n)) { prefix += '('; suffix = ')' + suffix; depth++; }
+			else { prefix += pair[0]; suffix = pair[1] + suffix; depth += pair[2]; }
+		}
+		return prefix + '1' + suffix;
+	}],
+];
+
+function evaluatedMixed(depth: number): string {
+	const pairs: [string, string, number][] = [
+		['false || true && (0 === 1 < 2 + 3 * 1 ** -1 ? null : ', ')', 1],
+		['[', '][0]', 1], ['identity(', ')', 1], ['`${', '}`', 1],
+		['((p: string = ', '): string => p)()', 2],
+		['(([p]: string[] = [', ']): string => p)()', 4],
+	];
+	let prefix = '', suffix = '';
+	for (let i = 0, used = 0; used < depth - 1; i++) {
+		const pair = pairs[i % pairs.length]!;
+		if (used + pair[2] > depth - 1) { prefix += '('; suffix = ')' + suffix; used++; }
+		else { prefix += pair[0]; suffix = pair[1] + suffix; used += pair[2]; }
+	}
+	return prefix + 'probe()' + suffix;
+}
+
 const chains: [string, (size: number) => string, unknown][] = [
 	['加算', n => 'out(' + Array(n).fill('1').join(' + ') + ')', 10_000],
 	['文字列の連結', n => 'let x = "a"; out((' + Array(n).fill('x').join(' + ') + ').length)', 10_000],
@@ -44,6 +81,44 @@ const chains: [string, (size: number) => string, unknown][] = [
 ];
 
 describe('構文の深さの上限', () => {
+	for (const [engine, error] of [
+		['V8', new RangeError('Maximum call stack size exceeded')],
+		['SpiderMonkey', Object.assign(new Error('too much recursion'), { name: 'InternalError' })],
+		['JSC', new RangeError('Maximum call stack size exceeded.')],
+	] as const) {
+		test(`${engine}のスタック溢れは最後の防御で構文エラーにする`, () => {
+			const next = vi.spyOn(Scanner.prototype, 'next').mockImplementation(() => { throw error; });
+			try { assert.throws(() => parse('1'), { code: 'NESTING_TOO_DEEP' }); }
+			finally { next.mockRestore(); }
+		});
+	}
+	test('スタック溢れの判定に正規表現を使わない', () => {
+		const next = vi.spyOn(Scanner.prototype, 'next').mockImplementation(() => { throw new RangeError('Maximum call stack size exceeded'); });
+		const original = RegExp.prototype.test;
+		const inspect = vi.spyOn(RegExp.prototype, 'test').mockImplementation(function (this: RegExp, value: string) {
+			if (this.source === 'stack|recursion') throw new SyntaxError('Invalid regular expression: Stack overflow');
+			return original.call(this, value);
+		});
+		try { assert.throws(() => parse('1'), { code: 'NESTING_TOO_DEEP' }); }
+		finally { inspect.mockRestore(); next.mockRestore(); }
+	});
+	test('型付きアローの試し読み中のスタック溢れを別の構文エラーに置き換えない', () => {
+		const original = Object.hasOwn;
+		let raised = 0;
+		const own = vi.spyOn(Object, 'hasOwn').mockImplementation((object, key) => {
+			if (key === 'marker' && raised++ === 0) throw new RangeError('Maximum call stack size exceeded');
+			return original(object, key);
+		});
+		try { assert.throws(() => parse('(p = marker): number => p'), { code: 'NESTING_TOO_DEEP' }); }
+		finally { own.mockRestore(); }
+	});
+	test('スタック溢れ以外のRangeErrorを深さの診断に置き換えない', () => {
+		const error = new RangeError('Invalid string length');
+		const next = vi.spyOn(Scanner.prototype, 'next').mockImplementation(() => { throw error; });
+		try { assert.throws(() => parse('1'), actual => actual === error); }
+		finally { next.mockRestore(); }
+	});
+
 	test('節を作るたびに Object.values で部分木の深さを調べ直さない', () => {
 		const source = Array.from({ length: 50 }, (_, i) => `function f${i}(a: number, b: string = "x"): string { let r = []; for (const x of [a, a + 1, a * 2]) { if (x > 3 && b !== "" || x === 0) { r.push(b + x); } else { r.push(b); } } return r.length > 1 ? r[0] : b; }`).join('\n');
 		const values = vi.spyOn(Object, 'values');
@@ -62,6 +137,36 @@ describe('構文の深さの上限', () => {
 			const program = parse(source(256)).program;
 			await new Interpreter(globals(256), { maxSteps: 1_000_000 }).exec(program);
 			assert.throws(() => parse(source(257)), error => error instanceof TonerikoScriptSyntaxError && error.code === 'NESTING_TOO_DEEP');
+		});
+	}
+	test('混合256段の受理と257段の拒否はスタック溢れの変換に頼らない', () => {
+		const original = String.prototype.includes;
+		let fallbacks = 0;
+		const inspect = vi.spyOn(String.prototype, 'includes').mockImplementation(function (this: string, value: string, position?: number) {
+			if (value === 'stack' || value === 'recursion') fallbacks++;
+			return original.call(this, value, position);
+		});
+		try {
+			const source = mixedForms[5]![1];
+			assert.doesNotThrow(() => parse(source(256)));
+			assert.throws(() => parse(source(257)), { code: 'NESTING_TOO_DEEP' });
+			assert.equal(fallbacks, 0);
+		} finally { inspect.mockRestore(); }
+	});
+	test('混合256段の評価で最も内側の呼び出しに一度到達する', async () => {
+		let reached = 0;
+		await new Interpreter({ identity: (value: unknown) => value, probe: () => { reached++; return 1; } }, { maxSteps: 1_000_000 }).exec(parse(evaluatedMixed(256)).program);
+		assert.equal(reached, 1);
+		assert.throws(() => parse(evaluatedMixed(257)), { code: 'NESTING_TOO_DEEP' });
+	});
+	for (const [name, source] of mixedForms) {
+		test(`${name}の256段を読み評価でき、257段は明示的な上限で拒否する`, async () => {
+			await new Interpreter(globals(256), { maxSteps: 1_000_000 }).exec(parse(source(256)).program);
+			assert.throws(() => parse(source(257)), error => {
+				assert.ok(error instanceof TonerikoScriptSyntaxError);
+				assert.equal(error.code, 'NESTING_TOO_DEEP');
+				return true;
+			});
 		});
 	}
 	for (const [name, source, expected] of chains) {
@@ -83,6 +188,8 @@ describe('構文の深さの上限', () => {
 		});
 	}
 	for (const source of [
+		'1 ** '.repeat(1024) + '('.repeat(256) + '1' + ')'.repeat(256),
+		'true || ' + '1 ** '.repeat(500) + ('[' + operators).repeat(254) + '1' + ']'.repeat(254),
 		'!'.repeat(1024) + '('.repeat(256) + 'true' + ')'.repeat(256),
 		'('.repeat(256) + '!'.repeat(1024) + 'true' + ')'.repeat(256),
 	]) {

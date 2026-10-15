@@ -10,6 +10,7 @@ const programs = {
 	arrRead: ['let a = [1, 2, 3, 4]; let s = 0; for (let i = 0; i < 100000; i++) { s += a[i % 4]; } out(s)', 250000],
 	arrForOf: ['let a = []; for (let i = 0; i < 100000; i++) a.push(i); let s = 0; for (const x of a) s += x; out(s)', 4999950000],
 	objWrite: ['let o = { a: 1 }; for (let i = 0; i < 100000; i++) { o.a = i; } out(o.a)', 99999],
+	hostRead: ['let s = 0; for (let i = 0; i < 100000; i++) { s += host.a; } out(s)', 100000],
 };
 const big = Array.from({ length: 1500 }, (_, i) => `function f${i}(a: number, b: string = "x"): string { let r = []; for (const x of [a, a + 1, a * 2]) { if (x > 3 && b !== "" || x === 0) { r.push(\`\${b}:\${x}\`); } else { r.push(b + x); } } return r.length > 1 ? r[0] : b; }`).join('\n');
 const failure = error => ({ name: error?.name ?? 'Error', message: String(error?.message ?? error), stack: error?.stack });
@@ -23,7 +24,7 @@ if (process.argv[2] === '--worker') {
 	for (const [name, [source, expected]] of Object.entries(programs)) {
 		for (let trial = 0; trial < 5; trial++) {
 			const output = [];
-			const interpreter = new Interpreter({ out: value => { output.push(value); } }, { maxBusyTime: 60_000, maxSteps: 1e9 });
+			const interpreter = new Interpreter({ host: { a: 1 }, out: value => { output.push(value); } }, { maxBusyTime: 60_000, maxSteps: 1e9 });
 			const started = performance.now();
 			try {
 				await interpreter.exec(parse(source).program);

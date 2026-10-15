@@ -272,6 +272,20 @@ structuredClone は共有参照と循環を保存し、関数は DataCloneError 
 
 Error の生成も標準関数の単一定義に含めます。new Error だけが new で呼べ、既存の例外値の原型・非公開プロパティの規則を守ります。
 
+### 時刻とホストとの接続
+
+Date.format と Date.parts の時刻は Unix epoch からのミリ秒、offset は UTC より東を正とする分です。省略時はホストの dateOffsetMinutes、それも無ければその時刻 t の実行環境の `-new Date(t).getTimezoneOffset()` を使います。明示した offset は固定の時差です。Date.parts は原型なしの year/month/day/hour/minute/second/millisecond/weekday を返します。月は 1〜12、曜日は日曜 0〜土曜 6 です。
+
+Date.format の記号は YYYY/MM/DD/HH/mm/ss/SSS/d/ddd/dddd/Z/ZZ です。ddd/dddd は固定英語曜日、Z/ZZ は +09:00/+0900 の形、[文字列] はリテラルです。未知の英字記号と閉じていないリテラル、無効な時刻は RangeError です。
+
+console.log は値を文字列化せず、可変長引数を readonly Value[] としてホストの onConsoleLog へ一度渡します。オブジェクトは参照を渡し、スナップショットにはしません。未指定ならホストの console.log に渡します。
+
+setTimeout/setInterval は本体の exec() が解決した後も動きます。数値 ID で管理し、両方の clear 関数で解除できます。interval は前回の関数が待機中でも次を開始できます。コールバックごとに新しいステップ予算を使い、その中で呼ぶ配列メソッドは同じ予算を共有します。連続稼働時間はインタプリタ全体で共有します。未捕捉例外は onUnhandledError、未指定ならホストの console.error に通知します。実行上限超過と abort() はタイマーをすべて解除し、実行中と待機中のスクリプトを停止します。ホスト側の外部処理を取り消す場合は AbortSignal に従う必要があります。
+
+sleep は有限の非負ミリ秒を待ちます。range は start/end/step に安全整数を受け、step の省略値は 1、0 はエラー、終端は含みません。方向が合わなければ空配列です。
+
+mapConcurrent の既定 limit は 4 で、正の安全整数を受けます。開始順と結果の順序は添字順です。最初の失敗を観測すると新規の開始を止め、開始済みの処理を待って最初のエラーを返します。開始済みの副作用は取り消しません。全ワーカーが親の実行予算を共有します。
+
 ### 関数を呼ぶ順
 
 配列のメソッドは、すべて関数を 1 つずつ順に呼びます。今は `map`、`flat_map`、`sort` だけが並行に呼ぶので、関数の中で待つと終わる順が入れ替わります(`[1, 2, 3]` の `map` で `[2, 3, 1]`)。並行に呼びたいときは `arr.mapConcurrent(f, limit?)` を使います。`limit` は同時に動かす数の上限で、`Mk.api` をまとめて呼ぶときに、同時に送る数を抑えられます。

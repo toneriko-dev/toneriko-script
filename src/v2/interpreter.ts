@@ -1,4 +1,5 @@
 import { errorDefinition } from './stdlib/basics.js';
+import { RuntimeServices, type ServiceOptions } from './stdlib/services.js';
 import { standardGlobals } from './stdlib/index.js';
 import { isStdFunction, STANDARD_FUNCTION, validateArguments, type StdContext } from './stdlib/core.js';
 import type * as A from './ast.js';
@@ -30,7 +31,7 @@ export function hostFunction(body: (args: Value[], context: HostContext) => unkn
 	hostBodies.set(fn, body);
 	return fn;
 }
-export type InterpreterOptions = {
+export type InterpreterOptions = ServiceOptions & {
 	maxSteps?: number;
 	/** 同時に実行するスクリプト関数の数を制限します。 */
 	maxCallDepth?: number;
@@ -47,6 +48,7 @@ export class Interpreter {
 	private readonly synchronousNodes = new WeakMap<A.Statement | A.Expression, Synchronous | null>();
 	private readonly maxCallDepth: number;
 	private readonly global: Environment;
+	private readonly services: RuntimeServices;
 	private readonly controller = new AbortController();
 	private stopped: ExecutionStopped | null = null;
 	private readonly now: () => number;
@@ -62,6 +64,10 @@ export class Interpreter {
 	private active = 0;
 
 	constructor(globals: Record<string, unknown> = {}, private readonly options: InterpreterOptions = {}) {
+		this.services = new RuntimeServices(options, this.controller.signal, (fn, args, pos) => {
+			const execution = this.execution();
+			return this.run(this.invoke(fn, args, null, execution, pos), execution);
+		});
 		this.now = options.now ?? (() => performance.now());
 		this.yieldInterval = options.yieldInterval ?? 8;
 		this.maxBusyTime = options.maxBusyTime ?? 5000;
@@ -434,7 +440,9 @@ export class Interpreter {
 		this.tick(execution, pos);
 		if (isStdFunction(fn)) {
 			const context: StdContext = {
-				pos, properties: execution.properties,
+				pos, properties: execution.properties, services: this.services,
+				wait: function* (promise) { return yield { wait: promise, pos }; },
+				parallel: (callback, arguments_) => this.run(this.invoke(callback, arguments_, null, execution, pos), execution, true),
 				tick: () => this.tick(execution, pos),
 				checkpoint: () => this.checkpoint(),
 				call: (callback, arguments_, target = null) => this.invoke(callback, arguments_, target, execution, pos),

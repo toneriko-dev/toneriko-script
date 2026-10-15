@@ -1,3 +1,4 @@
+import type { RuntimeServices } from './services.js';
 import type { Pos } from '../ast.js';
 import type { PropertyAccess, Value } from '../runtime/values.js';
 import { runtimeError } from '../runtime/errors.js';
@@ -5,6 +6,9 @@ import { runtimeError } from '../runtime/errors.js';
 export type StdFrame = Generator<any, Value, any>;
 export interface StdContext {
 	pos: Pos;
+	services?: RuntimeServices;
+	wait?(promise: PromiseLike<unknown>): StdFrame;
+	parallel?(fn: Value, args: Value[]): Promise<Value>;
 	properties: PropertyAccess;
 	tick(): void;
 	checkpoint(): StdFrame;

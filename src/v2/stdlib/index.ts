@@ -9,7 +9,12 @@ import { catalogOf, makeFunction, type StdDefinition, type StdFunction } from '.
 import type { Value } from '../runtime/values.js';
 
 export const definitions: readonly StdDefinition[] = [...basicDefinitions, ...numberDefinitions, ...stringDefinitions, ...arrayDefinitions, ...collectionDefinitions, ...objectDefinitions, ...serviceDefinitions, ...iteratorDefinitions];
-export const catalog = catalogOf(definitions);
+export const constantDefinitions = [
+	{ name: 'NaN', value: NaN, description: { ja: '数でない数値を表します。', en: 'Represent a not-a-number value.' } },
+	{ name: 'Infinity', value: Infinity, description: { ja: '正の無限大を表します。', en: 'Represent positive infinity.' } },
+	...Object.entries(mathConstants).map(([name, value]) => ({ name: `Math.${name}`, value, description: { ja: `数学定数 ${name} です。`, en: `The mathematical constant ${name}.` } })),
+].map(definition => ({ ...definition, receiver: 'global' as const, kind: 'constant' as const, args: [], returns: 'number' }));
+export const catalog = [...catalogOf(definitions), ...constantDefinitions.map(({ value: _, ...metadata }) => metadata)];
 const methods: Record<string, Record<string, StdFunction>> = Object.create(null);
 for (const type of ['array', 'string', 'number', 'iterator']) methods[type] = Object.create(null);
 const keys = new Set<string>();
@@ -30,8 +35,12 @@ export function standardGlobals(): Record<string, Value> {
 		if (definition.receiver !== 'global' || !definition.name.includes('.')) continue;
 		const [namespace, name] = definition.name.split('.') as [string, string];
 		const object = globals[namespace] ??= Object.create(null);
-		Object.defineProperty(object, name, { value: makeFunction(definition), enumerable: true, writable: true, configurable: true });
+		Object.defineProperty(object, name, { value: makeFunction(definition), enumerable: false, writable: true, configurable: true });
 	}
-	Object.assign(globals['Math'] as object, mathConstants);
+	for (const definition of constantDefinitions) {
+		const [namespace, name] = definition.name.split('.');
+		if (name === undefined) globals[namespace!] = definition.value;
+		else Object.defineProperty(globals[namespace!]!, name, { value: definition.value, enumerable: false, writable: false, configurable: false });
+	}
 	return globals;
 }

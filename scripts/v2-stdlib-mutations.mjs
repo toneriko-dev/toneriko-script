@@ -11,7 +11,7 @@ const mutations = [
 	{ name: 'range-excludes-end', file: 'src/v2/stdlib/services.ts', before: 'step > 0 ? value < end : value > end', after: 'step > 0 ? value <= end : value >= end' },
 	{ name: 'map-sequential', file: 'src/v2/stdlib/arrays.ts', before: 'const xs = requireArray(ctx, r), fn = callable(ctx, args[0]); noThis(ctx, args[1]); const length = xs.length; const out: Value[] = [];', after: "const xs = requireArray(ctx, r), fn = callable(ctx, args[0]); noThis(ctx, args[1]); const length = xs.length; const out: Value[] = [];\n\t\tif (String(name) === 'map') return yield ctx.wait!(Promise.all(xs.map((value, i) => ctx.parallel!(fn, [value, i, xs]))));" },
 	{ name: 'sort-yields', file: 'src/v2/stdlib/collections.ts', before: 'return ++work.count % 64 === 0;', after: 'work.count++; return false;' },
-	{ name: 'catalog-complete', file: 'src/v2/stdlib/index.ts', before: 'export const catalog = catalogOf(definitions);', after: 'export const catalog = catalogOf(definitions).slice(1);' },
+	{ name: 'catalog-complete', file: 'src/v2/stdlib/index.ts', before: 'export const catalog = [...catalogOf(definitions),', after: 'export const catalog = [...catalogOf(definitions).slice(1),' },
 ];
 const temporary = mkdtempSync(join(process.cwd(), '.v2-stdlib-mutations-'));
 const testPath = join('test/v2', `${basename(temporary).replace(/^\./, '')}.ts`);
@@ -20,7 +20,7 @@ const testSource = String.raw`
 import { expect, test } from 'vitest';
 import { Interpreter } from '../../src/v2/interpreter.js';
 import { parse } from '../../src/v2/parser/index.js';
-import { catalog, definitions } from '../../src/v2/stdlib/index.js';
+import { catalog, definitions, constantDefinitions } from '../../src/v2/stdlib/index.js';
 async function output(source: string, globals: Record<string, unknown> = {}, options = {}) {
   const result: unknown[] = [];
   await new Interpreter({ ...globals, emit: (value: unknown) => result.push(structuredClone(value)) }, options).exec(parse(source).program);
@@ -56,7 +56,7 @@ test('sort-yields', async () => {
   expect(result).toEqual([[prefix+'a',prefix+'b']]); expect(yields).toBeGreaterThan(0); expect(maximumGap).toBeLessThanOrEqual(32);
 });
 test('catalog-complete', () => {
-  expect(catalog.map(d=>d.receiver+':'+d.name)).toEqual(definitions.map(d=>d.receiver+':'+d.name));
+  expect(catalog.map(d=>d.receiver+':'+d.name)).toEqual([...definitions, ...constantDefinitions].map(d=>d.receiver+':'+d.name));
 });
 `;
 function check() {

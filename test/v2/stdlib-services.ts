@@ -110,3 +110,9 @@ test('タイマー内の実行上限はホストに一度通知して全体を�
 	expect(errors[0]).toMatchObject({ code: 'STEP_LIMIT_EXCEEDED' });
 	await expect(vm.exec(parse('1;').program)).rejects.toMatchObject({ code: 'STEP_LIMIT_EXCEEDED' });
 });
+
+test('null と省略のタイマー解除は何もせず null を返す', async () => {
+	const { output, vm } = await execute('let timer = null; out(clearTimeout(timer)); out(clearInterval(timer)); out(clearTimeout()); out(clearInterval());');
+	expect(output).toEqual([null, null, null, null]);
+	vm.abort();
+});

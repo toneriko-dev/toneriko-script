@@ -181,7 +181,7 @@ let picked: string | null = null
 
 ## 標準ライブラリ
 
-関数の名前、所属、引数の名前と型、戻り値の型、日本語と英語の 1 行説明、実装は `src/v2/stdlib/` の単一定義に置きます。実行表と一覧 JSON は同じ定義から作り、一覧は `toneriko-script/v2/stdlib/catalog.json` で公開します。型は「型注釈」の 6 種類を使い、省略可能・可変長は別の項目で表します。引数の実行時検査は標準関数の責任とし、型注釈の検査とは分けます。
+関数の名前、所属、引数の名前と型、戻り値の型、日本語と英語の 1 行説明、実装は `src/v2/stdlib/` の単一定義に置きます。実行表と一覧 JSON は同じ定義から作り、一覧は `toneriko-script/v2/stdlib/catalog.json` で公開します。型は「型注釈」の 6 種類を使い、省略可能・可変長は別の項目で表します。引数の実行時検査は標準関数の責任とし、型注釈の検査とは分けます。定数も単一定義から実行表と一覧を作り、一覧では kind を constant、args を空配列、returns を値の型にします。
 
 標準関数は評価フレームを使い、利用者の関数呼び出しと実行予算・中止状態・書記素キャッシュを共有します。反復処理の途中でチェックポイントを通し、ホストへの譲りと実行上限の確認を行います。
 
@@ -193,7 +193,7 @@ JavaScript と同じ名前、同じ引数、同じ結果にします(文字列�
 
 | 分類 | 入れるもの |
 |---|---|
-| 値 | `Math`(全部)、`JSON.parse`/`stringify`、`Number()`、`String()`、`parseInt`、`parseFloat`、`Number.isInteger`、`Array.isArray`、`Array.from`、`Object.keys`/`values`/`entries`/`fromEntries`/`groupBy`、`structuredClone`、`encodeURIComponent`、`decodeURIComponent` |
+| 値 | `NaN`、`Infinity`、`Math`(全部)、`JSON.parse`/`stringify`、`Number()`、`String()`、`parseInt`、`parseFloat`、`Number.isInteger`、`Array.isArray`、`Array.from`、`Object.keys`/`values`/`entries`/`fromEntries`/`groupBy`、`structuredClone`、`encodeURIComponent`、`decodeURIComponent` |
 | 配列 | `length`、`push pop shift unshift slice splice concat join indexOf includes find findIndex filter map flatMap flat reduce some every forEach sort reverse toSorted toReversed at fill entries` |
 | 文字列 | `length`、`slice substring at indexOf includes startsWith endsWith padStart padEnd trim toUpperCase toLowerCase split replace replaceAll repeat` |
 | 数 | `toFixed`、`toString(radix)` |
@@ -230,9 +230,9 @@ JavaScript と同じ名前、同じ引数、同じ結果にします(文字列�
 
 ### 乱数と数値関数
 
-`Math` の公開名は Node 24.19.0 の一覧で固定し、`f16round` と 8 個の定数も含めます。ホストに追加された名前は自動で公開しません。数のメソッドは `toFixed` と `toString(radix)` です。URI の変換失敗は `URIError`、数値の範囲外は `RangeError` とし、診断コードと日英の説明を付けます。
+`Math` の公開名は Node 24.19.0 の一覧で固定し、`f16round` と 8 個の定数も含めます。ホストに追加された名前は自動で公開しません。名前空間のメンバーは列挙せず、Math の定数への代入・削除はエラーです。NaN と Infinity はグローバルの定数として公開します。数のメソッドは `toFixed` と `toString(radix)` です。URI の変換失敗は `URIError`、数値の範囲外は `RangeError` とし、診断コードと日英の説明を付けます。
 
-`Math.seededRandom(seed)` は xoshiro128** を使い、版や実行環境が変わっても同じ種の列を変えません。種は有限の数か文字列です。数は型 byte 0 と little-endian binary64、文字列は型 byte 1 と little-endian UTF-16 コード単位です。文字列は正規化せず、数の -0 も区別します。
+`Math.seededRandom(seed)` は xoshiro128** を使い、版や実行環境が変わっても同じ種の列を変えません。種は有限の数か文字列です。数は型 byte 0 と little-endian binary64、文字列は型 byte 1 と little-endian UTF-16 コード単位です。文字列は正規化せず、数の -0 も区別します。文字列の符号化とハッシュは UTF-16 符号単位ごとに 1 ステップを計上し、64 単位ごとにホストへ譲る判定を行います。
 
 初期状態の 4 ワードは、番号 byte 0〜3 をそれぞれ種の byte 列の先頭に付け、FNV-1a（初期値 0x811c9dc5、素数 0x01000193、32 bit 桁あふれ）で作ります。全ワードが 0 の場合は先頭を 1 にします。xoshiro128** の rotate は出力側 7、状態側 11、shift は 9、出力乗数は 5 と 9 です。乱数一つは連続した出力 a,b から `((a >>> 5) * 2^26 + (b >>> 6)) / 2^53` として作り、範囲は [0,1) です。9 種の先頭 32 個と 4096 個の列の SHA-256 をテストで固定します。
 
@@ -284,7 +284,7 @@ Date.format の記号は YYYY/MM/DD/HH/mm/ss/SSS/d/ddd/dddd/Z/ZZ です。ddd/dd
 
 console.log は値を文字列化せず、可変長引数を readonly Value[] としてホストの onConsoleLog へ一度渡します。オブジェクトは参照を渡し、スナップショットにはしません。未指定ならホストの console.log に渡します。
 
-setTimeout/setInterval は本体の exec() が解決した後も動きます。数値 ID で管理し、両方の clear 関数で解除できます。interval は前回の関数が待機中でも次を開始できます。コールバックごとに新しいステップ予算を使い、その中で呼ぶ配列メソッドは同じ予算を共有します。連続稼働時間はインタプリタ全体で共有します。未捕捉例外は onUnhandledError、未指定ならホストの console.error に通知します。実行上限超過と abort() はタイマーをすべて解除し、実行中と待機中のスクリプトを停止します。ホスト側の外部処理を取り消す場合は AbortSignal に従う必要があります。
+setTimeout/setInterval は本体の exec() が解決した後も動きます。数値 ID で管理し、両方の clear 関数で解除できます。clearTimeout/clearInterval の引数省略と null は何もせず null を返します。interval は前回の関数が待機中でも次を開始できます。コールバックごとに新しいステップ予算を使い、その中で呼ぶ配列メソッドは同じ予算を共有します。連続稼働時間はインタプリタ全体で共有します。未捕捉例外は onUnhandledError、未指定ならホストの console.error に通知します。実行上限超過と abort() はタイマーをすべて解除し、実行中と待機中のスクリプトを停止します。ホスト側の外部処理を取り消す場合は AbortSignal に従う必要があります。
 
 sleep は有限の非負ミリ秒を待ちます。range は start/end/step に安全整数を受け、step の省略値は 1、0 はエラー、終端は含みません。方向が合わなければ空配列です。
 

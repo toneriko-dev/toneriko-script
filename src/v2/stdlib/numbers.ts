@@ -41,21 +41,30 @@ function f16round(value: number): number {
 
 /** 種の byte 順と演算の桁あふれは、実行環境に依存しない乱数列の仕様です。 */
 export function seededRandom(seed: string | number): () => number {
-	const bytes: number[] = [];
+	const frame = prepareSeed(seed);
+	let result = frame.next();
+	while (!result.done) result = frame.next();
+	return result.value;
+}
+
+// 各 UTF-16 符号単位を直接ハッシュへ送り、大きな中間 byte 配列を作りません。
+function* prepareSeed(seed: string | number, ctx?: StdContext): Generator<any, () => number, any> {
+	const state = Array.from({ length: 4 }, (_, index) => Math.imul(0x811c9dc5 ^ index, 0x01000193));
+	const byte = (value: number) => { for (let i = 0; i < 4; i++) state[i] = Math.imul(state[i]! ^ value, 0x01000193) >>> 0; };
 	if (typeof seed === 'number') {
-		bytes.push(0);
+		byte(0);
 		const data = new DataView(new ArrayBuffer(8));
 		data.setFloat64(0, seed, true);
-		for (let i = 0; i < 8; i++) bytes.push(data.getUint8(i));
+		for (let i = 0; i < 8; i++) byte(data.getUint8(i));
 	} else {
-		bytes.push(1);
-		for (let i = 0; i < seed.length; i++) bytes.push(seed.charCodeAt(i) & 255, seed.charCodeAt(i) >>> 8);
+		byte(1);
+		for (let i = 0; i < seed.length; i++) {
+			ctx?.tick();
+			const unit = seed.charCodeAt(i);
+			byte(unit & 255); byte(unit >>> 8);
+			if (ctx && (i & 63) === 63) yield ctx.checkpoint();
+		}
 	}
-	const state = Array.from({ length: 4 }, (_, index) => {
-		let hash = Math.imul(0x811c9dc5 ^ index, 0x01000193);
-		for (const byte of bytes) hash = Math.imul(hash ^ byte, 0x01000193);
-		return hash >>> 0;
-	});
 	if (state.every((value): boolean => value === 0)) state[0] = 1;
 	const rotate = (x: number, k: number) => (x << k | x >>> (32 - k)) >>> 0;
 	const next = () => {
@@ -97,10 +106,10 @@ export const numberDefinitions: StdDefinition[] = [
 		if (!Number.isSafeInteger(min) || !Number.isSafeInteger(max) || min > max || !Number.isSafeInteger(width)) rangeError(ctx);
 		return min + Math.floor(Math.random() * width);
 	}),
-	definition('Math.seededRandom', [arg('seed', 'number | string')], 'Function', '種から再現可能な乱数関数を作ります。', 'Create a reproducible random generator from a seed.', (ctx, _, args) => {
+	{ name: 'Math.seededRandom', receiver: 'global', args: [arg('seed', 'number | string')], returns: 'Function', description: { ja: '種から再現可能な乱数関数を作ります。', en: 'Create a reproducible random generator from a seed.' }, *implementation(ctx, _, args) {
 		const seed = args[0];
 		if (typeof seed !== 'number' && typeof seed !== 'string') throw runtimeError('STDLIB_ARGUMENT_TYPE', ctx.pos, { expected: 'number | string' }, 'TypeError');
 		if (typeof seed === 'number' && !Number.isFinite(seed)) rangeError(ctx);
-		return seededRandom(seed);
-	}),
+		return yield* prepareSeed(seed, ctx);
+	} },
 ];

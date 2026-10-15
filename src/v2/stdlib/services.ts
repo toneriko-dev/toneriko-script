@@ -99,7 +99,7 @@ export const serviceDefinitions: StdDefinition[] = [
 		const fn = callable(ctx, args[0]); const delay = args[1] === undefined ? 0 : requireNumber(ctx, args[1]);
 		return ctx.services!.timer(fn, args.slice(2), delay, name === 'setInterval', ctx.pos);
 	} })),
-	...(['clearTimeout', 'clearInterval'] as const).map((name): StdDefinition => ({ name, receiver: 'global', args: [arg('id', 'number', true)], returns: 'void', description: { ja: '登録したタイマーを解除します。', en: 'Cancels a registered timer.' }, *implementation(ctx, _r, args) { if (args.length) ctx.services!.clear(requireNumber(ctx, args[0])); return null; } })),
+	...(['clearTimeout', 'clearInterval'] as const).map((name): StdDefinition => ({ name, receiver: 'global', args: [arg('id', 'number | null', true)], returns: 'void', description: { ja: '登録したタイマーを解除します。', en: 'Cancels a registered timer.' }, *implementation(ctx, _r, args) { if (args.length && args[0] !== null) ctx.services!.clear(requireNumber(ctx, args[0])); return null; } })),
 	{ name: 'mapConcurrent', receiver: 'array', args: [arg('callback', 'Function'), arg('limit', 'number', true)], returns: 'any[]', description: { ja: '同時実行数を制限し、元の順序で結果を返します。', en: 'Maps with bounded concurrency and preserves result order.' }, *implementation(ctx, receiver, args) {
 		const xs = requireArray(ctx, receiver), fn = callable(ctx, args[0]), limit = args[1] === undefined ? 4 : requireNumber(ctx, args[1]);
 		if (!Number.isSafeInteger(limit) || limit <= 0) rangeError(ctx);

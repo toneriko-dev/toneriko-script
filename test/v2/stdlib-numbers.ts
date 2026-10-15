@@ -439,3 +439,15 @@ describe('標準の数と変換', () => {
 		expect(digest).toBe(golden[seedIndex]!.digest);
 	});
 });
+
+test('長い乱数の種は符号単位数のステップを計上し、ハッシュ中にホストへ譲る', async () => {
+	const seed = 'a👩\ud800'.repeat(250000);
+	let clock = 0, yields = 0;
+	const vm = new Interpreter({ seed }, { now: () => ++clock, yieldInterval: 1, maxBusyTime: Infinity, yieldToHost: async () => { yields++; } });
+	await vm.exec(parse('const rng = Math.seededRandom(seed); const result = rng();').program);
+	expect(vm.getGlobal('result')).toBe(reference(seed)());
+	expect(vm.stepCount).toBeGreaterThanOrEqual(seed.length);
+	expect(vm.stepCount).toBeLessThan(seed.length + 100);
+	expect(yields).toBeGreaterThan(100);
+	await expect(new Interpreter({ seed }, { maxSteps: 1000 }).exec(parse('Math.seededRandom(seed);').program)).rejects.toMatchObject({ code: 'STEP_LIMIT_EXCEEDED' });
+});

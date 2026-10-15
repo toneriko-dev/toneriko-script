@@ -1,0 +1,1 @@
+{"version":3,"file":"validate-keyword.d.ts","names":["Ast","Ast.Node"],"sources":["../../../src/parser/plugins/validate-keyword.ts"],"mappings":";;wBA0LgB,gBAAgB,OAAOC,SAAaA"}

@@ -1,0 +1,1 @@
+{"version":3,"file":"validate-type.d.ts","names":["Ast","Ast.Node"],"sources":["../../../src/parser/plugins/validate-type.ts"],"mappings":";;wBAsDgB,aAAa,OAAOC,SAAaA"}

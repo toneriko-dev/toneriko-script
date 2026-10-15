@@ -1,0 +1,1 @@
+{"version":3,"file":"types.d.ts","names":["Ast","Ast.TypeSource"],"sources":["../../../src/parser/syntaxes/types.ts"],"mappings":";;;;;;;;wBAcgB,UAAU,GAAG,eAAeC;;;;;;wBAS5B,gBAAgB,GAAG,eAAe"}

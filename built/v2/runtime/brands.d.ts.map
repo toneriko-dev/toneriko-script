@@ -1,0 +1,1 @@
+{"version":3,"file":"brands.d.ts","names":["AST","AST.Pattern","AST.BlockStatement","AST.Expression"],"sources":["../../../src/v2/runtime/brands.ts"],"mappings":";;YAGY;qBACC;iBACI;GACf;EACD;EACA,QAAQC;EACR,MAAMC,iBAAqBC;EAC3B;;wBAEe,iBAAiB,iBAAiB,SAAS;wBAG3C,YAAY,OAAO;qBAItB,eAAa;;wBAGV,aAAa,kBAAkB,OAAO,IAAI"}

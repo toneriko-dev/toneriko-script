@@ -1,0 +1,158 @@
+//#region src/v2/messages.ts
+function entry(message, hint, english, englishHint) {
+	return {
+		ja: {
+			message,
+			hint
+		},
+		en: {
+			message: english,
+			hint: englishHint
+		}
+	};
+}
+const runtimeMessages = {
+	TYPE_ANNOTATION_MISMATCH: entry("{name} は {expected} と書かれていますが、{actual} の値 {value} が入りました。", "型注釈か渡す値を確認します。", "{name} is annotated as {expected}, but received the {actual} value {value}.", "Check the annotation or the supplied value."),
+	STDLIB_FORBIDDEN_KEY: entry("__proto__ を含む値は取り込めません。", "そのキーを除いて JSON.stringify で作り直すか、キーを変えてもらいます。", "Values containing __proto__ cannot be imported.", "Recreate the input with JSON.stringify after removing that key, or ask its producer to rename the key."),
+	STDLIB_JSON_SYNTAX: entry("JSON の書き方が不正です。", "JSON.stringify で文字列を作り直します。", "The JSON text is invalid.", "Recreate the text with JSON.stringify."),
+	STDLIB_JSON_CYCLE: entry("循環する値を JSON に変換できません。", "循環する参照を取り除きます。", "A cyclic value cannot be serialized as JSON.", "Remove circular references."),
+	STDLIB_CLONE_FUNCTION: entry("関数を含む値は複製できません。", "関数を除いた値を渡します。", "A value containing a function cannot be cloned.", "Pass a value without functions."),
+	STDLIB_SORT_COMPARATOR_REQUIRED: entry("文字列以外を並べ替えるには比較関数が必要です。", "比較関数を渡すか sortBy を使います。", "Sorting non-string values requires a comparator.", "Pass a comparator or use sortBy."),
+	STDLIB_URI_ERROR: entry("URI の文字列が不正です。", "エスケープとサロゲートの対応を確認します。", "The URI string is malformed.", "Check percent escapes and surrogate pairs."),
+	STRING_GRAPHEME_MATCH: entry("検索文字列が書記素の途中に一致します。", "改行が \\r\\n なら replaceAll(\"\\r\\n\", \"\\n\") でそろえてから検索します。結合文字は基底文字と合わせた書記素全体を指定します。", "The search string matches inside a grapheme.", "For CRLF line endings, normalize with replaceAll(\"\\r\\n\", \"\\n\") before searching. For combining characters, search for the whole grapheme including its base character."),
+	STDLIB_ARGUMENT_RANGE: entry("引数の値が範囲外です。", "引数に許される範囲を確認します。", "Argument value is out of range.", "Check the accepted argument range."),
+	STDLIB_ARGUMENT_TYPE: entry("引数には {expected} を渡します。", "引数の型を確認します。", "Expected an argument of type {expected}.", "Check the argument type."),
+	STDLIB_ARGUMENT_COUNT: entry("{name} には少なくとも {count} 個の引数が必要です。", "必要な引数を渡します。", "{name} requires at least {count} arguments.", "Provide the required arguments."),
+	UNCAUGHT_EXCEPTION: entry("例外が捕捉されずに実行が終了しました。", "try/catch で例外を処理します。", "Execution ended with an uncaught exception.", "Handle the exception with try/catch."),
+	TDZ_ACCESS: entry("{name} はまだ初期化されていません。", "宣言の後で使います。", "{name} is not initialized.", "Use it after its declaration."),
+	UNBOUND_IDENTIFIER: entry("{name} は宣言されていません。", "使う前に宣言します。", "{name} is not declared.", "Declare it before use."),
+	CONST_ASSIGNMENT: entry("{name} は再代入できません。", "値を変える変数は let で宣言します。", "Cannot reassign {name}.", "Use let for a mutable binding."),
+	IMPLICIT_COERCION: entry("この演算では暗黙の型変換を使えません。", "数どうし、または文字列どうしで演算します。", "Implicit coercion is not supported for this operation.", "Use operands of the appropriate matching types."),
+	INVALID_STRING_CONVERSION: entry("この値は文字列に連結できません。", "JSON.stringify(x) または x ?? \"\" を使います。", "This value cannot be concatenated with a string.", "Use JSON.stringify(x) or x ?? \"\"."),
+	METHOD_NOT_AVAILABLE: entry("このメソッドはまだ使えません。", "対応するメソッドかホストの関数を使います。", "This method is not available yet.", "Use a supported method or a host function."),
+	NOT_CALLABLE: entry("この値は関数ではありません。", "呼び出す値を確認します。", "This value is not callable.", "Check the value being called."),
+	PROTOTYPE_METHOD_CALL: entry("原型のメソッドは使えません。", "k in obj か Object.hasOwn(obj, k) を使います。", "Prototype methods are not available.", "Use k in obj or Object.hasOwn(obj, k)."),
+	CALL_DEPTH_EXCEEDED: entry("関数呼び出しの深さが上限 {limit} を超えました。", "再帰の深さを減らします。", "The call depth limit of {limit} was exceeded.", "Reduce the recursion depth."),
+	STEP_LIMIT_EXCEEDED: entry("実行ステップ数の上限を超えました。", "繰り返し回数を減らします。", "The execution step limit was exceeded.", "Reduce the amount of work."),
+	BUSY_TIME_EXCEEDED: entry("待たずに実行できる時間の上限を超えました。", "繰り返し処理を確認します。", "The uninterrupted execution time limit was exceeded.", "Check the loop or computation."),
+	EXECUTION_ABORTED: entry("実行を中止しました。", "新しい実行には別のインタプリタを使います。", "Execution was aborted.", "Use another interpreter for a new execution."),
+	HOST_ERROR: entry("ホストの処理でエラーが発生しました。", "呼び出した処理を確認します。", "A host operation failed.", "Check the host operation."),
+	FORBIDDEN_PROPERTY: entry("__proto__ はキーに使えません。", "別のキーを使います。", "__proto__ cannot be used as a key.", "Use another key."),
+	NULL_PROPERTY_ACCESS: entry("null のプロパティは読み書きできません。", "?. と ?? で値が無い場合を扱います。", "Cannot access a property of null.", "Use ?. and ?? to handle missing values."),
+	INVALID_PROPERTY_KEY: entry("この値はプロパティのキーに使えません。", "文字列または数を使います。", "Invalid property key.", "Use a string or number."),
+	ACCESSOR_PROPERTY: entry("getter と setter は使えません。", "データのプロパティを渡します。", "Accessor properties are not supported.", "Pass data properties."),
+	ARRAY_INDEX_OUT_OF_RANGE: entry("配列の添字が範囲外です。", "0 から length - 1 までの添字を使います。", "Array index is out of range.", "Use an index between 0 and length - 1."),
+	SPARSE_ARRAY: entry("穴のある配列は使えません。", "省いた要素を明示的な値で埋めます。", "Sparse arrays are not supported.", "Provide an explicit value for every element."),
+	ARRAY_GAP: entry("間を空けて配列に追加できません。", "末尾の添字 length に追加します。", "Cannot create a gap in an array.", "Append at index length."),
+	INVALID_ARRAY_LENGTH: entry("配列の長さが不正です。", "非負の整数を使います。", "Invalid array length.", "Use a non-negative integer."),
+	ARRAY_LENGTH_GROWTH: entry("length を増やして配列を伸ばせません。", "値を末尾に追加します。", "Cannot grow an array by assigning length.", "Append values instead."),
+	ARRAY_DELETE: entry("配列の要素は delete できません。", "要素を削除するメソッドを使います。", "Cannot delete an array element.", "Use an element removal method."),
+	INVALID_ARRAY_PROPERTY: entry("この配列プロパティは使えません。", "整数の添字または用意されたプロパティを使います。", "Unsupported array property.", "Use an array index or a supported property."),
+	READONLY_PROPERTY: entry("このプロパティは変更できません。", "変更できる値を使います。", "This property is read-only.", "Use a writable value."),
+	INVALID_RECEIVER: entry("メソッドを呼び出す対象が不正です。", "元の値のメソッドとして呼びます。", "Invalid method receiver.", "Call the method on a value of the appropriate type."),
+	NOT_ITERABLE: entry("この値は反復できません。", "配列または文字列を使います。", "This value is not iterable.", "Use an array or string."),
+	UNSUPPORTED_VALUE: entry("この値はスクリプトに渡せません。", "対応する基本値、配列、オブジェクト、関数を使います。", "Unsupported script value.", "Use a supported primitive, array, object, or function.")
+};
+const checkMessages = {
+	UNBOUND_IDENTIFIER_SUGGESTION: entry("{name} は宣言されていません。", "もしかして {suggestion} ですか？", "{name} is not declared.", "Did you mean {suggestion}?"),
+	ARGUMENT_COUNT: entry("{name} の引数は {min}〜{max} 個ですが、{actual} 個渡されています。", "引数の数を確認します。", "{name} expects {min}–{max} arguments, but received {actual}.", "Check the number of arguments."),
+	CASE_FALLTHROUGH: entry("この case は次の case に進みます。", "終了するなら break を書きます。", "This case falls through to the next case.", "Add break to stop here.")
+};
+const messages = {
+	...checkMessages,
+	VOID_TYPE_POSITION: entry("void は戻り値の型にだけ書けます。", "変数と引数には null または値の型を書きます。", "void is only allowed in return types.", "Use null or the value type for variables and parameters."),
+	PARENTHESIZED_ARROW_RETURN_TYPE: entry("このアロー関数の戻り値型には括弧を付けられません。", "括弧を外して (p): { x: number } => p と書きます。", "This arrow return type cannot be parenthesized.", "Remove the parentheses: (p): { x: number } => p."),
+	NESTING_TOO_DEEP: entry("入れ子が深すぎます。", "括弧や式、ブロックの入れ子を減らします。", "Syntax nesting is too deep.", "Reduce the nesting of parentheses, expressions, or blocks."),
+	STRICT_DELETE_IDENTIFIER: entry("strict mode では識別子を delete できません。", "オブジェクトのプロパティを delete します。", "An identifier cannot be deleted in strict mode.", "Delete an object property instead."),
+	STRICT_NON_SIMPLE_PARAMETERS: entry("既定値・分割代入・残り引数がある関数に \"use strict\" は書けません。", "この言語は常に strict mode なので、この指示文を省きます。", "A function with non-simple parameters cannot contain a use strict directive.", "Omit the directive; scripts already use strict mode."),
+	ARROW_OBJECT_BODY: entry("アロー関数の本体をオブジェクトとして返すには括弧が必要です。", "オブジェクトを返すなら x => ({ … }) と書きます。", "An object return needs parentheses.", "Use x => ({ … }) to return an object."),
+	DUPLICATE_DECLARATION: entry("同じ範囲で {name} が二重に宣言されています。", "名前を変えるか、別のブロックで宣言します。", "Duplicate declaration of {name}.", "Rename the binding or declare it in another block."),
+	TYPEOF_UNDEFINED_COMPARISON: entry("\"undefined\" との比較は使えません。", "値が無いことは x == null、否定は x != null で比べます。", "Comparison with \"undefined\" is not supported.", "Use x == null or x != null to test for missing values."),
+	...runtimeMessages,
+	UNEXPECTED_TOKEN: entry("予期しない構文です。", "前後の構文を確認します。", "Unexpected syntax.", "Check the surrounding syntax."),
+	INVALID_NUMBER: entry("数の書き方が不正です。", "JavaScript の数の書き方にします。", "Invalid numeric literal.", "Use JavaScript numeric literal syntax."),
+	INVALID_ESCAPE: entry("エスケープの書き方が不正です。", "JavaScript のエスケープで書きます。", "Invalid escape sequence.", "Use JavaScript escape sequences."),
+	UNTERMINATED_STRING: entry("文字列が閉じていません。", "同じ引用符で文字列を閉じます。", "Unterminated string.", "Close the string with the matching quote."),
+	UNTERMINATED_COMMENT: entry("コメントが閉じていません。", "*/ でコメントを閉じます。", "Unterminated comment.", "Close the comment with */."),
+	UNTERMINATED_TEMPLATE: entry("テンプレートが閉じていません。", "バッククォートでテンプレートを閉じます。", "Unterminated template literal.", "Close the template with a backtick."),
+	LEGACY_OCTAL: entry("先頭が 0 の整数は使えません。", "8 進数は 0o、10 進数は先頭の 0 を省いて書きます。", "Legacy leading-zero numbers are not supported.", "Use 0o for octal or omit the leading zero for decimal."),
+	BIGINT: entry("BigInt は使えません。", "number の数で書きます。", "BigInt is not supported.", "Use number values."),
+	REGEXP: entry("正規表現は使えません。", "includes、split、replaceAll などを使います。", "Regular expressions are not supported.", "Use includes, split, or replaceAll."),
+	CLASS: entry("class は使えません。", "オブジェクトと関数で書きます。", "Classes are not supported.", "Use objects and functions."),
+	THIS: entry("this は使えません。", "オブジェクトと関数で書きます。", "this is not supported.", "Use objects and functions."),
+	NEW: entry("new は Error だけに使えます。", "オブジェクトと関数で書きます。", "Only new Error is supported.", "Use objects and functions."),
+	COLLECTION: entry("Map、Set、Date のオブジェクトは使えません。", "オブジェクト、arr.unique()、Date.now() と Date.format を使います。", "Map, Set, and Date objects are not supported.", "Use objects, arr.unique(), Date.now(), and Date.format."),
+	VAR: entry("var は使えません。", "let または const で宣言します。", "var is not supported.", "Declare variables with let or const."),
+	LOOSE_EQUALITY: entry("null 以外との ==、!= は使えません。", "=== または !== で比較します。", "Loose equality is only supported with null.", "Compare with === or !==."),
+	ASSIGNMENT_IN_EXPRESSION: entry("式の中では代入できません。", "代入は別の文で書きます。", "Assignment is not allowed inside expressions.", "Write the assignment as a separate statement."),
+	LOGICAL_ASSIGNMENT: entry("&&= と ||= は使えません。", "a = a && b または a = a || b と書きます。", "&&= and ||= are not supported.", "Use a = a && b or a = a || b."),
+	NULLISH_MIX: entry("?? と ||・&& はそのまま混ぜられません。", "?? と ||・&& を混ぜるときは括弧で囲みます。", "?? cannot be mixed directly with || or &&.", "Parenthesize expressions that mix ?? with || or &&."),
+	UNARY_POWER: entry("単項演算の直後には ** を書けません。", "(-2) ** 2 か -(2 ** 2) と括弧で示します。", "A unary expression cannot directly precede **.", "Use parentheses, as in (-2) ** 2 or -(2 ** 2)."),
+	TAGGED_TEMPLATE: entry("タグ付きテンプレートは使えません。", "関数に文字列を渡して呼びます。", "Tagged templates are not supported.", "Call the function with a string argument."),
+	COMMA_OPERATOR: entry("カンマ演算子は使えません。", "別々の文に分けます。", "The comma operator is not supported.", "Split the expressions into separate statements."),
+	UPDATE_IN_EXPRESSION: entry("式の中では ++、-- を使えません。", "i += 1 などを別の文にします。", "Updates are not allowed inside expressions.", "Write i += 1 or a similar update as a separate statement."),
+	BITWISE: entry("ビット演算は使えません。", "累乗は **、乱数は Math.seededRandom を使います。", "Bitwise operators are not supported.", "Use ** for powers and Math.seededRandom for random numbers."),
+	FOR_IN: entry("for … in は使えません。", "for (const k of Object.keys(o)) で書きます。", "for … in is not supported.", "Use for (const k of Object.keys(o))."),
+	EVAL: entry("eval は使えません。", "処理を関数にまとめます。", "eval is not supported.", "Put the code in a function."),
+	FUNCTION_CONSTRUCTOR: entry("Function コンストラクターは使えません。", "関数宣言またはアロー関数で書きます。", "The Function constructor is not supported.", "Use a function declaration or an arrow function."),
+	WITH: entry("with は使えません。", "オブジェクトの名前を明示します。", "with is not supported.", "Write the object name explicitly."),
+	GENERATOR: entry("ジェネレーターは使えません。", "通常の関数と配列で書きます。", "Generators are not supported.", "Use ordinary functions and arrays."),
+	SYMBOL: entry("Symbol は使えません。", "文字列のキーを使います。", "Symbol is not supported.", "Use string keys."),
+	ACCESSOR: entry("getter と setter は使えません。", "プロパティと関数で書きます。", "Getters and setters are not supported.", "Use properties and functions."),
+	ARGUMENTS: entry("arguments は使えません。", "残り引数 ...args を使います。", "arguments is not supported.", "Use a rest parameter such as ...args."),
+	DEBUGGER: entry("debugger は使えません。", "console.log で値を確認します。", "debugger is not supported.", "Inspect values with console.log."),
+	IMPORT: entry("import は使えません。", "同じスクリプトの関数か用意された関数を使います。", "Imports are not supported.", "Use functions in this script or provided functions."),
+	PROMISE: entry("Promise と .then() は使えません。", "並行に動かすなら arr.mapConcurrent を使います。", "Promise and .then() are not supported.", "Use arr.mapConcurrent for concurrent work."),
+	UNDEFINED: entry("undefined は使えません。", "値が無いことは null で表します。", "undefined is not supported.", "Represent missing values with null."),
+	FUNCTION_EXPRESSION: entry("function 式は使えません。", "アロー関数で書きます。", "Function expressions are not supported.", "Use an arrow function."),
+	METHOD_SHORTHAND: entry("メソッドの省略形は使えません。", "f: () => {} の形で書きます。", "Method shorthand is not supported.", "Use the form f: () => {}."),
+	INSTANCEOF: entry("instanceof は使えません。", "typeof や Array.isArray で調べます。", "instanceof is not supported.", "Inspect values with typeof or Array.isArray."),
+	VOID_OPERATOR: entry("void 演算子は使えません。", "値を返さない処理は文で書きます。", "The void operator is not supported.", "Write the operation as a statement."),
+	SUPER: entry("super は使えません。", "オブジェクトと関数で書きます。", "super is not supported.", "Use objects and functions."),
+	YIELD: entry("yield は使えません。", "通常の関数と配列で書きます。", "yield is not supported.", "Use ordinary functions and arrays."),
+	LABELED_FUNCTION: entry("関数宣言にはラベルを付けられません。", "ラベルを外して関数を宣言します。", "Function declarations cannot have labels.", "Remove the label from the function declaration."),
+	INVALID_LABEL: entry("このラベルは使えません。", "ラベルは for、while、do、ブロックの前に付けます。", "Invalid label.", "Place labels before for, while, do, or a block."),
+	TYPE_ALIAS: entry("type 宣言は使えません。", "6 種類の型を直接書くか、型注釈を省略します。", "Type aliases are not supported.", "Write one of the six supported type forms directly, or omit the annotation."),
+	TYPE_INTERFACE: entry("interface は使えません。", "オブジェクトの型を直接書くか、型注釈を省略します。", "Interfaces are not supported.", "Write an object type directly, or omit the annotation."),
+	TYPE_ENUM: entry("enum は使えません。", "オブジェクトと定数で書きます。", "Enums are not supported.", "Use objects and constants."),
+	TYPE_ARGUMENTS: entry("型引数は使えません。", "型引数を省略します。", "Type arguments and type parameters are not supported.", "Omit the type arguments or type parameters."),
+	TYPE_ASSERTION: entry("as による型の指定は使えません。", "宣言に型注釈を書くか、型注釈を省略します。", "Type assertions are not supported.", "Annotate the declaration, or omit the annotation."),
+	NON_NULL_ASSERTION: entry("後置の ! は使えません。", "null を条件分岐で調べます。", "Non-null assertions are not supported.", "Check for null in a conditional."),
+	TYPE_DEFINITE_ASSIGNMENT: entry("宣言の ! は使えません。", "! を省き、宣言時に初期値を代入します。", "Definite assignment assertions are not supported.", "Omit ! and initialize the variable in its declaration."),
+	TYPE_THIS_PARAMETER: entry("this 引数の型注釈は使えません。", "通常の引数としてオブジェクトを渡します。", "Typed this parameters are not supported.", "Pass the object as an ordinary parameter."),
+	TYPE_ARRAY_GENERIC: entry("Array<T> は使えません。", "T[] の形で書きます。", "Array<T> is not supported.", "Use T[] instead."),
+	TYPE_RECORD: entry("Record は使えません。", "オブジェクトの型を直接書くか、型注釈を省略します。", "Record is not supported.", "Write an object type directly, or omit the annotation."),
+	TYPE_LITERAL: entry("リテラル型は使えません。", "string、number、boolean などの型で書きます。", "Literal types are not supported.", "Use string, number, or boolean types."),
+	TYPE_TUPLE: entry("タプル型は使えません。", "T[] の配列型で書きます。", "Tuple types are not supported.", "Use an array type such as T[]."),
+	UNSUPPORTED_TYPE: entry("この型の書き方は使えません。", "6 種類の型で書くか、型注釈を省略します。", "This type syntax is not supported.", "Use one of the six supported type forms, or omit the annotation."),
+	AISCRIPT_VERSION: entry("AiScript の構文のスクリプトです。", "Toneriko Script 2 の構文に書き直します。", "This script uses AiScript syntax.", "Rewrite it using Toneriko Script 2 syntax."),
+	AISCRIPT_META: entry("### によるメタ情報は使えません。", "export const meta = { … } で書きます。", "AiScript metadata syntax is not supported.", "Use export const meta = { … }."),
+	AISCRIPT_OUTPUT: entry("<: は使えません。", "console.log(x) で出力します。", "AiScript output syntax is not supported.", "Print values with console.log(x)."),
+	AISCRIPT_FUNCTION: entry("@ による関数は使えません。", "function f(x) {} または (x) => {} で書きます。", "AiScript function syntax is not supported.", "Use function f(x) {} or (x) => {}."),
+	AISCRIPT_NAMESPACE: entry(": による名前空間は使えません。", "Core:sleep は sleep、Mk:api は Mk.api にします。", "AiScript namespace syntax is not supported.", "Replace Core:sleep with sleep and Mk:api with Mk.api."),
+	AISCRIPT_EACH: entry("each は使えません。", "for (const x of arr) で書きます。", "AiScript each syntax is not supported.", "Use for (const x of arr)."),
+	AISCRIPT_FOR: entry("AiScript の for は使えません。", "for (let i = 0; i < 10; i++) で書きます。", "AiScript for syntax is not supported.", "Use for (let i = 0; i < 10; i++)."),
+	AISCRIPT_EVAL: entry("eval ブロックは使えません。", "処理を関数にまとめます。", "AiScript eval blocks are not supported.", "Put the code in a function."),
+	AISCRIPT_MATCH: entry("match は使えません。", "switch で書きます。", "AiScript match syntax is not supported.", "Use switch."),
+	AISCRIPT_IF: entry("if は式として使えません。", "条件式は a ? b : c で書きます。", "if cannot be used as an expression.", "Write conditional expressions as a ? b : c."),
+	AISCRIPT_POWER: entry("^ は累乗として使えません。", "累乗は ** で書きます。", "^ is not supported for powers.", "Use ** for exponentiation."),
+	NEWLINE_CONTINUATION: entry("この行は前の行の続きとして読まれます。", "1 行にまとめるか、前の行の末尾に ; を書きます。", "This line continues the previous line.", "Combine the lines or put ; at the end of the previous line."),
+	NEWLINE_RETURN: entry("return の次の行の式は返す値になりません。", "返す値を return と同じ行に書きます。", "An expression after a newline is not the return value.", "Write the return value on the same line as return."),
+	NEWLINE_ARROW: entry("=> の前では改行できません。", "引数と => を同じ行に書きます。", "A newline before => is not allowed.", "Write the parameters and => on the same line."),
+	NEWLINE_THROW: entry("throw の直後では改行できません。", "投げる値を throw と同じ行に書きます。", "A newline immediately after throw is not allowed.", "Write the thrown value on the same line as throw."),
+	INVALID_ASSIGNMENT_TARGET: entry("この式には代入できません。", "変数またはプロパティに代入します。", "Invalid assignment target.", "Assign to a variable or a property."),
+	INVALID_META: entry("プラグインの情報の書き方が不正です。", "export const meta = {…} にリテラルの値を書きます。", "Invalid plugin metadata.", "Use export const meta = {…} with literal values."),
+	INVALID_CONTROL_FLOW: entry("この場所には制御文を書けません。", "対応する関数、ループ、switch の中に書きます。", "Invalid control flow statement.", "Place the statement inside the corresponding function, loop, or switch.")
+};
+function diagnosticTranslation(code, language, params) {
+	const translation = messages[code][language];
+	if (code !== "TYPE_ANNOTATION_MISMATCH" || params["actual"] !== "missing") return translation;
+	return {
+		...translation,
+		message: language === "ja" ? "{name} は {expected} と書かれていますが、プロパティがありません。" : "{name} is annotated as {expected}, but the property is missing."
+	};
+}
+
+//#endregion
+export { checkMessages, diagnosticTranslation, messages, runtimeMessages };
+//# sourceMappingURL=messages.js.map

@@ -1,0 +1,1 @@
+{"version":3,"file":"services.d.ts","names":[],"sources":["../../../src/v2/stdlib/services.ts"],"mappings":";;;;iBAOiB;EAChB;EACA,gBAAgB,iBAAiB;EACjC,oBAAoB;;;qBAGR;WAIS,SAAS;WAAyB,QAAQ;mBAA8B;UAHrF;UACA;mBACS;EACjB,YAAqB,SAAS,gBAAyB,QAAQ,aAA8B,SAAS,IAAI,OAAO,MAAM,SAAS,KAAK,QAAQ,QAAQ;EAGrJ,MAAM,IAAI,OAAO,MAAM,SAAS,eAAe,iBAAiB,KAAK;EAiBrE,MAAM;EACN,MAAM,gBAAgB;;qBA8BV,oBAAoB"}

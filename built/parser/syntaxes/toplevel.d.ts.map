@@ -1,0 +1,1 @@
+{"version":3,"file":"toplevel.d.ts","names":["Ast","Ast.Node","Ast.Namespace","Ast.Meta"],"sources":["../../../src/parser/syntaxes/toplevel.ts"],"mappings":";;;;;;;;wBAcgB,cAAc,GAAG,eAAeC;;;;;;wBAgDhC,eAAe,GAAG,eAAeC;;;;;;wBAkEjC,UAAU,GAAG,eAAeC"}

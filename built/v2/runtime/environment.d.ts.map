@@ -1,0 +1,1 @@
+{"version":3,"file":"environment.d.ts","names":["A","A.Pos","A.Pattern","A.MemberExpression"],"sources":["../../../src/v2/runtime/environment.ts"],"mappings":";;;YAIY;EAAY;EAAsB;EAAkB,OAAO;;qBAC1D;WAES,QAAQ;WADpB,UAAQ,YAAA;EACjB,YAAqB,SAAQ;EAC7B,QAAQ,cAAc;EAGtB,QAAQ,eAAe;EAGvB,KAAK,cAAc,KAAKC,MAAQ;EAMhC,MAAM,cAAc,OAAO,OAAO,KAAKA,KAAO;EAQ9C,aAAa;;wBAOE,WAAW,SAASC,UAAYC"}

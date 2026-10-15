@@ -1,0 +1,1 @@
+{"version":3,"file":"errors.d.ts","names":[],"sources":["../../../src/v2/runtime/errors.ts"],"mappings":";;;qBAGa,qBAAqB;WAGZ,MAAM;WAAyB,KAAK;WAAc,QAAQ;WAFtE;WACA;EACT,YAAqB,MAAM,gBAAyB,KAAK,KAAc,SAAQ,iCAAsC;;wBAUtG,aAAa,MAAM,gBAAgB,KAAK,KAAK,SAAQ,iCAAsC,gBAAgB;qBAK9G,yBAAyB;wBAItB,sBAAsB,iBAAiB;wBAGvC,mBAAmB,iBAAiB;wBAGpC,gBAAgB;;wBAGhB,kBAAkB,eAAgB,kBAAkB,aAAa"}

@@ -1,0 +1,2282 @@
+[
+  {
+    "name": "Error",
+    "receiver": "global",
+    "args": [
+      {
+        "name": "message",
+        "type": "string | number | boolean",
+        "optional": true
+      },
+      {
+        "name": "options",
+        "type": "any",
+        "optional": true
+      }
+    ],
+    "returns": "any",
+    "description": {
+      "ja": "原型を持たないエラーの値を作ります。",
+      "en": "Creates an error value without a prototype."
+    }
+  },
+  {
+    "name": "push",
+    "receiver": "array",
+    "args": [
+      {
+        "name": "items",
+        "type": "any[]",
+        "rest": true
+      }
+    ],
+    "returns": "number",
+    "description": {
+      "ja": "末尾に値を追加し、配列の長さを返します。",
+      "en": "Appends values and returns the array length."
+    }
+  },
+  {
+    "name": "Math.abs",
+    "receiver": "global",
+    "args": [
+      {
+        "name": "x",
+        "type": "number",
+        "optional": true
+      }
+    ],
+    "returns": "number",
+    "description": {
+      "ja": "abs を計算します。",
+      "en": "Compute abs."
+    }
+  },
+  {
+    "name": "Math.acos",
+    "receiver": "global",
+    "args": [
+      {
+        "name": "x",
+        "type": "number",
+        "optional": true
+      }
+    ],
+    "returns": "number",
+    "description": {
+      "ja": "acos を計算します。",
+      "en": "Compute acos."
+    }
+  },
+  {
+    "name": "Math.acosh",
+    "receiver": "global",
+    "args": [
+      {
+        "name": "x",
+        "type": "number",
+        "optional": true
+      }
+    ],
+    "returns": "number",
+    "description": {
+      "ja": "acosh を計算します。",
+      "en": "Compute acosh."
+    }
+  },
+  {
+    "name": "Math.asin",
+    "receiver": "global",
+    "args": [
+      {
+        "name": "x",
+        "type": "number",
+        "optional": true
+      }
+    ],
+    "returns": "number",
+    "description": {
+      "ja": "asin を計算します。",
+      "en": "Compute asin."
+    }
+  },
+  {
+    "name": "Math.asinh",
+    "receiver": "global",
+    "args": [
+      {
+        "name": "x",
+        "type": "number",
+        "optional": true
+      }
+    ],
+    "returns": "number",
+    "description": {
+      "ja": "asinh を計算します。",
+      "en": "Compute asinh."
+    }
+  },
+  {
+    "name": "Math.atan",
+    "receiver": "global",
+    "args": [
+      {
+        "name": "x",
+        "type": "number",
+        "optional": true
+      }
+    ],
+    "returns": "number",
+    "description": {
+      "ja": "atan を計算します。",
+      "en": "Compute atan."
+    }
+  },
+  {
+    "name": "Math.atanh",
+    "receiver": "global",
+    "args": [
+      {
+        "name": "x",
+        "type": "number",
+        "optional": true
+      }
+    ],
+    "returns": "number",
+    "description": {
+      "ja": "atanh を計算します。",
+      "en": "Compute atanh."
+    }
+  },
+  {
+    "name": "Math.cbrt",
+    "receiver": "global",
+    "args": [
+      {
+        "name": "x",
+        "type": "number",
+        "optional": true
+      }
+    ],
+    "returns": "number",
+    "description": {
+      "ja": "cbrt を計算します。",
+      "en": "Compute cbrt."
+    }
+  },
+  {
+    "name": "Math.ceil",
+    "receiver": "global",
+    "args": [
+      {
+        "name": "x",
+        "type": "number",
+        "optional": true
+      }
+    ],
+    "returns": "number",
+    "description": {
+      "ja": "ceil を計算します。",
+      "en": "Compute ceil."
+    }
+  },
+  {
+    "name": "Math.clz32",
+    "receiver": "global",
+    "args": [
+      {
+        "name": "x",
+        "type": "number",
+        "optional": true
+      }
+    ],
+    "returns": "number",
+    "description": {
+      "ja": "clz32 を計算します。",
+      "en": "Compute clz32."
+    }
+  },
+  {
+    "name": "Math.cos",
+    "receiver": "global",
+    "args": [
+      {
+        "name": "x",
+        "type": "number",
+        "optional": true
+      }
+    ],
+    "returns": "number",
+    "description": {
+      "ja": "cos を計算します。",
+      "en": "Compute cos."
+    }
+  },
+  {
+    "name": "Math.cosh",
+    "receiver": "global",
+    "args": [
+      {
+        "name": "x",
+        "type": "number",
+        "optional": true
+      }
+    ],
+    "returns": "number",
+    "description": {
+      "ja": "cosh を計算します。",
+      "en": "Compute cosh."
+    }
+  },
+  {
+    "name": "Math.exp",
+    "receiver": "global",
+    "args": [
+      {
+        "name": "x",
+        "type": "number",
+        "optional": true
+      }
+    ],
+    "returns": "number",
+    "description": {
+      "ja": "exp を計算します。",
+      "en": "Compute exp."
+    }
+  },
+  {
+    "name": "Math.expm1",
+    "receiver": "global",
+    "args": [
+      {
+        "name": "x",
+        "type": "number",
+        "optional": true
+      }
+    ],
+    "returns": "number",
+    "description": {
+      "ja": "expm1 を計算します。",
+      "en": "Compute expm1."
+    }
+  },
+  {
+    "name": "Math.floor",
+    "receiver": "global",
+    "args": [
+      {
+        "name": "x",
+        "type": "number",
+        "optional": true
+      }
+    ],
+    "returns": "number",
+    "description": {
+      "ja": "floor を計算します。",
+      "en": "Compute floor."
+    }
+  },
+  {
+    "name": "Math.fround",
+    "receiver": "global",
+    "args": [
+      {
+        "name": "x",
+        "type": "number",
+        "optional": true
+      }
+    ],
+    "returns": "number",
+    "description": {
+      "ja": "fround を計算します。",
+      "en": "Compute fround."
+    }
+  },
+  {
+    "name": "Math.f16round",
+    "receiver": "global",
+    "args": [
+      {
+        "name": "x",
+        "type": "number",
+        "optional": true
+      }
+    ],
+    "returns": "number",
+    "description": {
+      "ja": "f16round を計算します。",
+      "en": "Compute f16round."
+    }
+  },
+  {
+    "name": "Math.log",
+    "receiver": "global",
+    "args": [
+      {
+        "name": "x",
+        "type": "number",
+        "optional": true
+      }
+    ],
+    "returns": "number",
+    "description": {
+      "ja": "log を計算します。",
+      "en": "Compute log."
+    }
+  },
+  {
+    "name": "Math.log1p",
+    "receiver": "global",
+    "args": [
+      {
+        "name": "x",
+        "type": "number",
+        "optional": true
+      }
+    ],
+    "returns": "number",
+    "description": {
+      "ja": "log1p を計算します。",
+      "en": "Compute log1p."
+    }
+  },
+  {
+    "name": "Math.log2",
+    "receiver": "global",
+    "args": [
+      {
+        "name": "x",
+        "type": "number",
+        "optional": true
+      }
+    ],
+    "returns": "number",
+    "description": {
+      "ja": "log2 を計算します。",
+      "en": "Compute log2."
+    }
+  },
+  {
+    "name": "Math.log10",
+    "receiver": "global",
+    "args": [
+      {
+        "name": "x",
+        "type": "number",
+        "optional": true
+      }
+    ],
+    "returns": "number",
+    "description": {
+      "ja": "log10 を計算します。",
+      "en": "Compute log10."
+    }
+  },
+  {
+    "name": "Math.round",
+    "receiver": "global",
+    "args": [
+      {
+        "name": "x",
+        "type": "number",
+        "optional": true
+      }
+    ],
+    "returns": "number",
+    "description": {
+      "ja": "round を計算します。",
+      "en": "Compute round."
+    }
+  },
+  {
+    "name": "Math.sign",
+    "receiver": "global",
+    "args": [
+      {
+        "name": "x",
+        "type": "number",
+        "optional": true
+      }
+    ],
+    "returns": "number",
+    "description": {
+      "ja": "sign を計算します。",
+      "en": "Compute sign."
+    }
+  },
+  {
+    "name": "Math.sin",
+    "receiver": "global",
+    "args": [
+      {
+        "name": "x",
+        "type": "number",
+        "optional": true
+      }
+    ],
+    "returns": "number",
+    "description": {
+      "ja": "sin を計算します。",
+      "en": "Compute sin."
+    }
+  },
+  {
+    "name": "Math.sinh",
+    "receiver": "global",
+    "args": [
+      {
+        "name": "x",
+        "type": "number",
+        "optional": true
+      }
+    ],
+    "returns": "number",
+    "description": {
+      "ja": "sinh を計算します。",
+      "en": "Compute sinh."
+    }
+  },
+  {
+    "name": "Math.sqrt",
+    "receiver": "global",
+    "args": [
+      {
+        "name": "x",
+        "type": "number",
+        "optional": true
+      }
+    ],
+    "returns": "number",
+    "description": {
+      "ja": "sqrt を計算します。",
+      "en": "Compute sqrt."
+    }
+  },
+  {
+    "name": "Math.tan",
+    "receiver": "global",
+    "args": [
+      {
+        "name": "x",
+        "type": "number",
+        "optional": true
+      }
+    ],
+    "returns": "number",
+    "description": {
+      "ja": "tan を計算します。",
+      "en": "Compute tan."
+    }
+  },
+  {
+    "name": "Math.tanh",
+    "receiver": "global",
+    "args": [
+      {
+        "name": "x",
+        "type": "number",
+        "optional": true
+      }
+    ],
+    "returns": "number",
+    "description": {
+      "ja": "tanh を計算します。",
+      "en": "Compute tanh."
+    }
+  },
+  {
+    "name": "Math.trunc",
+    "receiver": "global",
+    "args": [
+      {
+        "name": "x",
+        "type": "number",
+        "optional": true
+      }
+    ],
+    "returns": "number",
+    "description": {
+      "ja": "trunc を計算します。",
+      "en": "Compute trunc."
+    }
+  },
+  {
+    "name": "Math.atan2",
+    "receiver": "global",
+    "args": [
+      {
+        "name": "y",
+        "type": "number",
+        "optional": true
+      },
+      {
+        "name": "x",
+        "type": "number",
+        "optional": true
+      }
+    ],
+    "returns": "number",
+    "description": {
+      "ja": "atan2 を計算します。",
+      "en": "Compute atan2."
+    }
+  },
+  {
+    "name": "Math.pow",
+    "receiver": "global",
+    "args": [
+      {
+        "name": "x",
+        "type": "number",
+        "optional": true
+      },
+      {
+        "name": "y",
+        "type": "number",
+        "optional": true
+      }
+    ],
+    "returns": "number",
+    "description": {
+      "ja": "pow を計算します。",
+      "en": "Compute pow."
+    }
+  },
+  {
+    "name": "Math.imul",
+    "receiver": "global",
+    "args": [
+      {
+        "name": "x",
+        "type": "number",
+        "optional": true
+      },
+      {
+        "name": "y",
+        "type": "number",
+        "optional": true
+      }
+    ],
+    "returns": "number",
+    "description": {
+      "ja": "imul を計算します。",
+      "en": "Compute imul."
+    }
+  },
+  {
+    "name": "Math.min",
+    "receiver": "global",
+    "args": [
+      {
+        "name": "values",
+        "type": "number",
+        "rest": true
+      }
+    ],
+    "returns": "number",
+    "description": {
+      "ja": "min を計算します。",
+      "en": "Compute min."
+    }
+  },
+  {
+    "name": "Math.max",
+    "receiver": "global",
+    "args": [
+      {
+        "name": "values",
+        "type": "number",
+        "rest": true
+      }
+    ],
+    "returns": "number",
+    "description": {
+      "ja": "max を計算します。",
+      "en": "Compute max."
+    }
+  },
+  {
+    "name": "Math.hypot",
+    "receiver": "global",
+    "args": [
+      {
+        "name": "values",
+        "type": "number",
+        "rest": true
+      }
+    ],
+    "returns": "number",
+    "description": {
+      "ja": "hypot を計算します。",
+      "en": "Compute hypot."
+    }
+  },
+  {
+    "name": "Math.random",
+    "receiver": "global",
+    "args": [],
+    "returns": "number",
+    "description": {
+      "ja": "0 以上 1 未満の乱数を返します。",
+      "en": "Return a random number in [0, 1)."
+    }
+  },
+  {
+    "name": "Number",
+    "receiver": "global",
+    "args": [
+      {
+        "name": "value",
+        "type": "any",
+        "optional": true
+      }
+    ],
+    "returns": "number",
+    "description": {
+      "ja": "基本値を数に変換します。",
+      "en": "Convert a primitive value to a number."
+    }
+  },
+  {
+    "name": "String",
+    "receiver": "global",
+    "args": [
+      {
+        "name": "value",
+        "type": "any",
+        "optional": true
+      }
+    ],
+    "returns": "string",
+    "description": {
+      "ja": "基本値を文字列に変換します。",
+      "en": "Convert a primitive value to a string."
+    }
+  },
+  {
+    "name": "parseInt",
+    "receiver": "global",
+    "args": [
+      {
+        "name": "string",
+        "type": "string",
+        "optional": true
+      },
+      {
+        "name": "radix",
+        "type": "number",
+        "optional": true
+      }
+    ],
+    "returns": "number",
+    "description": {
+      "ja": "文字列の先頭の整数を読み取ります。",
+      "en": "Parse an integer prefix."
+    }
+  },
+  {
+    "name": "parseFloat",
+    "receiver": "global",
+    "args": [
+      {
+        "name": "string",
+        "type": "string",
+        "optional": true
+      }
+    ],
+    "returns": "number",
+    "description": {
+      "ja": "文字列の先頭の数を読み取ります。",
+      "en": "Parse a numeric prefix."
+    }
+  },
+  {
+    "name": "Number.isInteger",
+    "receiver": "global",
+    "args": [
+      {
+        "name": "value",
+        "type": "any",
+        "optional": true
+      }
+    ],
+    "returns": "boolean",
+    "description": {
+      "ja": "整数かどうかを返します。",
+      "en": "Test whether a value is an integer."
+    }
+  },
+  {
+    "name": "Array.isArray",
+    "receiver": "global",
+    "args": [
+      {
+        "name": "value",
+        "type": "any",
+        "optional": true
+      }
+    ],
+    "returns": "boolean",
+    "description": {
+      "ja": "配列かどうかを返します。",
+      "en": "Test whether a value is an array."
+    }
+  },
+  {
+    "name": "toFixed",
+    "receiver": "number",
+    "args": [
+      {
+        "name": "digits",
+        "type": "number",
+        "optional": true
+      }
+    ],
+    "returns": "string",
+    "description": {
+      "ja": "小数点以下の桁数を指定して文字列にします。",
+      "en": "Format a number with fixed fraction digits."
+    }
+  },
+  {
+    "name": "toString",
+    "receiver": "number",
+    "args": [
+      {
+        "name": "radix",
+        "type": "number",
+        "optional": true
+      }
+    ],
+    "returns": "string",
+    "description": {
+      "ja": "基数を指定して数を文字列にします。",
+      "en": "Format a number in the given radix."
+    }
+  },
+  {
+    "name": "encodeURIComponent",
+    "receiver": "global",
+    "args": [
+      {
+        "name": "value",
+        "type": "string",
+        "optional": true
+      }
+    ],
+    "returns": "string",
+    "description": {
+      "ja": "URI の構成要素を符号化します。",
+      "en": "Encode a URI component."
+    }
+  },
+  {
+    "name": "decodeURIComponent",
+    "receiver": "global",
+    "args": [
+      {
+        "name": "value",
+        "type": "string",
+        "optional": true
+      }
+    ],
+    "returns": "string",
+    "description": {
+      "ja": "URI の構成要素を復号します。",
+      "en": "Decode a URI component."
+    }
+  },
+  {
+    "name": "Math.clamp",
+    "receiver": "global",
+    "args": [
+      {
+        "name": "x",
+        "type": "number"
+      },
+      {
+        "name": "min",
+        "type": "number"
+      },
+      {
+        "name": "max",
+        "type": "number"
+      }
+    ],
+    "returns": "number",
+    "description": {
+      "ja": "数を指定した範囲に収めます。",
+      "en": "Clamp a number to the given range."
+    }
+  },
+  {
+    "name": "Math.randomInt",
+    "receiver": "global",
+    "args": [
+      {
+        "name": "min",
+        "type": "number"
+      },
+      {
+        "name": "max",
+        "type": "number"
+      }
+    ],
+    "returns": "number",
+    "description": {
+      "ja": "両端を含む範囲の整数を返します。",
+      "en": "Return a random integer including both bounds."
+    }
+  },
+  {
+    "name": "Math.seededRandom",
+    "receiver": "global",
+    "args": [
+      {
+        "name": "seed",
+        "type": "number | string"
+      }
+    ],
+    "returns": "Function",
+    "description": {
+      "ja": "種から再現可能な乱数関数を作ります。",
+      "en": "Create a reproducible random generator from a seed."
+    }
+  },
+  {
+    "name": "slice",
+    "receiver": "string",
+    "args": [
+      {
+        "name": "start",
+        "type": "number",
+        "optional": true
+      },
+      {
+        "name": "end",
+        "type": "number",
+        "optional": true
+      }
+    ],
+    "returns": "string",
+    "description": {
+      "ja": "書記素の範囲を取り出す。",
+      "en": "Extract a grapheme range."
+    }
+  },
+  {
+    "name": "substring",
+    "receiver": "string",
+    "args": [
+      {
+        "name": "start",
+        "type": "number",
+        "optional": true
+      },
+      {
+        "name": "end",
+        "type": "number",
+        "optional": true
+      }
+    ],
+    "returns": "string",
+    "description": {
+      "ja": "書記素の範囲を取り出す。",
+      "en": "Extract a grapheme range."
+    }
+  },
+  {
+    "name": "at",
+    "receiver": "string",
+    "args": [
+      {
+        "name": "index",
+        "type": "number",
+        "optional": true
+      }
+    ],
+    "returns": "string | null",
+    "description": {
+      "ja": "指定した位置の書記素を返す。",
+      "en": "Return the grapheme at an index."
+    }
+  },
+  {
+    "name": "indexOf",
+    "receiver": "string",
+    "args": [
+      {
+        "name": "search",
+        "type": "string",
+        "optional": false
+      },
+      {
+        "name": "position",
+        "type": "number",
+        "optional": true
+      }
+    ],
+    "returns": "number",
+    "description": {
+      "ja": "書記素の境界で文字列を検索する。",
+      "en": "Search at grapheme boundaries."
+    }
+  },
+  {
+    "name": "includes",
+    "receiver": "string",
+    "args": [
+      {
+        "name": "search",
+        "type": "string",
+        "optional": false
+      },
+      {
+        "name": "position",
+        "type": "number",
+        "optional": true
+      }
+    ],
+    "returns": "boolean",
+    "description": {
+      "ja": "書記素の境界で文字列を検索する。",
+      "en": "Search at grapheme boundaries."
+    }
+  },
+  {
+    "name": "startsWith",
+    "receiver": "string",
+    "args": [
+      {
+        "name": "search",
+        "type": "string",
+        "optional": false
+      },
+      {
+        "name": "position",
+        "type": "number",
+        "optional": true
+      }
+    ],
+    "returns": "boolean",
+    "description": {
+      "ja": "書記素の境界で文字列を検索する。",
+      "en": "Search at grapheme boundaries."
+    }
+  },
+  {
+    "name": "endsWith",
+    "receiver": "string",
+    "args": [
+      {
+        "name": "search",
+        "type": "string",
+        "optional": false
+      },
+      {
+        "name": "position",
+        "type": "number",
+        "optional": true
+      }
+    ],
+    "returns": "boolean",
+    "description": {
+      "ja": "書記素の境界で文字列を検索する。",
+      "en": "Search at grapheme boundaries."
+    }
+  },
+  {
+    "name": "padStart",
+    "receiver": "string",
+    "args": [
+      {
+        "name": "targetLength",
+        "type": "number",
+        "optional": false
+      },
+      {
+        "name": "fill",
+        "type": "string",
+        "optional": true
+      }
+    ],
+    "returns": "string",
+    "description": {
+      "ja": "指定した書記素数まで埋める。",
+      "en": "Pad to the requested grapheme length."
+    }
+  },
+  {
+    "name": "padEnd",
+    "receiver": "string",
+    "args": [
+      {
+        "name": "targetLength",
+        "type": "number",
+        "optional": false
+      },
+      {
+        "name": "fill",
+        "type": "string",
+        "optional": true
+      }
+    ],
+    "returns": "string",
+    "description": {
+      "ja": "指定した書記素数まで埋める。",
+      "en": "Pad to the requested grapheme length."
+    }
+  },
+  {
+    "name": "trim",
+    "receiver": "string",
+    "args": [],
+    "returns": "string",
+    "description": {
+      "ja": "文字列を変換する。",
+      "en": "Transform the string."
+    }
+  },
+  {
+    "name": "toUpperCase",
+    "receiver": "string",
+    "args": [],
+    "returns": "string",
+    "description": {
+      "ja": "文字列を変換する。",
+      "en": "Transform the string."
+    }
+  },
+  {
+    "name": "toLowerCase",
+    "receiver": "string",
+    "args": [],
+    "returns": "string",
+    "description": {
+      "ja": "文字列を変換する。",
+      "en": "Transform the string."
+    }
+  },
+  {
+    "name": "split",
+    "receiver": "string",
+    "args": [
+      {
+        "name": "separator",
+        "type": "string",
+        "optional": true
+      },
+      {
+        "name": "limit",
+        "type": "number",
+        "optional": true
+      }
+    ],
+    "returns": "string[]",
+    "description": {
+      "ja": "書記素の境界で文字列を分割する。",
+      "en": "Split the string at grapheme boundaries."
+    }
+  },
+  {
+    "name": "replace",
+    "receiver": "string",
+    "args": [
+      {
+        "name": "search",
+        "type": "string",
+        "optional": false
+      },
+      {
+        "name": "replacement",
+        "type": "string | Function",
+        "optional": false
+      }
+    ],
+    "returns": "string",
+    "description": {
+      "ja": "一致した文字列を置き換える。",
+      "en": "Replace matching strings."
+    }
+  },
+  {
+    "name": "replaceAll",
+    "receiver": "string",
+    "args": [
+      {
+        "name": "search",
+        "type": "string",
+        "optional": false
+      },
+      {
+        "name": "replacement",
+        "type": "string | Function",
+        "optional": false
+      }
+    ],
+    "returns": "string",
+    "description": {
+      "ja": "一致した文字列を置き換える。",
+      "en": "Replace matching strings."
+    }
+  },
+  {
+    "name": "repeat",
+    "receiver": "string",
+    "args": [
+      {
+        "name": "count",
+        "type": "number",
+        "optional": true
+      }
+    ],
+    "returns": "string",
+    "description": {
+      "ja": "文字列を指定回数繰り返す。",
+      "en": "Repeat the string a specified number of times."
+    }
+  },
+  {
+    "name": "dedent",
+    "receiver": "string",
+    "args": [],
+    "returns": "string",
+    "description": {
+      "ja": "各行に共通する行頭の空白とタブを取り除く。",
+      "en": "Remove common leading spaces and tabs from lines."
+    }
+  },
+  {
+    "name": "pop",
+    "args": [],
+    "returns": "any",
+    "receiver": "array",
+    "description": {
+      "ja": "末尾の要素を取り除いて返します。",
+      "en": "Removes and returns the last element."
+    }
+  },
+  {
+    "name": "shift",
+    "args": [],
+    "returns": "any",
+    "receiver": "array",
+    "description": {
+      "ja": "先頭の要素を取り除いて返します。",
+      "en": "Removes and returns the first element."
+    }
+  },
+  {
+    "name": "unshift",
+    "args": [
+      {
+        "name": "items",
+        "type": "any[]",
+        "rest": true
+      }
+    ],
+    "returns": "number",
+    "receiver": "array",
+    "description": {
+      "ja": "先頭に値を追加し、長さを返します。",
+      "en": "Prepends values and returns the length."
+    }
+  },
+  {
+    "name": "slice",
+    "args": [
+      {
+        "name": "start",
+        "type": "number",
+        "optional": true
+      },
+      {
+        "name": "end",
+        "type": "number",
+        "optional": true
+      }
+    ],
+    "returns": "any[]",
+    "receiver": "array",
+    "description": {
+      "ja": "指定した範囲を新しい配列にします。",
+      "en": "Copies the selected range into a new array."
+    }
+  },
+  {
+    "name": "splice",
+    "args": [
+      {
+        "name": "start",
+        "type": "number",
+        "optional": true
+      },
+      {
+        "name": "deleteCount",
+        "type": "number",
+        "optional": true
+      },
+      {
+        "name": "items",
+        "type": "any[]",
+        "rest": true
+      }
+    ],
+    "returns": "any[]",
+    "receiver": "array",
+    "description": {
+      "ja": "要素を削除・挿入し、削除した配列を返します。",
+      "en": "Removes and inserts elements and returns the removed values."
+    }
+  },
+  {
+    "name": "concat",
+    "args": [
+      {
+        "name": "items",
+        "type": "any[]",
+        "rest": true
+      }
+    ],
+    "returns": "any[]",
+    "receiver": "array",
+    "description": {
+      "ja": "配列と値を順に連結した新しい配列を返します。",
+      "en": "Returns a new array containing arrays and values in order."
+    }
+  },
+  {
+    "name": "at",
+    "args": [
+      {
+        "name": "index",
+        "type": "number",
+        "optional": true
+      }
+    ],
+    "returns": "any",
+    "receiver": "array",
+    "description": {
+      "ja": "正負の添字で要素を返し、範囲外は null にします。",
+      "en": "Returns an element by positive or negative index, or null."
+    }
+  },
+  {
+    "name": "indexOf",
+    "args": [
+      {
+        "name": "searchElement",
+        "type": "any",
+        "optional": true
+      },
+      {
+        "name": "fromIndex",
+        "type": "number",
+        "optional": true
+      }
+    ],
+    "returns": "number",
+    "receiver": "array",
+    "description": {
+      "ja": "指定した値の最初の添字を返します。",
+      "en": "Returns the first index of a value."
+    }
+  },
+  {
+    "name": "includes",
+    "args": [
+      {
+        "name": "searchElement",
+        "type": "any",
+        "optional": true
+      },
+      {
+        "name": "fromIndex",
+        "type": "number",
+        "optional": true
+      }
+    ],
+    "returns": "boolean",
+    "receiver": "array",
+    "description": {
+      "ja": "指定した値を含むか返します。",
+      "en": "Tests whether the array contains a value."
+    }
+  },
+  {
+    "name": "fill",
+    "args": [
+      {
+        "name": "value",
+        "type": "any"
+      },
+      {
+        "name": "start",
+        "type": "number",
+        "optional": true
+      },
+      {
+        "name": "end",
+        "type": "number",
+        "optional": true
+      }
+    ],
+    "returns": "any[]",
+    "receiver": "array",
+    "description": {
+      "ja": "指定範囲を同じ値で埋めます。",
+      "en": "Fills the selected range with a value."
+    }
+  },
+  {
+    "name": "reverse",
+    "args": [],
+    "returns": "any[]",
+    "receiver": "array",
+    "description": {
+      "ja": "元の配列の順序を逆にします。",
+      "en": "Reverses the array in place."
+    }
+  },
+  {
+    "name": "toReversed",
+    "args": [],
+    "returns": "any[]",
+    "receiver": "array",
+    "description": {
+      "ja": "逆順の新しい配列を返します。",
+      "en": "Returns a reversed copy."
+    }
+  },
+  {
+    "name": "entries",
+    "args": [],
+    "returns": "any",
+    "receiver": "array",
+    "description": {
+      "ja": "添字と要素を順に返す反復子を作ります。",
+      "en": "Creates an iterator of index and value pairs."
+    }
+  },
+  {
+    "name": "map",
+    "args": [
+      {
+        "name": "callback",
+        "type": "Function"
+      },
+      {
+        "name": "thisArg",
+        "type": "any",
+        "optional": true
+      }
+    ],
+    "returns": "any[]",
+    "receiver": "array",
+    "description": {
+      "ja": "関数の結果を新しい配列にします。",
+      "en": "Maps elements sequentially into a new array."
+    }
+  },
+  {
+    "name": "filter",
+    "args": [
+      {
+        "name": "callback",
+        "type": "Function"
+      },
+      {
+        "name": "thisArg",
+        "type": "any",
+        "optional": true
+      }
+    ],
+    "returns": "any[]",
+    "receiver": "array",
+    "description": {
+      "ja": "条件を満たす要素の新しい配列を返します。",
+      "en": "Returns a new array of matching elements."
+    }
+  },
+  {
+    "name": "find",
+    "args": [
+      {
+        "name": "callback",
+        "type": "Function"
+      },
+      {
+        "name": "thisArg",
+        "type": "any",
+        "optional": true
+      }
+    ],
+    "returns": "any",
+    "receiver": "array",
+    "description": {
+      "ja": "条件を満たす最初の要素を返します。",
+      "en": "Returns the first matching element."
+    }
+  },
+  {
+    "name": "findIndex",
+    "args": [
+      {
+        "name": "callback",
+        "type": "Function"
+      },
+      {
+        "name": "thisArg",
+        "type": "any",
+        "optional": true
+      }
+    ],
+    "returns": "number",
+    "receiver": "array",
+    "description": {
+      "ja": "条件を満たす最初の添字を返します。",
+      "en": "Returns the first matching index."
+    }
+  },
+  {
+    "name": "some",
+    "args": [
+      {
+        "name": "callback",
+        "type": "Function"
+      },
+      {
+        "name": "thisArg",
+        "type": "any",
+        "optional": true
+      }
+    ],
+    "returns": "boolean",
+    "receiver": "array",
+    "description": {
+      "ja": "条件を満たす要素があるか返します。",
+      "en": "Tests whether any element matches."
+    }
+  },
+  {
+    "name": "every",
+    "args": [
+      {
+        "name": "callback",
+        "type": "Function"
+      },
+      {
+        "name": "thisArg",
+        "type": "any",
+        "optional": true
+      }
+    ],
+    "returns": "boolean",
+    "receiver": "array",
+    "description": {
+      "ja": "すべての要素が条件を満たすか返します。",
+      "en": "Tests whether all elements match."
+    }
+  },
+  {
+    "name": "forEach",
+    "args": [
+      {
+        "name": "callback",
+        "type": "Function"
+      },
+      {
+        "name": "thisArg",
+        "type": "any",
+        "optional": true
+      }
+    ],
+    "returns": "void",
+    "receiver": "array",
+    "description": {
+      "ja": "各要素について関数を順に実行します。",
+      "en": "Calls a function sequentially for every element."
+    }
+  },
+  {
+    "name": "flatMap",
+    "args": [
+      {
+        "name": "callback",
+        "type": "Function"
+      },
+      {
+        "name": "thisArg",
+        "type": "any",
+        "optional": true
+      }
+    ],
+    "returns": "any[]",
+    "receiver": "array",
+    "description": {
+      "ja": "各要素の関数の結果を一段平坦化します。",
+      "en": "Maps sequentially and flattens one level."
+    }
+  },
+  {
+    "name": "reduce",
+    "args": [
+      {
+        "name": "callback",
+        "type": "Function"
+      },
+      {
+        "name": "initialValue",
+        "type": "any",
+        "optional": true
+      }
+    ],
+    "returns": "any",
+    "receiver": "array",
+    "description": {
+      "ja": "左から順に値を集約します。",
+      "en": "Reduces values sequentially from left to right."
+    }
+  },
+  {
+    "name": "flat",
+    "args": [
+      {
+        "name": "depth",
+        "type": "number",
+        "optional": true
+      }
+    ],
+    "returns": "any[]",
+    "receiver": "array",
+    "description": {
+      "ja": "指定した深さまで配列を平坦化します。",
+      "en": "Flattens nested arrays to the specified depth."
+    }
+  },
+  {
+    "name": "join",
+    "args": [
+      {
+        "name": "separator",
+        "type": "string",
+        "optional": true
+      }
+    ],
+    "returns": "string",
+    "receiver": "array",
+    "description": {
+      "ja": "要素を区切り文字で連結します。",
+      "en": "Joins elements with a separator."
+    }
+  },
+  {
+    "name": "Array.from",
+    "receiver": "global",
+    "args": [
+      {
+        "name": "items",
+        "type": "any"
+      },
+      {
+        "name": "mapFn",
+        "type": "Function",
+        "optional": true
+      },
+      {
+        "name": "thisArg",
+        "type": "any",
+        "optional": true
+      }
+    ],
+    "returns": "any[]",
+    "description": {
+      "ja": "反復可能な値や配列状の値から配列を作ります。",
+      "en": "Creates an array from an iterable or array-like value."
+    }
+  },
+  {
+    "name": "sort",
+    "receiver": "array",
+    "args": [
+      {
+        "name": "compare",
+        "type": "Function",
+        "optional": true
+      }
+    ],
+    "returns": "any[]",
+    "description": {
+      "ja": "元の配列を安定に並べ替えます。",
+      "en": "Stably sorts the array in place."
+    }
+  },
+  {
+    "name": "toSorted",
+    "receiver": "array",
+    "args": [
+      {
+        "name": "compare",
+        "type": "Function",
+        "optional": true
+      }
+    ],
+    "returns": "any[]",
+    "description": {
+      "ja": "安定な並べ替えの結果を新しい配列で返します。",
+      "en": "Returns a stably sorted copy."
+    }
+  },
+  {
+    "name": "sortBy",
+    "receiver": "array",
+    "args": [
+      {
+        "name": "key",
+        "type": "Function"
+      }
+    ],
+    "returns": "any[]",
+    "description": {
+      "ja": "キーを一度ずつ求め、元の配列を安定に並べ替えます。",
+      "en": "Stably sorts the array in place using one key per element."
+    }
+  },
+  {
+    "name": "unique",
+    "receiver": "array",
+    "args": [],
+    "returns": "any[]",
+    "description": {
+      "ja": "重複を除き、最初の要素を残した配列を返します。",
+      "en": "Returns the first occurrence of each distinct value."
+    }
+  },
+  {
+    "name": "uniqueBy",
+    "receiver": "array",
+    "args": [
+      {
+        "name": "key",
+        "type": "Function"
+      }
+    ],
+    "returns": "any[]",
+    "description": {
+      "ja": "キーの重複を除き、最初の要素を残した配列を返します。",
+      "en": "Returns the first element for each distinct key."
+    }
+  },
+  {
+    "name": "sum",
+    "receiver": "array",
+    "args": [],
+    "returns": "number",
+    "description": {
+      "ja": "数を左から加算し、空配列では 0 を返します。",
+      "en": "Adds numbers from left to right, returning zero for an empty array."
+    }
+  },
+  {
+    "name": "minBy",
+    "receiver": "array",
+    "args": [
+      {
+        "name": "key",
+        "type": "Function"
+      }
+    ],
+    "returns": "any",
+    "description": {
+      "ja": "最小のキーを持つ最初の要素を返します。",
+      "en": "Returns the first element with the smallest key."
+    }
+  },
+  {
+    "name": "maxBy",
+    "receiver": "array",
+    "args": [
+      {
+        "name": "key",
+        "type": "Function"
+      }
+    ],
+    "returns": "any",
+    "description": {
+      "ja": "最大のキーを持つ最初の要素を返します。",
+      "en": "Returns the first element with the largest key."
+    }
+  },
+  {
+    "name": "countBy",
+    "receiver": "array",
+    "args": [
+      {
+        "name": "key",
+        "type": "Function"
+      }
+    ],
+    "returns": "any",
+    "description": {
+      "ja": "キーを文字列にして、出現回数を原型のない辞書に数えます。",
+      "en": "Counts stringified keys in a prototype-free object."
+    }
+  },
+  {
+    "name": "shuffle",
+    "receiver": "array",
+    "args": [
+      {
+        "name": "rng",
+        "type": "Function",
+        "optional": true
+      }
+    ],
+    "returns": "any[]",
+    "description": {
+      "ja": "元の配列を無作為に並べ替えて返します。",
+      "en": "Randomly shuffles the array in place and returns it."
+    }
+  },
+  {
+    "name": "sample",
+    "receiver": "array",
+    "args": [
+      {
+        "name": "rng",
+        "type": "Function",
+        "optional": true
+      }
+    ],
+    "returns": "any",
+    "description": {
+      "ja": "無作為に一要素を返し、空配列では null を返します。",
+      "en": "Returns a random element, or null for an empty array."
+    }
+  },
+  {
+    "name": "sampleBy",
+    "receiver": "array",
+    "args": [
+      {
+        "name": "weight",
+        "type": "Function"
+      },
+      {
+        "name": "rng",
+        "type": "Function",
+        "optional": true
+      }
+    ],
+    "returns": "any",
+    "description": {
+      "ja": "非負の重みに比例して一要素を選びます。",
+      "en": "Samples an element proportionally to its non-negative weight."
+    }
+  },
+  {
+    "name": "Object.keys",
+    "receiver": "global",
+    "args": [
+      {
+        "name": "value",
+        "type": "any",
+        "optional": false
+      }
+    ],
+    "returns": "string[]",
+    "description": {
+      "ja": "自身の列挙可能なプロパティを返す。",
+      "en": "Return own enumerable properties."
+    }
+  },
+  {
+    "name": "Object.values",
+    "receiver": "global",
+    "args": [
+      {
+        "name": "value",
+        "type": "any",
+        "optional": false
+      }
+    ],
+    "returns": "any[]",
+    "description": {
+      "ja": "自身の列挙可能なプロパティを返す。",
+      "en": "Return own enumerable properties."
+    }
+  },
+  {
+    "name": "Object.entries",
+    "receiver": "global",
+    "args": [
+      {
+        "name": "value",
+        "type": "any",
+        "optional": false
+      }
+    ],
+    "returns": "any[]",
+    "description": {
+      "ja": "自身の列挙可能なプロパティを返す。",
+      "en": "Return own enumerable properties."
+    }
+  },
+  {
+    "name": "Object.fromEntries",
+    "receiver": "global",
+    "args": [
+      {
+        "name": "entries",
+        "type": "any",
+        "optional": false
+      }
+    ],
+    "returns": "any",
+    "description": {
+      "ja": "キーと値の組から原型のない辞書を作る。",
+      "en": "Create a prototype-free dictionary from entries."
+    }
+  },
+  {
+    "name": "Object.groupBy",
+    "receiver": "global",
+    "args": [
+      {
+        "name": "items",
+        "type": "any",
+        "optional": false
+      },
+      {
+        "name": "callback",
+        "type": "Function",
+        "optional": false
+      }
+    ],
+    "returns": "any",
+    "description": {
+      "ja": "関数の返す数・文字列・真偽値のキーで要素をまとめる。",
+      "en": "Group items by numeric, string, or boolean callback keys."
+    }
+  },
+  {
+    "name": "JSON.parse",
+    "receiver": "global",
+    "args": [
+      {
+        "name": "text",
+        "type": "string",
+        "optional": false
+      },
+      {
+        "name": "reviver",
+        "type": "Function",
+        "optional": true
+      }
+    ],
+    "returns": "any",
+    "description": {
+      "ja": "JSON を原型のない値へ読み込む。",
+      "en": "Parse JSON into prototype-free values."
+    }
+  },
+  {
+    "name": "JSON.stringify",
+    "receiver": "global",
+    "args": [
+      {
+        "name": "value",
+        "type": "any",
+        "optional": false
+      },
+      {
+        "name": "replacer",
+        "type": "Function | any[] | null",
+        "optional": true
+      },
+      {
+        "name": "space",
+        "type": "number | string",
+        "optional": true
+      }
+    ],
+    "returns": "string | null",
+    "description": {
+      "ja": "値を JSON の文字列に変換する。",
+      "en": "Serialize a value to JSON."
+    }
+  },
+  {
+    "name": "structuredClone",
+    "receiver": "global",
+    "args": [
+      {
+        "name": "value",
+        "type": "any",
+        "optional": false
+      },
+      {
+        "name": "options",
+        "type": "any",
+        "optional": true
+      }
+    ],
+    "returns": "any",
+    "description": {
+      "ja": "循環と共有参照を保って値を複製する。",
+      "en": "Clone values preserving cycles and shared references."
+    }
+  },
+  {
+    "name": "deepEqual",
+    "receiver": "global",
+    "args": [
+      {
+        "name": "left",
+        "type": "any",
+        "optional": false
+      },
+      {
+        "name": "right",
+        "type": "any",
+        "optional": false
+      }
+    ],
+    "returns": "boolean",
+    "description": {
+      "ja": "循環を扱い値の内容を比較する。",
+      "en": "Compare value contents including cycles."
+    }
+  },
+  {
+    "name": "Date.now",
+    "receiver": "global",
+    "args": [],
+    "returns": "number",
+    "description": {
+      "ja": "現在の Unix 時刻をミリ秒で返します。",
+      "en": "Returns the current Unix time in milliseconds."
+    }
+  },
+  {
+    "name": "Date.parts",
+    "receiver": "global",
+    "args": [
+      {
+        "name": "t",
+        "type": "number"
+      },
+      {
+        "name": "offset",
+        "type": "number",
+        "optional": true
+      }
+    ],
+    "returns": "{ year: number, month: number, day: number, hour: number, minute: number, second: number, millisecond: number, weekday: number }",
+    "description": {
+      "ja": "時刻を年月日・時分秒・曜日に分けます。",
+      "en": "Returns calendar components and the weekday of a timestamp."
+    }
+  },
+  {
+    "name": "Date.format",
+    "receiver": "global",
+    "args": [
+      {
+        "name": "t",
+        "type": "number"
+      },
+      {
+        "name": "format",
+        "type": "string"
+      },
+      {
+        "name": "offset",
+        "type": "number",
+        "optional": true
+      }
+    ],
+    "returns": "string",
+    "description": {
+      "ja": "指定した書式で時刻を文字列にします。",
+      "en": "Formats a timestamp using the specified pattern."
+    }
+  },
+  {
+    "name": "console.log",
+    "receiver": "global",
+    "args": [
+      {
+        "name": "values",
+        "type": "any[]",
+        "rest": true
+      }
+    ],
+    "returns": "void",
+    "description": {
+      "ja": "値を文字列化せずホストの出力へ渡します。",
+      "en": "Passes values to the host output without stringifying them."
+    }
+  },
+  {
+    "name": "sleep",
+    "receiver": "global",
+    "args": [
+      {
+        "name": "ms",
+        "type": "number"
+      }
+    ],
+    "returns": "void",
+    "description": {
+      "ja": "指定したミリ秒だけ待ちます。",
+      "en": "Waits for the specified number of milliseconds."
+    }
+  },
+  {
+    "name": "range",
+    "receiver": "global",
+    "args": [
+      {
+        "name": "start",
+        "type": "number"
+      },
+      {
+        "name": "end",
+        "type": "number"
+      },
+      {
+        "name": "step",
+        "type": "number",
+        "optional": true
+      }
+    ],
+    "returns": "number[]",
+    "description": {
+      "ja": "終端を含まない整数の範囲を配列にします。",
+      "en": "Creates an integer range excluding the end."
+    }
+  },
+  {
+    "name": "setTimeout",
+    "receiver": "global",
+    "args": [
+      {
+        "name": "callback",
+        "type": "Function"
+      },
+      {
+        "name": "delay",
+        "type": "number",
+        "optional": true
+      },
+      {
+        "name": "args",
+        "type": "any[]",
+        "rest": true
+      }
+    ],
+    "returns": "number",
+    "description": {
+      "ja": "遅延後に関数を一度呼びます。",
+      "en": "Schedules a callback once after a delay."
+    }
+  },
+  {
+    "name": "setInterval",
+    "receiver": "global",
+    "args": [
+      {
+        "name": "callback",
+        "type": "Function"
+      },
+      {
+        "name": "delay",
+        "type": "number",
+        "optional": true
+      },
+      {
+        "name": "args",
+        "type": "any[]",
+        "rest": true
+      }
+    ],
+    "returns": "number",
+    "description": {
+      "ja": "指定した間隔で関数を呼びます。",
+      "en": "Schedules a callback at regular intervals."
+    }
+  },
+  {
+    "name": "clearTimeout",
+    "receiver": "global",
+    "args": [
+      {
+        "name": "id",
+        "type": "number | null",
+        "optional": true
+      }
+    ],
+    "returns": "void",
+    "description": {
+      "ja": "登録したタイマーを解除します。",
+      "en": "Cancels a registered timer."
+    }
+  },
+  {
+    "name": "clearInterval",
+    "receiver": "global",
+    "args": [
+      {
+        "name": "id",
+        "type": "number | null",
+        "optional": true
+      }
+    ],
+    "returns": "void",
+    "description": {
+      "ja": "登録したタイマーを解除します。",
+      "en": "Cancels a registered timer."
+    }
+  },
+  {
+    "name": "mapConcurrent",
+    "receiver": "array",
+    "args": [
+      {
+        "name": "callback",
+        "type": "Function"
+      },
+      {
+        "name": "limit",
+        "type": "number",
+        "optional": true
+      }
+    ],
+    "returns": "any[]",
+    "description": {
+      "ja": "同時実行数を制限し、元の順序で結果を返します。",
+      "en": "Maps with bounded concurrency and preserves result order."
+    }
+  },
+  {
+    "name": "next",
+    "receiver": "iterator",
+    "args": [],
+    "returns": "any",
+    "description": {
+      "ja": "配列の次の添字と値を返します。",
+      "en": "Returns the next array index and value."
+    }
+  },
+  {
+    "name": "NaN",
+    "description": {
+      "ja": "数でない数値を表します。",
+      "en": "Represent a not-a-number value."
+    },
+    "receiver": "global",
+    "kind": "constant",
+    "args": [],
+    "returns": "number"
+  },
+  {
+    "name": "Infinity",
+    "description": {
+      "ja": "正の無限大を表します。",
+      "en": "Represent positive infinity."
+    },
+    "receiver": "global",
+    "kind": "constant",
+    "args": [],
+    "returns": "number"
+  },
+  {
+    "name": "Math.E",
+    "description": {
+      "ja": "数学定数 E です。",
+      "en": "The mathematical constant E."
+    },
+    "receiver": "global",
+    "kind": "constant",
+    "args": [],
+    "returns": "number"
+  },
+  {
+    "name": "Math.LN10",
+    "description": {
+      "ja": "数学定数 LN10 です。",
+      "en": "The mathematical constant LN10."
+    },
+    "receiver": "global",
+    "kind": "constant",
+    "args": [],
+    "returns": "number"
+  },
+  {
+    "name": "Math.LN2",
+    "description": {
+      "ja": "数学定数 LN2 です。",
+      "en": "The mathematical constant LN2."
+    },
+    "receiver": "global",
+    "kind": "constant",
+    "args": [],
+    "returns": "number"
+  },
+  {
+    "name": "Math.LOG10E",
+    "description": {
+      "ja": "数学定数 LOG10E です。",
+      "en": "The mathematical constant LOG10E."
+    },
+    "receiver": "global",
+    "kind": "constant",
+    "args": [],
+    "returns": "number"
+  },
+  {
+    "name": "Math.LOG2E",
+    "description": {
+      "ja": "数学定数 LOG2E です。",
+      "en": "The mathematical constant LOG2E."
+    },
+    "receiver": "global",
+    "kind": "constant",
+    "args": [],
+    "returns": "number"
+  },
+  {
+    "name": "Math.PI",
+    "description": {
+      "ja": "数学定数 PI です。",
+      "en": "The mathematical constant PI."
+    },
+    "receiver": "global",
+    "kind": "constant",
+    "args": [],
+    "returns": "number"
+  },
+  {
+    "name": "Math.SQRT1_2",
+    "description": {
+      "ja": "数学定数 SQRT1_2 です。",
+      "en": "The mathematical constant SQRT1_2."
+    },
+    "receiver": "global",
+    "kind": "constant",
+    "args": [],
+    "returns": "number"
+  },
+  {
+    "name": "Math.SQRT2",
+    "description": {
+      "ja": "数学定数 SQRT2 です。",
+      "en": "The mathematical constant SQRT2."
+    },
+    "receiver": "global",
+    "kind": "constant",
+    "args": [],
+    "returns": "number"
+  }
+]

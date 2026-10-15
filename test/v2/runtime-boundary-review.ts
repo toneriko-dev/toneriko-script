@@ -1,7 +1,7 @@
 import { runInNewContext } from 'node:vm';
 import { describe, expect, test } from 'vitest';
 import { PropertyAccess, SCRIPT_FUNCTION, errorValue } from '../../src/v2/runtime/values.js';
-import { runtimeError } from '../../src/v2/runtime/errors.js';
+import { createScriptError, runtimeError } from '../../src/v2/runtime/errors.js';
 import { Interpreter } from '../../src/v2/interpreter.js';
 import { parse } from '../../src/v2/parser/index.js';
 
@@ -103,10 +103,10 @@ test('別 realm と toStringTag を持つ Error を既存の組み込みだけ�
 	expect(calls).toBe(0);
 });
 
-test('Error は境界でコピーし、スクリプトの値の同一性と内部診断の位置を保つ', () => {
+test('実行時 Error の値は内部診断と位置を分離し、同一性を保つ', () => {
 	const properties = new PropertyAccess();
 	const diagnostic = runtimeError('TDZ_ACCESS', pos, { name: 'x' });
-	const value = properties.normalize(diagnostic, pos);
+	const value = createScriptError(diagnostic.name, diagnostic.message, diagnostic);
 	expect(value).not.toBe(diagnostic);
 	expect(properties.normalize(value, pos)).toBe(value);
 	expect(properties.get(value, 'code', pos)).toBe('TDZ_ACCESS');
@@ -119,30 +119,30 @@ test('Error は境界でコピーし、スクリプトの値の同一性と内�
 	expect(diagnostic.message).not.toBe('changed');
 });
 
-test('同じ実行ではホストの Error を共有し、次の実行には変更を持ち越さない', () => {
+test('ホスト Error は同じ参照と変更を次の実行にも持ち越す', () => {
 	const properties = new PropertyAccess();
 	const error = new Error('original');
 	const object = { error };
 	const first = properties.get(object, 'error', pos);
-	expect(first).not.toBe(error);
+	expect(first).toBe(error);
 	expect(properties.get(object, 'error', pos)).toBe(first);
 	properties.set(first, 'message', 'edited', pos);
 	expect(properties.get(properties.get(object, 'error', pos), 'message', pos)).toBe('edited');
-	expect(error.message).toBe('original');
+	expect(error.message).toBe('edited');
 	properties.clear();
 	const next = properties.get(object, 'error', pos);
-	expect(next).not.toBe(first);
-	expect(properties.get(next, 'message', pos)).toBe('original');
+	expect(next).toBe(first);
+	expect(properties.get(next, 'message', pos)).toBe('edited');
 });
 
-test('プロパティから読む Error は実行中の同一性を保ち、次の exec でコピーし直す', async () => {
+test('プロパティから読む Error は exec をまたいで同一性と変更を保つ', async () => {
 	const object = { error: new Error('original') };
 	const output: unknown[] = [];
 	const interpreter = new Interpreter({ object, out: (value: unknown) => { output.push(value); } });
 	await interpreter.exec(parse('out(object.error === object.error); object.error.message = "edited"; out(object.error.message);').program);
 	await interpreter.exec(parse('out(object.error.message);').program);
-	expect(output).toEqual([true, 'edited', 'original']);
-	expect(object.error.message).toBe('original');
+	expect(output).toEqual([true, 'edited', 'edited']);
+	expect(object.error.message).toBe('edited');
 });
 
 test.each(['new Error("message")', 'new Error()'])('判別できないタグ付き Error の内部値を漏らさない: %s', (source) => {

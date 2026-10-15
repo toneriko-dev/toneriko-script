@@ -21,29 +21,25 @@ export function runtimeError(code: DiagnosticCode, pos: Pos, params: Record<stri
 // 停止はスクリプトの例外と区別し、catch と finally の評価に渡しません。
 export class ExecutionStopped extends RuntimeError {}
 
-const scriptErrorValues = new WeakSet<Error>();
-const scriptDiagnostics = new WeakMap<object, RuntimeError>();
+type ScriptErrorKind = { name: string; diagnostic?: RuntimeError };
+const scriptErrorKinds = new WeakMap<object, ScriptErrorKind>();
 export function scriptErrorDiagnostic(value: unknown): RuntimeError | undefined {
-	return value !== null && typeof value === 'object' ? scriptDiagnostics.get(value) : undefined;
+	return value !== null && typeof value === 'object' ? scriptErrorKinds.get(value)?.diagnostic : undefined;
 }
-export function isScriptErrorValue(value: Error): boolean { return scriptErrorValues.has(value); }
+export function isScriptErrorValue(value: unknown): value is object {
+	return value !== null && typeof value === 'object' && scriptErrorKinds.has(value);
+}
+export function scriptErrorName(value: object): string { return scriptErrorKinds.get(value)!.name; }
 
-/** スクリプトに渡す値は内部診断を共有せず、標準のエラーと同じ非列挙のプロパティを持つ。 */
-export function copyScriptError(value: Error, read: (key: string) => unknown): Error {
-	if (isScriptErrorValue(value)) return value;
-	const result = new Error();
-	Reflect.deleteProperty(result, 'stack');
-	const define = (key: string, next: unknown) => Object.defineProperty(result, key, { value: next, writable: true, configurable: true, enumerable: false });
-	const name = read('name');
-	const message = read('message');
-	define('name', name === undefined ? 'Error' : name);
-	define('message', message === undefined ? '' : message);
-	if (Object.hasOwn(value, 'cause')) define('cause', read('cause'));
-	if (value instanceof RuntimeError) {
-		scriptDiagnostics.set(result, value);
-		define('code', value.code);
-		define('pos', { line: value.pos.line, column: value.pos.column });
+/** 原型の代わりに種類だけを保持し、message の省略と own property の列挙規則を保つ。 */
+export function createScriptError(name = 'Error', message?: string, diagnostic?: RuntimeError): object {
+	const result = Object.create(null) as object;
+	scriptErrorKinds.set(result, { name, diagnostic });
+	const define = (key: string, value: unknown) => Object.defineProperty(result, key, { value, writable: true, configurable: true, enumerable: false });
+	if (message !== undefined) define('message', message);
+	if (diagnostic) {
+		define('code', diagnostic.code);
+		define('pos', { line: diagnostic.pos.line, column: diagnostic.pos.column });
 	}
-	scriptErrorValues.add(result);
 	return result;
 }

@@ -1,7 +1,7 @@
 import { runInNewContext } from 'node:vm';
 import { describe, expect, test } from 'vitest';
 import { PropertyAccess } from '../../src/v2/runtime/values.js';
-import { runtimeError } from '../../src/v2/runtime/errors.js';
+import { createScriptError, runtimeError } from '../../src/v2/runtime/errors.js';
 import { Interpreter } from '../../src/v2/interpreter.js';
 import { parse } from '../../src/v2/parser/index.js';
 
@@ -12,13 +12,13 @@ describe('v2 の公開プロパティ境界の回帰', () => {
 		new Error('message', { cause: 'reason' }),
 		new TypeError('message', { cause: 'reason' }),
 		runInNewContext('new Error("message", {cause: "reason"})') as Error,
-	])('Error は許可した値だけを公開する', (error) => {
+	])('ホスト Error は stack だけを隠し own データを読み書きできる', (error) => {
 		const properties = new PropertyAccess();
-		Object.defineProperty(error, 'secret', { value: 123, enumerable: true });
+		Object.defineProperty(error, 'secret', { value: 123, enumerable: true, writable: true, configurable: true });
 		expect(properties.get(error, 'message', pos)).toBe('message');
 		expect(properties.get(error, 'cause', pos)).toBe('reason');
 		expect(properties.get(error, 'name', pos)).toBe(error.name);
-		for (const key of ['stack', 'secret']) {
+		for (const key of ['stack']) {
 			expect(properties.get(error, key, pos)).toBeNull();
 			expect(properties.has(error, key, pos)).toBe(false);
 			expect(properties.entries(error, pos).map(([name]) => name)).not.toContain(key);
@@ -27,6 +27,13 @@ describe('v2 の公開プロパティ境界の回帰', () => {
 			expect(properties.delete(error, key, pos)).toBe(true);
 			expect(Object.getOwnPropertyDescriptor(error, key)).toEqual(descriptor);
 		}
+		expect(properties.get(error, 'secret', pos)).toBe(123);
+		expect(properties.has(error, 'secret', pos)).toBe(true);
+		expect(properties.entries(error, pos)).toEqual([['secret', 123]]);
+		properties.set(error, 'secret', 7, pos);
+		expect(Object.getOwnPropertyDescriptor(error, 'secret')?.value).toBe(7);
+		expect(properties.delete(error, 'secret', pos)).toBe(true);
+		expect(Object.hasOwn(error, 'secret')).toBe(false);
 	});
 
 	test('Error の cause は自分のプロパティだけを読む', () => {
@@ -52,7 +59,8 @@ describe('v2 の公開プロパティ境界の回帰', () => {
 
 	test('実行時エラーは code と pos 以外の内部診断を隠す', () => {
 		const properties = new PropertyAccess();
-		const error = runtimeError('TDZ_ACCESS', pos, { name: 'x' }, 'ReferenceError');
+		const diagnostic = runtimeError('TDZ_ACCESS', pos, { name: 'x' }, 'ReferenceError');
+		const error = createScriptError(diagnostic.name, diagnostic.message, diagnostic);
 		expect(properties.get(error, 'code', pos)).toBe('TDZ_ACCESS');
 		expect(properties.get(error, 'pos', pos)).toEqual(pos);
 		for (const key of ['stack', 'params', 'hint', 'severity']) {
@@ -97,17 +105,17 @@ describe('v2 の公開プロパティ境界の回帰', () => {
 	});
 });
 
-test('ホストのErrorにある非公開thenをPromiseとして読まない', async () => {
+test('ホスト Error の then getter は Promise 判定で読まず、明示的な読みを拒否する', async () => {
 	let calls = 0;
 	const error = new Error('host');
 	Object.defineProperty(error, 'then', { get: () => { calls++; return null; } });
 	const output: unknown[] = [];
-	await new Interpreter({ getError: () => error, out: (x: unknown) => { output.push(x); } }).exec(parse('out(getError().message); out(getError().then);').program);
+	await expect(new Interpreter({ getError: () => error, out: (x: unknown) => { output.push(x); } }).exec(parse('out(getError().message); out(getError().then);').program)).rejects.toMatchObject({ code: 'ACCESSOR_PROPERTY' });
 	expect(calls).toBe(0);
-	expect(output).toEqual(['host', null]);
+	expect(output).toEqual(['host']);
 });
 
-test.each(['throw e;', 'fail();'])('エラーの包装でもgetterを実行しない: %s', async source => {
+test.each(['throw e;', 'fail();'])('エラーの報告では name の getter を読み元の値を付ける: %s', async source => {
 	let calls = 0;
 	const error = new Error('host');
 	Object.defineProperty(error, 'name', { get: () => { calls++; return 'Error'; } });
@@ -115,8 +123,8 @@ test.each(['throw e;', 'fail();'])('エラーの包装でもgetterを実行し�
 		const globals = source === 'throw e;' ? { e: error } : { fail: () => { throw error; } };
 		const interpreter = new Interpreter(globals);
 		await interpreter.exec(parse(source).program);
-	})()).rejects.toMatchObject({ code: 'ACCESSOR_PROPERTY' });
-	expect(calls).toBe(0);
+	})()).rejects.toMatchObject({ code: 'UNCAUGHT_EXCEPTION', name: 'Error', message: 'host', thrownValue: error });
+	expect(calls).toBe(1);
 });
 
 test.each([

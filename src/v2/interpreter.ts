@@ -1,7 +1,7 @@
 import type * as A from './ast.js';
 import { defaultYieldToHost, macrotaskTick } from '../interpreter/host-yield.js';
 import { Environment, boundNames } from './runtime/environment.js';
-import { ExecutionStopped, RuntimeError, runtimeError, scriptErrorDiagnostic, isScriptErrorValue } from './runtime/errors.js';
+import { ExecutionStopped, RuntimeError, runtimeError, scriptErrorDiagnostic, createScriptError } from './runtime/errors.js';
 import { PropertyAccess, SCRIPT_FUNCTION, isScriptFunction, isBuiltinMethod, valueTypeof, errorValue } from './runtime/values.js';
 import type { Value, ScriptFunction } from './runtime/values.js';
 export { RuntimeError, ExecutionStopped } from './runtime/errors.js';
@@ -136,9 +136,10 @@ export class Interpreter {
 		return new Promise((resolve, reject) => {
 			const signal = this.controller.signal;
 			const aborted = () => reject(this.stopped);
+			// 中止済みでも元の処理の拒否を受け、処理されない reject を残さない。
+			Promise.resolve(promise).then(resolve, reject).finally(() => signal.removeEventListener('abort', aborted));
 			if (signal.aborted) { reject(this.stopped); return; }
 			signal.addEventListener('abort', aborted, { once: true });
-			Promise.resolve(promise).then(resolve, reject).finally(() => signal.removeEventListener('abort', aborted));
 		});
 	}
 
@@ -181,9 +182,18 @@ export class Interpreter {
 			}
 			if (throwing) {
 				if (value instanceof ScriptThrown && !internal) {
-					const isError = errorValue(value.value, value.pos);
-					const error = runtimeError(value.diagnostic?.code ?? 'UNCAUGHT_EXCEPTION', value.diagnostic?.pos ?? value.pos, value.diagnostic?.params ?? {}, isError ? this.text(execution.properties.get(value.value, 'name', value.pos), value.pos) : undefined);
-					if (isError) error.message = this.text(execution.properties.get(value.value, 'message', value.pos), value.pos);
+					let name: unknown;
+					let message: unknown;
+					// 例外の付加情報を読めなくても、最初に投げられた値を失わない。
+					try {
+						if (errorValue(value.value, value.pos)) {
+							name = execution.properties.get(value.value, 'name', value.pos);
+							message = execution.properties.get(value.value, 'message', value.pos);
+						}
+					} catch { /* 付加情報の取得に失敗したときは既定の診断文を使う。 */ }
+					const diagnostic = typeof name === 'string' && typeof message === 'string' ? value.diagnostic : undefined;
+					const error = runtimeError(diagnostic?.code ?? 'UNCAUGHT_EXCEPTION', diagnostic?.pos ?? value.pos, diagnostic?.params ?? {}, typeof name === 'string' ? name : undefined);
+					if (typeof message === 'string') error.message = message;
 					Object.assign(error, { thrownValue: value.value, cause: value.value });
 					throw error;
 				}
@@ -391,7 +401,7 @@ export class Interpreter {
 	}
 
 	private createError(args: Value[], execution: Execution, pos: A.Pos): Value {
-		const error = new Error(args.length ? this.text(args[0]!, pos) : '');
+		const error = createScriptError('Error', args.length ? this.text(args[0]!, pos) : undefined);
 		const options = args[1];
 		if (options !== null && (typeof options === 'object' || typeof options === 'function') && execution.properties.has(options, 'cause', pos)) {
 			Object.defineProperty(error, 'cause', { value: execution.properties.get(options, 'cause', pos), configurable: true, writable: true });
@@ -451,16 +461,8 @@ export class Interpreter {
 			return execution.properties.normalize(result, pos);
 		} catch (error) {
 			if (error instanceof ExecutionStopped || error instanceof RuntimeError || error instanceof ScriptThrown) throw error;
-			if (errorValue(error, pos)) {
-				if (isScriptErrorValue(error)) throw new ScriptThrown(error, pos, scriptErrorDiagnostic(error));
-				const host = error as Error;
-				const wrapped = runtimeError('HOST_ERROR', pos, {}, this.text(execution.properties.get(host, 'name', pos), pos));
-				wrapped.message = this.text(execution.properties.get(host, 'message', pos), pos);
-				if (Object.hasOwn(host, 'cause')) Object.defineProperty(wrapped, 'cause', { value: execution.properties.get(host, 'cause', pos), configurable: true, writable: true });
-				throw wrapped;
-			}
 			yield this.prepared(error, execution, pos);
-			throw new ScriptThrown(execution.properties.normalize(error, pos), pos);
+			throw new ScriptThrown(execution.properties.normalize(error, pos), pos, scriptErrorDiagnostic(error));
 		}
 	}
 	private evaluate(node: A.Statement | A.Expression, env: Environment, execution: Execution, labels: string[] = []): Frame | Ready {
@@ -730,7 +732,7 @@ export class Interpreter {
 							const scope = new Environment(env);
 							if (node.handler.param) {
 								for (const name of boundNames(node.handler.param)) scope.declare(name, true);
-								yield this.bind(node.handler.param, properties.normalize(caught instanceof ScriptThrown ? caught.value : caught, pos), scope, execution, true);
+								yield this.bind(node.handler.param, properties.normalize(caught instanceof ScriptThrown ? caught.value : caught instanceof RuntimeError ? createScriptError(caught.name, caught.message, caught) : caught, pos), scope, execution, true);
 							}
 							result = yield this.evaluate(node.handler.body, scope, execution);
 						} catch (caughtAgain) { thrown = true; error = caughtAgain; }

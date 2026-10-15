@@ -12,6 +12,7 @@ export const runtimeMessages = {
 	STDLIB_CLONE_FUNCTION: entry('関数を含む値は複製できません。', '関数を除いた値を渡します。', 'A value containing a function cannot be cloned.', 'Pass a value without functions.'),
 	STDLIB_SORT_COMPARATOR_REQUIRED: entry('文字列以外を並べ替えるには比較関数が必要です。', '比較関数を渡すか sortBy を使います。', 'Sorting non-string values requires a comparator.', 'Pass a comparator or use sortBy.'),
 	STDLIB_URI_ERROR: entry('URI の文字列が不正です。', 'エスケープとサロゲートの対応を確認します。', 'The URI string is malformed.', 'Check percent escapes and surrogate pairs.'),
+	STRING_GRAPHEME_MATCH: entry('検索文字列が書記素の途中に一致します。', '改行が \\r\\n なら replaceAll("\\r\\n", "\\n") でそろえてから検索します。結合文字は基底文字と合わせた書記素全体を指定します。', 'The search string matches inside a grapheme.', 'For CRLF line endings, normalize with replaceAll("\\r\\n", "\\n") before searching. For combining characters, search for the whole grapheme including its base character.'),
 	STDLIB_ARGUMENT_RANGE: entry('引数の値が範囲外です。', '引数に許される範囲を確認します。', 'Argument value is out of range.', 'Check the accepted argument range.'),
 	STDLIB_ARGUMENT_TYPE: entry('引数には {expected} を渡します。', '引数の型を確認します。', 'Expected an argument of type {expected}.', 'Check the argument type.'),
 	STDLIB_ARGUMENT_COUNT: entry('{name} には少なくとも {count} 個の引数が必要です。', '必要な引数を渡します。', '{name} requires at least {count} arguments.', 'Provide the required arguments.'),

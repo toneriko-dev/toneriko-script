@@ -7,7 +7,7 @@ import { spawnSync } from 'node:child_process';
 const mutations = [
 	{ name: 'sort-stability', file: 'src/v2/stdlib/collections.ts', before: 'Number.isNaN(order) || order <= 0', after: 'Number.isNaN(order) || order < 0' },
 	{ name: 'slice-graphemes', file: 'src/v2/stdlib/strings.ts', before: "const clamp = name === 'slice' ? relative : bounded;", after: "if (name === 'slice') return (receiver as string).slice(args[0] as number, args[1] as number);\n\t\tconst clamp = name === 'slice' ? relative : bounded;" },
-	{ name: 'replace-first-only', file: 'src/v2/stdlib/strings.ts', before: "matches(ctx, input, needle, 0, name === 'replaceAll')", after: 'matches(ctx, input, needle, 0, true)' },
+	{ name: 'replace-first-only', file: 'src/v2/stdlib/strings.ts', before: "matches(ctx, input, needle, 0, name === 'replaceAll' ? Infinity : 1)", after: 'matches(ctx, input, needle, 0, Infinity)' },
 	{ name: 'range-excludes-end', file: 'src/v2/stdlib/services.ts', before: 'step > 0 ? value < end : value > end', after: 'step > 0 ? value <= end : value >= end' },
 	{ name: 'map-sequential', file: 'src/v2/stdlib/arrays.ts', before: 'const xs = requireArray(ctx, r), fn = callable(ctx, args[0]); noThis(ctx, args[1]); const length = xs.length; const out: Value[] = [];', after: "const xs = requireArray(ctx, r), fn = callable(ctx, args[0]); noThis(ctx, args[1]); const length = xs.length; const out: Value[] = [];\n\t\tif (String(name) === 'map') return yield ctx.wait!(Promise.all(xs.map((value, i) => ctx.parallel!(fn, [value, i, xs]))));" },
 	{ name: 'sort-yields', file: 'src/v2/stdlib/collections.ts', before: 'return ++work.count % 64 === 0;', after: 'work.count++; return false;' },

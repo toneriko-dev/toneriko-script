@@ -6,6 +6,7 @@ import { nodeExecutable } from '../../scripts/v2-node.mjs';
 import { snapshot } from '../../scripts/v2-reference.mjs';
 import { Interpreter } from '../../src/v2/interpreter.js';
 import { parse } from '../../src/v2/parser/index.js';
+import { messages } from '../../src/v2/messages.js';
 import { stringDefinitions } from '../../src/v2/stdlib/strings.js';
 import { PropertyAccess } from '../../src/v2/runtime/values.js';
 import type { StdContext } from '../../src/v2/stdlib/core.js';
@@ -43,8 +44,39 @@ describe('文字列標準関数', () => {
 
 	test('絵文字・結合・CRLF・国旗を書記素として操作する', async () => {
 		const text = 'a👩🏽‍💻é\r\n🇯🇵z';
-		expect(await execute(`let s = ${JSON.stringify(text)}; out([s.slice(1, 3), s.substring(4, 2), s.at(-2), s.indexOf("z"), s.indexOf("́"), s.includes("💻"), s.startsWith("👩🏽‍💻", 1), s.endsWith("é", 3), s.split("")]);`)).toEqual([['👩🏽‍💻é', 'é\r\n', '🇯🇵', 5, -1, false, true, true, ['a', '👩🏽‍💻', 'é', '\r\n', '🇯🇵', 'z']]]);
+		expect(await execute(`let s = ${JSON.stringify(text)}; out([s.slice(1, 3), s.substring(4, 2), s.at(-2), s.indexOf("z"), s.startsWith("👩🏽‍💻", 1), s.endsWith("é", 3), s.split("")]);`)).toEqual([['👩🏽‍💻é', 'é\r\n', '🇯🇵', 5, true, true, ['a', '👩🏽‍💻', 'é', '\r\n', '🇯🇵', 'z']]]);
 		expect(await execute('out(["z".padStart(3, "👩🏽‍💻a"), "z".padEnd(3, "é"), "👩🏽‍💻".repeat(2)]);')).toEqual([['👩🏽‍💻az', 'zéé', '👩🏽‍💻👩🏽‍💻']]);
+	});
+	test('途中の一致が結果を変える検索だけを日英の案内付きエラーにする', async () => {
+		expect(messages.STRING_GRAPHEME_MATCH.ja.hint).toContain('replaceAll("\\r\\n", "\\n")');
+		expect(messages.STRING_GRAPHEME_MATCH.en.hint).toContain('combining characters');
+		const cases = [
+			['a\r\nb', 'split', '\n'], ['a\r\nb', 'includes', '\n'],
+			['a\r\nb\r\n', 'replaceAll', '\n'], ['é', 'includes', 'e'],
+			['é e', 'indexOf', 'e'], ['é e', 'replace', 'e'],
+			['é', 'startsWith', 'e'], ['é', 'endsWith', '́'],
+			['👩🏽‍💻', 'includes', '💻'],
+		];
+		for (const [input, method, search] of cases) {
+			await expect(execute(`${JSON.stringify(input)}.${method}(${JSON.stringify(search)}${method!.startsWith('replace') ? ', "x"' : ''});`)).rejects.toMatchObject({ code: 'STRING_GRAPHEME_MATCH', name: 'TypeError', pos: expect.objectContaining({ line: 1 }) });
+		}
+	});
+	test('includes は後の境界一致まで探し、結果が決まれば途中一致を調べない', async () => {
+		expect(await execute('out(["é e".includes("e"), "e é".includes("e"), "e é".indexOf("e"), "e é".replace("e", "x"), "é e".includes("e", 2)]);')).toEqual([[true, true, 0, 'x é', true]]);
+	});
+	test('split の limit に達した後と空の検索は途中一致を調べない', async () => {
+		expect(await execute('out(["e é".split("e", 1), "é".split("e", 0), "é".split(""), "é".includes(""), "é".indexOf("", 1), "é".replaceAll("", "-")]);')).toEqual([[[''], [], ['é'], true, 1, '-é-']]);
+		await expect(execute('"e é".split("e", 2);')).rejects.toMatchObject({ code: 'STRING_GRAPHEME_MATCH' });
+	});
+	test('部分一致を含む長い検索も線形のステップ数に収まる', () => {
+		const definition = stringDefinitions.find(d => d.name === 'includes')!;
+		for (const length of [1000, 2000, 4000]) {
+			let ticks = 0;
+			const ctx: StdContext = { pos: { line: 1, column: 1 }, properties: new PropertyAccess(), tick() { ticks++; }, *checkpoint() { return null; }, *call() { return null; } };
+			const frame = definition.implementation(ctx, 'é'.repeat(length) + 'e', ['e']);
+			let result = frame.next(); while (!result.done) result = frame.next();
+			expect(result.value).toBe(true); expect(ticks).toBeLessThan(length * 5);
+		}
 	});
 	test('置換は書記素の位置を渡し、利用者の関数を順に待つ', async () => {
 		const trace: string[] = [];

@@ -1,0 +1,288 @@
+import type * as A from '../ast.js';
+import type { CatalogEntry } from '../catalog.js';
+import { diagnostic, type Diagnostic, type DiagnosticCode } from '../diagnostics.js';
+import { catalog } from '../stdlib/index.js';
+import { fallsThrough } from './control-flow.js';
+import { Scope, bindPattern, declare, propertyName, project } from './scopes.js';
+
+export type CheckOptions = { globals?: readonly string[]; hostCatalog?: readonly CatalogEntry[] };
+type Match = boolean | undefined;
+
+function typeName(type: A.TypeAnnotation): string {
+	const parts: string[] = [];
+	const pending: (string | A.TypeAnnotation)[] = [type];
+	// 配列型の後置記法は深く連ねられるため、診断の整形も再帰にしません。
+	while (pending.length) {
+		const item = pending.pop()!;
+		if (typeof item === 'string') { parts.push(item); continue; }
+		switch (item.type) {
+			case 'KeywordTypeAnnotation': parts.push(item.name); break;
+			case 'FunctionTypeAnnotation': parts.push('Function'); break;
+			case 'ParenthesizedTypeAnnotation': pending.push(')', item.typeAnnotation, '('); break;
+			case 'ArrayTypeAnnotation': pending.push('[]', item.elementType); break;
+			case 'UnionTypeAnnotation':
+				for (let index = item.types.length - 1; index >= 0; index--) {
+					if (index < item.types.length - 1) pending.push(' | ');
+					pending.push(item.types[index]!);
+				}
+				break;
+			case 'ObjectTypeAnnotation':
+				pending.push(' }');
+				for (let index = item.properties.length - 1; index >= 0; index--) {
+					const property = item.properties[index]!;
+					if (index < item.properties.length - 1) pending.push(', ');
+					pending.push(property.typeAnnotation, `${propertyName(property.key)}${property.optional ? '?' : ''}: `);
+				}
+				pending.push('{ ');
+				break;
+		}
+	}
+	return parts.join('');
+}
+
+function literalKind(node: A.Expression): string | undefined {
+	if (node.type === 'Literal') return node.value === null ? 'null' : typeof node.value;
+	if (node.type === 'ArrayExpression') return 'array';
+	if (node.type === 'ObjectExpression') return 'object';
+	if (node.type === 'ArrowFunctionExpression') return 'Function';
+	if (node.type === 'UnaryExpression' && (node.operator === '+' || node.operator === '-') && node.argument.type === 'Literal' && typeof node.argument.value === 'number') return 'number';
+	return undefined;
+}
+function literalMatch(type: A.TypeAnnotation, value: A.Expression, depth = 1): Match {
+	if (type.type === 'ParenthesizedTypeAnnotation') return literalMatch(type.typeAnnotation, value, depth);
+	if (type.type === 'UnionTypeAnnotation') {
+		const matches = type.types.map(item => literalMatch(item, value, depth));
+		return matches.includes(true) ? true : matches.includes(undefined) ? undefined : false;
+	}
+	if (type.type === 'KeywordTypeAnnotation' && type.name === 'any') return true;
+	const kind = literalKind(value);
+	if (!kind) return undefined;
+	if (type.type === 'KeywordTypeAnnotation') return kind === (type.name === 'void' ? 'null' : type.name);
+	if (type.type === 'FunctionTypeAnnotation') return kind === 'Function';
+	if (type.type === 'ArrayTypeAnnotation') {
+		if (value.type !== 'ArrayExpression') return false;
+		if (!depth) return true;
+		return value.elements.some(item => item && item.type !== 'SpreadElement' && literalMatch(type.elementType, item, depth - 1) === false) ? false : true;
+	}
+	if (value.type !== 'ObjectExpression') return false;
+	if (!depth) return true;
+	const properties = new Map<string, A.Expression>();
+	let uncertain = false;
+	for (const item of value.properties) {
+		if (item.type === 'SpreadElement' || (item.computed && item.key.type !== 'Literal')) {
+			// 後の spread・計算キーは先行するリテラルを上書きできます。
+			properties.clear(); uncertain = true;
+		} else properties.set(propertyName(item.key)!, item.value as A.Expression);
+	}
+	for (const property of type.properties) {
+		const item = properties.get(propertyName(property.key)!);
+		if (item ? literalMatch(property.typeAnnotation, item, depth - 1) === false : !property.optional && !uncertain) return false;
+	}
+	return true;
+}
+function valueSummary(value: A.Expression): string {
+	if (value.type === 'Literal') return JSON.stringify(value.value).slice(0, 120);
+	if (value.type === 'UnaryExpression') return value.operator + valueSummary(value.argument);
+	return value.type === 'ArrayExpression' ? '[…]' : value.type === 'ObjectExpression' ? '{…}' : 'Function';
+}
+function distance(left: string, right: string): number {
+	let previous = Array.from({ length: right.length + 1 }, (_, index) => index);
+	for (let i = 0; i < left.length; i++) {
+		const row = [i + 1];
+		for (let j = 0; j < right.length; j++) row.push(Math.min(row[j]! + 1, previous[j + 1]! + 1, previous[j]! + (left[i] === right[j] ? 0 : 1)));
+		previous = row;
+	}
+	return previous[right.length]!;
+}
+function path(node: A.Expression): string | undefined {
+	if (node.type === 'Identifier') return node.name;
+	if (node.type === 'MemberExpression') {
+		const parent = path(node.object);
+		const key = !node.computed || node.property.type === 'Literal' ? propertyName(node.property) : undefined;
+		return parent && key !== undefined ? `${parent}.${key}` : undefined;
+	}
+	return undefined;
+}
+
+/** 明示された注釈と構文だけを検査し、変数の値から型や呼出し先を推論しません。 */
+export function check(program: A.Program, options: CheckOptions = {}): Diagnostic[] {
+	const output: Diagnostic[] = [];
+	const entries = new Map<string, CatalogEntry>();
+	const overridden = new Set([...(options.globals ?? []), ...(options.hostCatalog ?? []).filter(entry => entry.receiver === 'global').map(entry => entry.name.split('.')[0]!)]);
+	for (const entry of catalog) if (entry.receiver !== 'global' || !overridden.has(entry.name.split('.')[0]!)) entries.set(`${entry.receiver}:${entry.name}`, entry);
+	for (const entry of options.hostCatalog ?? []) entries.set(`${entry.receiver}:${entry.name}`, entry);
+	const globals = new Scope();
+	for (const entry of [...catalog, ...(options.hostCatalog ?? [])]) if (entry.receiver === 'global') globals.bindings.set(entry.name.split('.')[0]!, { mutable: false, global: true });
+	for (const name of options.globals ?? []) globals.bindings.set(name, { mutable: false, global: true });
+	const unsafe = new Set<string>();
+	let collecting = true;
+	function emit(code: DiagnosticCode, node: A.Node, params: Diagnostic['params'] = {}, severity: Diagnostic['severity'] = 'error'): void {
+		if (!collecting) output.push(diagnostic(code, node.loc.start, params, { loc: node.loc, severity }));
+	}
+	function reference(node: A.Identifier, scope: Scope): void {
+		if (collecting || scope.resolve(node.name)) return;
+		const threshold = node.name.length < 4 ? 1 : 2;
+		const candidates = scope.names().filter(name => Math.abs(name.length - node.name.length) <= threshold && name.length <= 128 && node.name.length <= 128).map(name => ({ name, difference: distance(name, node.name) })).filter(item => item.difference <= threshold).sort((a, b) => a.difference - b.difference || a.name.localeCompare(b.name));
+		if (candidates[0]) emit('UNBOUND_IDENTIFIER_SUGGESTION', node, { name: node.name, suggestion: candidates[0].name });
+		else emit('UNBOUND_IDENTIFIER', node, { name: node.name });
+	}
+	function invalidate(node: A.Expression, scope: Scope): void {
+		if (node.type === 'MemberExpression') { invalidate(node.object, scope); return; }
+		if (node.type === 'Identifier' && scope.resolve(node.name)?.global) unsafe.add(node.name);
+	}
+	function mismatch(type: A.TypeAnnotation | undefined, value: A.Expression, name: string): void {
+		if (!collecting && type && literalMatch(type, value) === false) emit('TYPE_ANNOTATION_MISMATCH', value, { name, expected: typeName(type), actual: literalKind(value)!, value: valueSummary(value) });
+	}
+	function bindingExpressions(pattern: A.Pattern | A.MemberExpression, scope: Scope, inherited?: A.TypeAnnotation): void {
+		const annotation = 'typeAnnotation' in pattern ? pattern.typeAnnotation ?? inherited : inherited;
+		switch (pattern.type) {
+			case 'AssignmentPattern': mismatch(annotation ?? ('typeAnnotation' in pattern.left ? pattern.left.typeAnnotation : undefined), pattern.right, pattern.left.type === 'Identifier' ? pattern.left.name : 'pattern'); expression(pattern.right, scope); bindingExpressions(pattern.left, scope, annotation); break;
+			case 'RestElement': bindingExpressions(pattern.argument, scope, annotation); break;
+			case 'ArrayPattern': for (const [index, item] of pattern.elements.entries()) if (item) bindingExpressions(item, scope, item.type === 'RestElement' ? annotation : project(annotation, String(index), true)); break;
+			case 'ObjectPattern': for (const item of pattern.properties) {
+				if (item.type === 'RestElement') bindingExpressions(item.argument, scope);
+				else { if (item.computed) expression(item.key as A.Expression, scope); bindingExpressions(item.value as A.Pattern, scope, !item.computed || item.key.type === 'Literal' ? project(annotation, propertyName(item.key)!) : undefined); }
+			} break;
+			case 'MemberExpression': expression(pattern, scope); break;
+			case 'Identifier': break;
+		}
+	}
+	function write(pattern: A.Pattern | A.MemberExpression, scope: Scope, value?: A.Expression): void {
+		switch (pattern.type) {
+			case 'Identifier': {
+				reference(pattern, scope);
+				const binding = scope.resolve(pattern.name);
+				if (binding && !binding.mutable) emit('CONST_ASSIGNMENT', pattern, { name: pattern.name });
+				if (value) mismatch(binding?.annotation, value, pattern.name);
+				invalidate(pattern, scope);
+				break;
+			}
+			case 'MemberExpression': invalidate(pattern, scope); expression(pattern.object, scope, true); if (pattern.computed) expression(pattern.property, scope); break;
+			case 'AssignmentPattern': expression(pattern.right, scope); write(pattern.left, scope, value?.type === 'Literal' && value.value === null ? pattern.right : value); break;
+			case 'RestElement': write(pattern.argument, scope); break;
+			case 'ArrayPattern': for (const [index, item] of pattern.elements.entries()) if (item) {
+				const element = value?.type === 'ArrayExpression' && !value.elements.slice(0, index + 1).some(part => part?.type === 'SpreadElement') ? value.elements[index] : undefined;
+				write(item, scope, element && element.type !== 'SpreadElement' ? element : undefined);
+			} break;
+			case 'ObjectPattern': for (const item of pattern.properties) {
+				if (item.type === 'RestElement') write(item.argument, scope);
+				else {
+					if (item.computed) expression(item.key as A.Expression, scope);
+					const key = !item.computed || item.key.type === 'Literal' ? propertyName(item.key) : undefined;
+					const property = value?.type === 'ObjectExpression' && value.properties.every(part => part.type === 'Property' && (!part.computed || part.key.type === 'Literal')) ? value.properties.filter((part): part is A.Property => part.type === 'Property' && propertyName(part.key) === key).at(-1) : undefined;
+					write(item.value as A.Pattern, scope, property?.value as A.Expression | undefined);
+				}
+			} break;
+		}
+	}
+	function arity(node: A.CallExpression | A.NewExpression, scope: Scope): void {
+		if (collecting) return;
+		let definition: CatalogEntry | undefined;
+		const name = path(node.callee);
+		if (name) {
+			const root = name.split('.')[0]!;
+			if (scope.resolve(root)?.global && !unsafe.has(root)) definition = entries.get(`global:${name}`);
+		}
+		if (!definition && node.callee.type === 'MemberExpression') {
+			let receiver = literalKind(node.callee.object);
+			if (node.callee.object.type === 'Identifier') {
+				let type = scope.resolve(node.callee.object.name)?.annotation;
+				while (type?.type === 'ParenthesizedTypeAnnotation') type = type.typeAnnotation;
+				if (type?.type === 'KeywordTypeAnnotation' && (type.name === 'string' || type.name === 'number')) receiver = type.name;
+			}
+			const key = !node.callee.computed || node.callee.property.type === 'Literal' ? propertyName(node.callee.property) : undefined;
+			if (receiver && key) definition = entries.get(`${receiver}:${key}`);
+		}
+		if (!definition || 'kind' in definition) return;
+		let count = 0;
+		for (const arg of node.arguments) {
+			if (arg.type !== 'SpreadElement') count++;
+			else if (arg.argument.type === 'ArrayExpression' && arg.argument.elements.every(item => item && item.type !== 'SpreadElement')) count += arg.argument.elements.length;
+			else return;
+		}
+		const minimum = definition.args.filter(arg => !arg.optional && !arg.rest).length;
+		const maximum = definition.args.some(arg => arg.rest) ? Infinity : definition.args.length;
+		if (count < minimum || count > maximum) emit('ARGUMENT_COUNT', node, { name: definition.name, min: minimum, max: maximum === Infinity ? '∞' : maximum, actual: count });
+	}
+	function functionBody(node: A.FunctionDeclaration | A.ArrowFunctionExpression, parent: Scope): void {
+		const scope = new Scope(parent);
+		for (const param of node.params) bindPattern(scope, param, true);
+		// 引数の既定値から本体内の宣言は見えません。
+		for (const param of node.params) bindingExpressions(param, scope);
+		if (node.body.type === 'BlockStatement') { declare(scope, node.body.body); for (const item of node.body.body) statement(item, scope); }
+		else expression(node.body, scope);
+	}
+	function expression(node: A.Expression, scope: Scope, direct = false): void {
+		switch (node.type) {
+			case 'Identifier': reference(node, scope); if (!direct) invalidate(node, scope); break;
+			case 'Literal': break;
+			case 'ArrowFunctionExpression': functionBody(node, scope); break;
+			case 'ArrayExpression': for (const item of node.elements) if (item) expression(item.type === 'SpreadElement' ? item.argument : item, scope); break;
+			case 'ObjectExpression': for (const item of node.properties) { if (item.type === 'SpreadElement') expression(item.argument, scope); else { if (item.computed) expression(item.key as A.Expression, scope); expression(item.value as A.Expression, scope); } } break;
+			case 'TemplateLiteral': for (const item of node.expressions) expression(item, scope); break;
+			case 'AssignmentExpression': write(node.left, scope, node.operator === '=' ? node.right : undefined); expression(node.right, scope); break;
+			case 'UpdateExpression': write(node.argument, scope); break;
+			case 'MemberExpression': if (!direct && !entries.has(`global:${path(node)}`)) invalidate(node, scope); expression(node.object, scope, true); if (node.computed) expression(node.property, scope); break;
+			case 'CallExpression': case 'NewExpression': arity(node, scope); expression(node.callee, scope, true); for (const arg of node.arguments) expression(arg.type === 'SpreadElement' ? arg.argument : arg, scope); break;
+			case 'UnaryExpression': if (node.operator === 'delete') invalidate(node.argument, scope); expression(node.argument, scope); break;
+			case 'AwaitExpression': expression(node.argument, scope); break;
+			case 'ChainExpression': expression(node.expression, scope, direct); break;
+			case 'BinaryExpression': case 'LogicalExpression': expression(node.left, scope); expression(node.right, scope); break;
+			case 'ConditionalExpression': expression(node.test, scope); expression(node.consequent, scope); expression(node.alternate, scope); break;
+		}
+	}
+	function block(body: readonly A.Statement[], parent: Scope): void { const scope = new Scope(parent); declare(scope, body); for (const item of body) statement(item, scope); }
+	function statement(node: A.Statement, scope: Scope): void {
+		switch (node.type) {
+			case 'EmptyStatement': case 'BreakStatement': case 'ContinueStatement': break;
+			case 'ExpressionStatement': expression(node.expression, scope); break;
+			case 'VariableDeclaration': for (const item of node.declarations) {
+				bindingExpressions(item.id, scope);
+				if (item.init) { mismatch('typeAnnotation' in item.id ? item.id.typeAnnotation : undefined, item.init, item.id.type === 'Identifier' ? item.id.name : 'pattern'); expression(item.init, scope); }
+			} break;
+			case 'FunctionDeclaration': functionBody(node, scope); break;
+			case 'BlockStatement': block(node.body, scope); break;
+			case 'ExportMetaDeclaration': statement(node.declaration, scope); break;
+			case 'ReturnStatement': if (node.argument) expression(node.argument, scope); break;
+			case 'ThrowStatement': expression(node.argument, scope); break;
+			case 'LabeledStatement': statement(node.body, scope); break;
+			case 'IfStatement': expression(node.test, scope); statement(node.consequent, scope); if (node.alternate) statement(node.alternate, scope); break;
+			case 'WhileStatement': case 'DoWhileStatement': expression(node.test, scope); statement(node.body, scope); break;
+			case 'ForStatement': {
+				const loop = new Scope(scope);
+				if (node.init?.type === 'VariableDeclaration') { declare(loop, [node.init]); statement(node.init, loop); } else if (node.init) expression(node.init, loop);
+				if (node.test) expression(node.test, loop);
+				if (node.update) expression(node.update, loop);
+				statement(node.body, loop); break;
+			}
+			case 'ForOfStatement': {
+				const loop = new Scope(scope);
+				if (node.left.type === 'VariableDeclaration') { declare(loop, [node.left]); statement(node.left, loop); } else write(node.left, loop);
+				expression(node.right, loop); statement(node.body, loop); break;
+			}
+			case 'SwitchStatement': {
+				expression(node.discriminant, scope);
+				const cases = new Scope(scope); declare(cases, node.cases.flatMap(item => item.consequent));
+				for (const [index, item] of node.cases.entries()) {
+					if (item.test) expression(item.test, cases);
+					for (const child of item.consequent) statement(child, cases);
+					if (index < node.cases.length - 1 && item.consequent.some(child => child.type !== 'EmptyStatement') && fallsThrough(item.consequent)) emit('CASE_FALLTHROUGH', item, {}, 'warning');
+				} break;
+			}
+			case 'TryStatement': {
+				statement(node.block, scope);
+				if (node.handler) {
+					const caught = new Scope(scope);
+					if (node.handler.param) { bindPattern(caught, node.handler.param, true); bindingExpressions(node.handler.param, caught); }
+					declare(caught, node.handler.body.body); for (const item of node.handler.body.body) statement(item, caught);
+				}
+				if (node.finalizer) statement(node.finalizer, scope); break;
+			}
+		}
+	}
+	// 名前空間の変更は閉包や後続の文にもあり得るため、診断より先に全体を調べます。
+	block(program.body, globals);
+	collecting = false;
+	block(program.body, globals);
+	return output.sort((a, b) => a.pos.line - b.pos.line || a.pos.column - b.pos.column);
+}

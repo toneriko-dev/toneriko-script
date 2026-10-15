@@ -1,6 +1,6 @@
 # Toneriko Script 2 の設計案
 
-Toneriko Script を作り直す案です。構文を JavaScript(と型注釈)の小さな部分集合にし、他の言語で書きやすいとされる機能を標準ライブラリで足し、型注釈と実行時の検査で安全性を持たせます。言語も道具も軽く保ちます。AiScript の構文との互換は持ちません。パーサー・インタプリタ・標準ライブラリは `src/v2/` に実装しています。型注釈の実行時検査も実装しています。実行前検査と Misskey の関数は次の段階で扱います。
+Toneriko Script を作り直す案です。構文を JavaScript(と型注釈)の小さな部分集合にし、他の言語で書きやすいとされる機能を標準ライブラリで足し、型注釈と実行時の検査で安全性を持たせます。言語も道具も軽く保ちます。AiScript の構文との互換は持ちません。パーサー・インタプリタ・標準ライブラリは `src/v2/` に実装しています。型注釈の実行時検査と実行前検査も実装しています。Misskey の関数は次の段階で扱います。
 
 文中の「今」は 1.3.0 の振る舞いで、例は 1.3.0 で実行して確かめています。
 
@@ -205,6 +205,60 @@ let picked: string | null = null
 
 実行前の検査は、型の推論はしません。変数をたどって型を決めると、検査器が TypeScript と同じくらい大きくなるためです。`null` かもしれない値への誤った操作は、実行時に `null` のプロパティを読もうとした所でエラーになり、`?.` と `??` を案内します。
 
+
+### 実行前検査の API
+
+`check(program, { globals?, hostCatalog? })` は `src/v2/checker/index.ts` から公開し、実行せず `Diagnostic[]` をソース順に返します。`globals` はホストが提供する名前の配列、`hostCatalog` は `CatalogEntry[]` です。診断には `code`、`params`、`pos`、`loc`、`hint`、`severity` があり、検査器は開始・終了位置を付けます。`formatDiagnostic(diagnostic, 'ja' | 'en')` で位置付きの表示文を作れます。
+
+```ts
+const { program, warnings } = parse(source);
+const diagnostics = [...warnings, ...check(program, {
+    globals: Object.keys(host), hostCatalog,
+})];
+if (!diagnostics.some(diagnostic => diagnostic.severity === 'error')) {
+    await new Interpreter(host).exec(program);
+}
+```
+
+`exec` は実行前検査を自動で呼びません。呼び出し側が診断を表示して実行を止めるか選びます。警告だけでは停止しません。実行時の型検査は `check` を呼んだかによらず働きます。
+
+ホスト定義は標準の `catalog.json` と同じ形で書けます。5 段目の Mk/Ui/Play/Plugin もこの形を使います。
+
+```json
+[{
+  "name": "Mk.api",
+  "receiver": "global",
+  "args": [
+    { "name": "endpoint", "type": "string" },
+    { "name": "params", "type": "any", "optional": true }
+  ],
+  "returns": "any",
+  "description": { "ja": "Misskey API を呼び出します。", "en": "Calls the Misskey API." }
+}]
+```
+
+必須引数の数を下限、全引数の数を上限とし、`rest` があれば上限なしです。`kind: "constant"` の項目は呼出し検査の対象外です。標準関数の定義は `src/v2/stdlib/` の catalog と実装の共通定義から読み、`Function.length` は使いません。ホストが同名の名前空間を渡した場合は標準の名前空間全体を置き換えます。
+
+引数数を断定するのは、直接の関数名・名前空間、リテラルの受け手、明示された `string`・`number` 型の受け手です。配列変数のメソッドは書換え可能なため断定しません。関数別名と未知の spread からは推論せず、平坦な配列リテラルの spread だけを数えます。名前空間の書換えや外への受渡しがある場合も、その名前空間の断定を控えます。字句スコープによる同名の宣言を優先します。
+
+リテラルの検査は注釈付きの初期値・単純代入・分割束縛の既定値を対象にし、演算結果の型は推論しません。中身のある case から次の case へ進み得る場合に警告します。`break`・`return`・`throw`、ループと `try/catch/finally` の制御を考慮します。
+
+同じ範囲の二重宣言はパーサーが拒否します。let/const/function/引数の組合せを扱い、別ブロックの同名宣言は許可します。
+
+| 診断コード | 種別 | 日本語の例 | 英語の例 |
+|---|---|---|---|
+| `TYPE_ANNOTATION_MISMATCH` | error | x は number と書かれていますが、string の値 "text" が入りました。 | x is annotated as number, but received the string value "text". |
+| `CONST_ASSIGNMENT` | error | x は再代入できません。 | Cannot reassign x. |
+| `UNBOUND_IDENTIFIER` | error | x は宣言されていません。 | x is not declared. |
+| `UNBOUND_IDENTIFIER_SUGGESTION` | error | cout は宣言されていません。もしかして count ですか？ | cout is not declared. Did you mean count? |
+| `ARGUMENT_COUNT` | error | range の引数は 2〜3 個ですが、1 個渡されています。 | range expects 2–3 arguments, but received 1. |
+| `CASE_FALLTHROUGH` | warning | この case は次の case に進みます。 | This case falls through to the next case. |
+| `VOID_TYPE_POSITION` | error | void は戻り値の型にだけ書けます。 | void is only allowed in return types. |
+| `PARENTHESIZED_ARROW_RETURN_TYPE` | error | このアロー関数の戻り値型には括弧を付けられません。 | This arrow return type cannot be parenthesized. |
+| `ARROW_OBJECT_BODY` | error | オブジェクトを返すなら x => ({ … }) と書きます。 | Use x => ({ … }) to return an object. |
+| `DUPLICATE_DECLARATION` | error | 同じ範囲で x が二重に宣言されています。 | Duplicate declaration of x. |
+
+表示には `(3 行目、5 列目)` / `(line 3, column 5)` の形で位置を付けます。案内は診断の `hint` でも取得できます。
 
 ## 標準ライブラリ
 

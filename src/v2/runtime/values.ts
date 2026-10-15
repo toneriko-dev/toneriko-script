@@ -3,7 +3,7 @@ import { standardMethod } from '../stdlib/index.js';
 import { isStdFunction } from '../stdlib/core.js';
 import type * as AST from '../ast.js';
 import { runtimeError, isScriptErrorValue, scriptErrorName } from './errors.js';
-import { GraphemeCache } from './strings.js';
+import { GraphemeCache, type GraphemeSearchInfo } from './strings.js';
 
 import { isScriptFunction, scriptObjects, type Value } from './brands.js';
 export { SCRIPT_FUNCTION, isScriptFunction, valueTypeof, scriptObject } from './brands.js';
@@ -144,6 +144,8 @@ export class PropertyAccess {
 			else yield* this.strings.prepare(value);
 		}
 	}
+
+	*prepareSearch(value: string): Generator<void, GraphemeSearchInfo> { return yield* this.strings.prepareSearch(value); }
 
 	concat(left: string, right: string): string { return this.strings.concat(left, right); }
 	graphemes(value: string): readonly string[] { return this.strings.graphemes(value); }

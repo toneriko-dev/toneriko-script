@@ -1,4 +1,10 @@
+export type GraphemeSearchInfo = {
+	length: number;
+	offsets: readonly number[] | null;
+	boundaries: ReadonlyMap<number, number> | null;
+};
 export type GraphemeInfo = {
+	search?: GraphemeSearchInfo;
 	length: number;
 	parts: readonly string[] | null;
 	ascii: boolean;
@@ -153,6 +159,25 @@ export class GraphemeCache {
 		}
 		info.parts = parts;
 		return info;
+	}
+
+	/** 検索の位置変換は分割結果と一緒に保持し、同じ文字列の反復検索で作り直さない。 */
+	*prepareSearch(value: string): Generator<void, GraphemeSearchInfo> {
+		const info = yield* this.prepareParts(value);
+		if (info.search) return info.search;
+		if (!info.parts) return info.search = { length: info.length, offsets: null, boundaries: null };
+		// 分割の残りと対応表の計上を別の中断区間にする。
+		yield;
+		const offsets: number[] = [0];
+		const boundaries = new Map<number, number>([[0, 0]]);
+		let offset = 0, pending = 0;
+		for (let i = 0; i < info.parts.length; i++) {
+			offset += info.parts[i]!.length;
+			offsets.push(offset); boundaries.set(offset, i + 1);
+			this.onStep(); pending++;
+			if (pending === 64) { pending = 0; yield; }
+		}
+		return info.search = { length: info.length, offsets, boundaries };
 	}
 
 	at(value: string, index: number): string | undefined {

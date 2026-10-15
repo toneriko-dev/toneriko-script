@@ -1,3 +1,4 @@
+import type { GraphemeSearchInfo } from '../runtime/strings.js';
 import { requireString, requireNumber, type StdContext, type StdDefinition, type StdFrame } from './core.js';
 import { runtimeError } from '../runtime/errors.js';
 import { valueTypeof, scriptObject, type Value } from '../runtime/brands.js';
@@ -27,28 +28,23 @@ function* portion(ctx: StdContext, value: Units, start: number, end: number): Ge
 function bounded(index: number, length: number): number { return Math.min(length, Math.max(0, index)); }
 function relative(index: number, length: number): number { return bounded(index < 0 ? length + index : index, length); }
 
-/** UTF-16 の位置と書記素の位置を一度だけ対応付け、検索を線形に保つ。 */
-function* boundaries(ctx: StdContext, input: Units): Generator<any, Map<number, number> | null, any> {
-	if (typeof input === 'string') return null;
-	const result = new Map<number, number>();
-	let offset = 0;
-	for (let i = 0; i < input.length; i++) { result.set(offset, i); offset += input[i]!.length; yield* step(ctx); }
-	result.set(offset, input.length);
-	return result;
+/** 対応表の準備でも評価器へ制御を返し、以降の開始位置変換は定数時間にする。 */
+function* searchInfo(ctx: StdContext, input: string): Generator<any, GraphemeSearchInfo, any> {
+	const preparation = ctx.properties.prepareSearch(input);
+	let next = preparation.next();
+	while (!next.done) { yield ctx.checkpoint(); next = preparation.next(); }
+	return next.value;
 }
 function partialMatch(ctx: StdContext): never { throw runtimeError('STRING_GRAPHEME_MATCH', ctx.pos, {}, 'TypeError'); }
 /** 接頭辞表は検索ごとに一度だけ作り、途中の一致も同じ走査で判定する。 */
-function* matches(ctx: StdContext, input: Units, needle: Units, start = 0, limit = 1, includes = false): Generator<any, number[], any> {
+function* matches(ctx: StdContext, raw: string, search: string, info: GraphemeSearchInfo, start = 0, limit = 1, includes = false): Generator<any, number[], any> {
 	const found: number[] = [];
-	if (needle.length === 0) {
-		for (let i = start; i <= input.length && found.length < limit; i++) { found.push(i); yield* step(ctx); }
+	if (search.length === 0) {
+		for (let i = start; i <= info.length && found.length < limit; i++) { found.push(i); yield* step(ctx); }
 		return found;
 	}
-	const positions = yield* boundaries(ctx, input);
-	const raw = typeof input === 'string' ? input : input.join('');
-	const search = typeof needle === 'string' ? needle : needle.join('');
-	let offset = start;
-	if (positions) { offset = 0; for (let i = 0; i < start; i++) { offset += input[i]!.length; yield* step(ctx); } }
+	const positions = info.boundaries;
+	const offset = info.offsets ? info.offsets[start]! : start;
 	const prefix: number[] = [0];
 	for (let i = 1, j = 0; i < search.length; i++) {
 		while (j > 0 && search[i] !== search[j]) { j = prefix[j - 1]!; yield* step(ctx); }
@@ -95,22 +91,19 @@ export const stringDefinitions: StdDefinition[] = [
 		return input[index < 0 ? input.length + index : index] ?? null;
 	}),
 	...['indexOf', 'includes', 'startsWith', 'endsWith'].map(name => def(name, [arg('search', 'string'), arg('position', 'number', true)], name === 'indexOf' ? 'number' : 'boolean', '書記素の境界で文字列を検索する。', 'Search at grapheme boundaries.', function* (ctx, receiver, args) {
-		const input = yield* units(ctx, string(ctx, receiver));
-		const needle = yield* units(ctx, string(ctx, args[0]));
-		const position = bounded(number(ctx, args[1], name === 'endsWith' ? input.length : 0), input.length);
+		const original = string(ctx, receiver), search = string(ctx, args[0]);
+		const info = yield* searchInfo(ctx, original);
+		const position = bounded(number(ctx, args[1], name === 'endsWith' ? info.length : 0), info.length);
 		if (name === 'startsWith' || name === 'endsWith') {
-			if (!needle.length) return true;
-			const positions = yield* boundaries(ctx, input);
-			const raw = string(ctx, receiver), search = string(ctx, args[0]);
-			let offset = position;
-			if (positions) { offset = 0; for (let i = 0; i < position; i++) { offset += input[i]!.length; yield* step(ctx); } }
+			if (!search.length) return true;
+			const offset = info.offsets ? info.offsets[position]! : position;
 			const start = name === 'endsWith' ? offset - search.length : offset;
-			if (start < 0 || start + search.length > raw.length) return false;
-			for (let i = 0; i < search.length; i++) { yield* step(ctx); if (raw[start + i] !== search[i]) return false; }
-			if (positions && (!positions.has(start) || !positions.has(start + search.length))) return partialMatch(ctx);
+			if (start < 0 || start + search.length > original.length) return false;
+			for (let i = 0; i < search.length; i++) { yield* step(ctx); if (original[start + i] !== search[i]) return false; }
+			if (info.boundaries && (!info.boundaries.has(start) || !info.boundaries.has(start + search.length))) return partialMatch(ctx);
 			return true;
 		}
-		const index = (yield* matches(ctx, input, needle, position, 1, name === 'includes'))[0] ?? -1;
+		const index = (yield* matches(ctx, original, search, info, position, 1, name === 'includes'))[0] ?? -1;
 		return name === 'indexOf' ? index : index !== -1;
 	})),
 	...['padStart', 'padEnd'].map(name => def(name, [arg('targetLength'), arg('fill', 'string', true)], 'string', '指定した書記素数まで埋める。', 'Pad to the requested grapheme length.', function* (ctx, receiver, args) {
@@ -136,13 +129,14 @@ export const stringDefinitions: StdDefinition[] = [
 		if (limit === 0) return scriptObject([]);
 		if (args[0] === undefined) return scriptObject([original]);
 		const input = yield* units(ctx, original);
+		const info = yield* searchInfo(ctx, original);
 		const separator = yield* units(ctx, string(ctx, args[0]));
 		const result: string[] = [];
 		if (!separator.length) {
 			for (let i = 0; i < Math.min(limit, input.length); i++) { result.push(input[i]!); yield* step(ctx); }
 			return scriptObject(result);
 		}
-		const positions = yield* matches(ctx, input, separator, 0, limit);
+		const positions = yield* matches(ctx, original, string(ctx, args[0]), info, 0, limit);
 		let start = 0;
 		for (const position of positions) {
 			result.push(yield* portion(ctx, input, start, position)); start = position + separator.length;
@@ -158,8 +152,9 @@ export const stringDefinitions: StdDefinition[] = [
 		const callable = replacement !== undefined && valueTypeof(replacement) === 'function';
 		if (!callable && typeof replacement !== 'string') return invalid(ctx);
 		const input = yield* units(ctx, original);
+		const info = yield* searchInfo(ctx, original);
 		const needle = yield* units(ctx, search);
-		const positions = yield* matches(ctx, input, needle, 0, name === 'replaceAll' ? Infinity : 1);
+		const positions = yield* matches(ctx, original, search, info, 0, name === 'replaceAll' ? Infinity : 1);
 		const result: string[] = [];
 		let start = 0;
 		for (const position of positions) {

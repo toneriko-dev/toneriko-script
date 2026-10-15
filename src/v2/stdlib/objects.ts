@@ -150,7 +150,9 @@ function* stringify(ctx: StdContext, initial: Value, replacer?: Value, space?: V
 	let names: string[] | undefined;
 	if (Array.isArray(replacer)) {
 		names = []; const seen = new Set<string>();
-		for (const item of replacer) {
+		const length = replacer.length;
+		for (let i = 0; i < length; i++) {
+			const item = ctx.properties.get(replacer, i, ctx.pos);
 			if (typeof item === 'string' || typeof item === 'number') { const name = key(ctx, String(item)); if (!seen.has(name)) { seen.add(name); names.push(name); } }
 			yield* step(ctx);
 		}
@@ -252,9 +254,18 @@ function* deepEqual(ctx: StdContext, a: Value, b: Value): StdFrame {
 		const [left, right] = pairs.pop()!; yield* step(ctx);
 		if (Object.is(left, right)) continue;
 		if (left === null || right === null || typeof left !== 'object' || typeof right !== 'object' || callable(left) || callable(right) || Array.isArray(left) !== Array.isArray(right)) return false;
+		const leftError = ctx.properties.errorValue(left, ctx.pos), rightError = ctx.properties.errorValue(right, ctx.pos);
+		if (leftError !== rightError) return false;
+		const leftPrototype = Object.getPrototypeOf(left), rightPrototype = Object.getPrototypeOf(right);
+		// 通常の辞書は内容で比べ、ホストのインスタンスは原型が異なれば別の種類とする。
+		if ((leftPrototype !== null && leftPrototype !== Object.prototype || rightPrototype !== null && rightPrototype !== Object.prototype) && leftPrototype !== rightPrototype) return false;
 		if (Array.isArray(left) && left.length !== (right as Value[]).length) return false;
 		let rights = seen.get(left); if (rights?.has(right)) continue;
 		if (!rights) seen.set(left, rights = new Set()); rights.add(right);
+		if (leftError) {
+			pairs.push([ctx.properties.get(left, 'name', ctx.pos), ctx.properties.get(right, 'name', ctx.pos)]);
+			pairs.push([ctx.properties.get(left, 'message', ctx.pos), ctx.properties.get(right, 'message', ctx.pos)]);
+		}
 		const xs = yield* own(ctx, left), ys = yield* own(ctx, right);
 		if (xs.length !== ys.length) return false;
 		const other = new Map(ys);
@@ -281,12 +292,13 @@ export const objectDefinitions: StdDefinition[] = [
 		}
 		return result;
 	}),
-	def('Object.groupBy', [arg('items', 'any'), arg('callback', 'Function')], 'any', '関数の返す数か文字列のキーで要素をまとめる。', 'Group items by numeric or string callback keys.', function* (ctx, _receiver, args) {
+	def('Object.groupBy', [arg('items', 'any'), arg('callback', 'Function')], 'any', '関数の返す数・文字列・真偽値のキーで要素をまとめる。', 'Group items by numeric, string, or boolean callback keys.', function* (ctx, _receiver, args) {
 		const callback = requireCallback(ctx, args[1]), result = dictionary();
 		let index = 0;
 		for (const _ of ctx.properties.prepare(args[0], ctx.pos, true)) yield ctx.checkpoint();
 		for (const value of ctx.properties.iterableIterator(args[0]!, ctx.pos)) {
-			const name = key(ctx, yield ctx.call(callback, [value, index++]));
+			const resultKey = yield ctx.call(callback, [value, index++]);
+			const name = key(ctx, typeof resultKey === 'boolean' ? String(resultKey) : resultKey);
 			const group = result[name] as Value[] | undefined;
 			if (group) group.push(value); else result[name] = scriptObject([value]); yield* step(ctx);
 		}

@@ -50,7 +50,7 @@ function *readKey(ctx: StdContext, value: Value, schema: KeySchema, work: Work):
 	const source = array ? value : [value];
 	const result: (number | string)[] = [];
 	for (let i = 0; i < source.length; i++) {
-		const item = source[i];
+		const item = ctx.properties.get(source, i, ctx.pos);
 		if (typeof item !== 'number' && typeof item !== 'string') throw runtimeError('STDLIB_ARGUMENT_TYPE', ctx.pos, { expected: 'number | string | (number | string)[]' }, 'TypeError');
 		if (typeof item === 'number' && Number.isNaN(item)) rangeError(ctx);
 		if (schema.positions[i] !== undefined && schema.positions[i] !== typeof item) throw runtimeError('STDLIB_ARGUMENT_TYPE', ctx.pos, { expected: 'matching key types' }, 'TypeError');
@@ -169,10 +169,10 @@ export const collectionDefinitions: StdDefinition[] = [
 		const array = requireArray(ctx, receiver), fn = callback(ctx, args[0]), result = scriptObject(Object.create(null)), work = { count: 0 }, length = array.length;
 		for (let i = 0; i < length; i++) {
 			const key = yield ctx.call(fn, [ctx.properties.get(array, i, ctx.pos), i, array]);
-			if (typeof key !== 'number' && typeof key !== 'string') throw runtimeError('STDLIB_ARGUMENT_TYPE', ctx.pos, { expected: 'number | string' }, 'TypeError');
+			if (typeof key !== 'number' && typeof key !== 'string' && typeof key !== 'boolean') throw runtimeError('STDLIB_ARGUMENT_TYPE', ctx.pos, { expected: 'number | string | boolean' }, 'TypeError');
 			if (typeof key === 'number' && Number.isNaN(key)) rangeError(ctx);
 			if (key === '__proto__') throw runtimeError('STDLIB_FORBIDDEN_KEY', ctx.pos, {}, 'TypeError');
-			const name = ctx.properties.key(key, ctx.pos);
+			const name = ctx.properties.key(typeof key === 'boolean' ? String(key) : key, ctx.pos);
 			ctx.properties.set(result, name, (ctx.properties.get(result, name, ctx.pos) as number | null ?? 0) + 1, ctx.pos);
 			if (step(ctx, work)) yield ctx.checkpoint();
 		}

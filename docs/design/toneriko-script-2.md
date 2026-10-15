@@ -258,9 +258,9 @@ JavaScript と同じ名前、同じ引数、同じ結果にします(文字列�
 
 `sort` と `sortBy` は安定なマージソートで元の配列を変更して返します。`toSorted` は新しい配列を返します。比較関数の呼び出しは順に待ち、比較結果の NaN は同値として扱います。比較関数を省いた場合は文字列だけを許し、UTF-16 の辞書順で比べます。文字列以外を含む場合は比較関数か sortBy を案内するエラーです。コピーと書き戻し、長い共通接頭辞の比較にも処理を譲る地点を設けます。
 
-`sortBy` は元の添字順にキーを一度ずつ取得します。キーは数・文字列・それらの配列で、配列は辞書式に比較します。同じ位置で型が混在する場合と NaN はエラーです。`uniqueBy`、`minBy`、`maxBy` も同じキーの規則です。
+`sortBy` は元の添字順にキーを一度ずつ取得します。キーは数・文字列・それらの配列で、配列は辞書式に比較します。同じ位置で型が混在する場合と NaN はエラーです。`uniqueBy`、`minBy`、`maxBy` も同じキーの規則です。配列キーは添字の own data property を読み、原型の値や getter は使いません。
 
-`unique` は SameValueZero（NaN は同値、±0 は同値、オブジェクトは参照の同一性）で最初の要素を残す新配列を返します。`sum` は数を左から加算し、空配列は 0 です。`minBy` と `maxBy` は同値なら最初の要素を返し、空配列は null です。`countBy` は数か文字列のキーを文字列化して原型なしの辞書に集計します。配列キーは辞書のキーへ無損失に変換できないのでエラーです。
+`unique` は SameValueZero（NaN は同値、±0 は同値、オブジェクトは参照の同一性）で最初の要素を残す新配列を返します。`sum` は数を左から加算し、空配列は 0 です。`minBy` と `maxBy` は同値なら最初の要素を返し、空配列は null です。`countBy` は数・文字列・真偽値のキーを文字列化して原型なしの辞書に集計します。配列キーは辞書のキーへ無損失に変換できないのでエラーです。
 
 `shuffle` は Fisher–Yates で元の配列を並べ替えます。`sample` と `sampleBy` は要素を一つ返し、空配列は null です。sampleBy は重みを順に一度ずつ取り、有限の非負数を受けます。非空配列で全重みが 0 ならエラーです。rng の出力は有限の [0,1) に限ります。
 
@@ -268,9 +268,11 @@ JavaScript と同じ名前、同じ引数、同じ結果にします(文字列�
 
 標準関数が作る辞書は原型を持ちません。`__proto__` はどの深さでも禁止し、JSON.parse、Object.fromEntries、Object.groupBy、structuredClone でも診断コードと日英の説明を付けて拒否します。入力を黙って削除・変更しません。JSON.stringify でそのキーを除いて作り直すか、送信元へキーの変更を依頼するよう案内します。
 
-JSON.parse は reviver を子から順に呼びます。基本値には原文の source を第 3 引数で渡します。null を返した場合は JSON の null とし、削除指示にはしません。JSON.stringify は replacer・space・toJSON を扱い、関数は辞書のプロパティなら省略、配列内なら null、最上位なら null を返します。循環は TypeError です。利用者の関数は逐次呼び、元のキー順や数の表現は JavaScript に合わせます。
+JSON.parse は reviver を子から順に呼びます。基本値には原文の source を第 3 引数で渡します。null を返した場合は JSON の null とし、削除指示にはしません。JSON.stringify は replacer・space・toJSON を扱い、関数は辞書のプロパティなら省略、配列内なら null、最上位なら null を返します。循環は TypeError です。利用者の関数は逐次呼び、元のキー順や数の表現は JavaScript に合わせます。replacer 配列は開始時の長さで添字を読み、Symbol.iterator や原型の添字 getter は呼びません。
 
-structuredClone は共有参照と循環を保存し、関数は DataCloneError です。未対応の型と transfer 指定はエラーです。deepEqual は基本値を Object.is 相当で比べ、配列の順序・辞書の own key と内容を比較します。循環を扱い、関数は参照の同一性で比べます。
+structuredClone は共有参照と循環を保存し、関数は DataCloneError です。未対応の型と transfer 指定はエラーです。deepEqual は基本値を Object.is 相当で比べ、配列の順序・辞書の own key と内容を比較します。循環を扱い、関数は参照の同一性で比べます。エラーは通常の辞書と区別し、name と message も比較します。ホストのクラスのインスタンスは原型が同じときだけ等しくなりえます。
+
+Object.groupBy のキーには数・文字列・真偽値を受け、真偽値は "true" / "false" にします。countBy も同じ文字列化を行います。
 
 Error の生成も標準関数の単一定義に含めます。new Error だけが new で呼べ、既存の例外値の原型・非公開プロパティの規則を守ります。
 

@@ -155,3 +155,42 @@ test('内部反復子の複製は DataCloneError', async () => {
 	const vm = new Interpreter();
 	await expect(vm.exec(parse('structuredClone([1].entries());').program)).rejects.toMatchObject({ name: 'DataCloneError' });
 });
+
+describe('レビュー回帰: オブジェクトのホスト境界と比較', () => {
+	test('JSON.stringify の replacer 配列は Symbol.iterator を呼ばない', async () => {
+		let calls = 0;
+		const replacer = ['a'];
+		Object.defineProperty(replacer, Symbol.iterator, { get() { calls++; throw new Error('iterator must not run'); } });
+		expect(await execute('out(JSON.stringify({a: 1, b: 2}, replacer));', { replacer })).toEqual(['{"a":1}']);
+		expect(calls).toBe(0);
+	});
+	test('JSON.stringify の replacer 配列は原型の添字 getter と自身の accessor を呼ばない', async () => {
+		let calls = 0;
+		const inherited = new Array(1), accessor = new Array(1);
+		const prototype = Object.create(Array.prototype);
+		Object.defineProperty(prototype, '0', { get() { calls++; return 'a'; } });
+		Object.setPrototypeOf(inherited, prototype);
+		Object.defineProperty(accessor, '0', { get() { calls++; return 'a'; } });
+		await expect(execute('JSON.stringify({a: 1}, replacer);', { replacer: inherited })).rejects.toMatchObject({ code: 'SPARSE_ARRAY' });
+		await expect(execute('JSON.stringify({a: 1}, replacer);', { replacer: accessor })).rejects.toMatchObject({ code: 'ACCESSOR_PROPERTY' });
+		expect(calls).toBe(0);
+	});
+	test('deepEqual はエラーの種類・name・message と通常オブジェクトを区別する', async () => {
+		expect(await execute('out([deepEqual(new Error("a"), new Error("b")), deepEqual(new Error("a"), {}), deepEqual(new Error("a"), new Error("a")), deepEqual(new Error("a"), typeError)]);', { typeError: new TypeError('a') })).toEqual([[false, false, true, false]]);
+		expect(await execute('out([deepEqual(a, b), deepEqual(a, c)]);', { a: new Error('a'), b: new Error('b'), c: new Error('a') })).toEqual([[false, true]]);
+		expect(await execute('let a = new Error("a"); let b = new Error("a"); b.name = "CustomError"; out(deepEqual(a, b));')).toEqual([false]);
+	});
+	test('deepEqual はホストのインスタンスの原型を比較し getter を呼ばない', async () => {
+		class A { value = 1; }
+		class B { value = 1; }
+		expect(await execute('out([deepEqual(a, another), deepEqual(a, b), deepEqual(a, {value: 1})]);', { a: new A(), another: new A(), b: new B() })).toEqual([[true, false, false]]);
+		let calls = 0;
+		const err = new Error('a'); Object.defineProperty(err, 'message', { get() { calls++; return 'a'; } });
+		await expect(execute('deepEqual(err, other);', { err, other: new Error('a') })).rejects.toMatchObject({ code: 'ACCESSOR_PROPERTY' });
+		expect(calls).toBe(0);
+	});
+	test('Object.groupBy は真偽値を文字列キーにする', async () => {
+		expect(await execute('out(Object.groupBy([0, 1, 2, 3], x => x % 2 === 0));')).toEqual([{ true: [0, 2], false: [1, 3] }]);
+		expect(await execute('out(Object.groupBy([true, "true", false, "false"], x => x));')).toEqual([{ true: [true, 'true'], false: [false, 'false'] }]);
+	});
+});

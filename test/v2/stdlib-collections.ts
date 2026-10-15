@@ -202,3 +202,20 @@ describe('追加した配列メソッド', () => {
 		expect(compared).toBe(500);
 	});
 });
+
+describe('レビュー回帰: 配列キーと真偽値の集計', () => {
+	for (const name of ['sortBy', 'uniqueBy', 'minBy', 'maxBy']) test(`${name} の配列キーは原型の添字 getter と自身の accessor を呼ばない`, async () => {
+		let calls = 0;
+		const inherited = new Array(1), accessor = new Array(1);
+		const prototype = Object.create(Array.prototype);
+		Object.defineProperty(prototype, '0', { get() { calls++; return 1; } });
+		Object.setPrototypeOf(inherited, prototype);
+		Object.defineProperty(accessor, '0', { get() { calls++; return 1; } });
+		await expect(invoke(name, [1], [() => inherited])).rejects.toMatchObject({ code: 'SPARSE_ARRAY' });
+		await expect(invoke(name, [1], [() => accessor])).rejects.toMatchObject({ code: 'ACCESSOR_PROPERTY' });
+		expect(calls).toBe(0);
+	});
+	test('countBy は真偽値を文字列キーにして文字列の同じキーと合算する', async () => {
+		expect(await invoke('countBy', [true, 'true', false, 'false', true], [(value: Value) => value])).toEqual({ true: 3, false: 2 });
+	});
+});

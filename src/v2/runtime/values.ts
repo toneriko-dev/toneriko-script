@@ -5,21 +5,9 @@ import type * as AST from '../ast.js';
 import { runtimeError, isScriptErrorValue, scriptErrorName } from './errors.js';
 import { GraphemeCache } from './strings.js';
 
-export type Value = null | boolean | number | string | object;
-export const SCRIPT_FUNCTION = Symbol('script function');
-export interface ScriptFunction {
-	[SCRIPT_FUNCTION]: true;
-	name?: string;
-	params: AST.Pattern[];
-	body: AST.BlockStatement | AST.Expression;
-	environment: unknown;
-}
-export function isScriptFunction(value: unknown): value is ScriptFunction {
-	return typeof value === 'object' && value !== null && Object.getOwnPropertyDescriptor(value, SCRIPT_FUNCTION)?.value === true;
-}
-export function valueTypeof(value: Value): string {
-	return isScriptFunction(value) || isStdFunction(value) ? 'function' : typeof value;
-}
+import { isScriptFunction, scriptObjects, type Value } from './brands.js';
+export { SCRIPT_FUNCTION, isScriptFunction, valueTypeof, scriptObject } from './brands.js';
+export type { Value, ScriptFunction } from './brands.js';
 
 function indexOf(key: string): number | null {
 	const index = Number(key);
@@ -39,14 +27,6 @@ const errorPrototypes = new Set<object>([
 	Error.prototype, TypeError.prototype, RangeError.prototype, ReferenceError.prototype,
 	SyntaxError.prototype, EvalError.prototype, URIError.prototype, AggregateError.prototype,
 ]);
-const scriptObjects = new WeakSet<object>();
-
-/** 通常の辞書と配列の作成元だけを記録し、ホストへ渡した後も現在の原型を別に確かめます。 */
-export function scriptObject<T extends object>(value: T): T {
-	scriptObjects.add(value);
-	return value;
-}
-
 export function errorValue(value: unknown, pos: AST.Pos = { line: 1, column: 1 }): value is object {
 	return classifyError(value, pos, 'detached');
 }
@@ -133,6 +113,8 @@ function inheritedErrorDescriptor(value: object, key: string): { owner: object; 
 /** プロパティ操作は原型を参照せず、書記素のキャッシュを実行単位で共有する。 */
 export class PropertyAccess {
 	private readonly strings: GraphemeCache;
+
+	errorValue(value: unknown, pos: AST.Pos): boolean { return errorValue(value, pos); }
 
 	constructor(private readonly onStep: () => void = () => {}) { this.strings = new GraphemeCache(onStep); }
 

@@ -6,6 +6,7 @@ function entry(message: string, hint: string, english: string, englishHint: stri
 }
 
 export const runtimeMessages = {
+	STDLIB_SORT_COMPARATOR_REQUIRED: entry('文字列以外を並べ替えるには比較関数が必要です。', '比較関数を渡すか sortBy を使います。', 'Sorting non-string values requires a comparator.', 'Pass a comparator or use sortBy.'),
 	STDLIB_URI_ERROR: entry('URI の文字列が不正です。', 'エスケープとサロゲートの対応を確認します。', 'The URI string is malformed.', 'Check percent escapes and surrogate pairs.'),
 	STDLIB_ARGUMENT_RANGE: entry('引数の値が範囲外です。', '引数に許される範囲を確認します。', 'Argument value is out of range.', 'Check the accepted argument range.'),
 	STDLIB_ARGUMENT_TYPE: entry('引数には {expected} を渡します。', '引数の型を確認します。', 'Expected an argument of type {expected}.', 'Check the argument type.'),

@@ -1,5 +1,6 @@
-import { type StdDefinition, type StdContext, type StdFrame, requireArray, requireNumber, isStdFunction } from './core.js';
-import { scriptObject, isScriptFunction, PropertyAccess, type Value } from '../runtime/values.js';
+import { type StdDefinition, type StdContext, type StdFrame, requireArray, requireNumber, isStdFunction, makeFunction } from './core.js';
+import { scriptObject, isScriptFunction, type Value } from '../runtime/brands.js';
+import type { PropertyAccess } from '../runtime/values.js';
 import { runtimeError } from '../runtime/errors.js';
 import type { Pos } from '../ast.js';
 
@@ -11,10 +12,18 @@ export function nextArrayIterator(value: object, properties: PropertyAccess, pos
 	const index = state.index++;
 	return scriptObject(Object.assign(Object.create(null), { value: scriptObject([index, properties.get(state.array, index, pos)]), done: false }));
 }
-function iterator(array: Value[], pos: Pos): Value {
+const nextDefinition: StdDefinition = {
+	name: 'ArrayIterator.next', receiver: 'global', args: [], returns: 'any',
+	description: { ja: '配列の次の添字と値を返します。', en: 'Returns the next array index and value.' },
+	*implementation(ctx, receiver) {
+		if (!isArrayIterator(receiver)) throw runtimeError('INVALID_RECEIVER', ctx.pos, {}, 'TypeError');
+		return nextArrayIterator(receiver, ctx.properties, ctx.pos);
+	},
+};
+function iterator(array: Value[]): Value {
 	const value = scriptObject(Object.create(null));
 	iteratorStates.set(value, { array, index: 0, done: false });
-	Object.defineProperty(value, 'next', { value: () => nextArrayIterator(value, new PropertyAccess(), pos), enumerable: false });
+	Object.defineProperty(value, 'next', { value: makeFunction(nextDefinition), enumerable: false });
 	return value;
 }
 export function callable(ctx: StdContext, value: Value | undefined): Value {
@@ -87,7 +96,7 @@ export const arrayDefinitions: StdDefinition[] = [
 		let xs = requireArray(ctx, r); if (name === 'toReversed') xs = (yield* copy(ctx, xs)) as Value[];
 		for (let i = 0; i < Math.floor(xs.length / 2); i++) { const j = xs.length - i - 1; const left = ctx.properties.get(xs, i, ctx.pos); ctx.properties.set(xs, i, ctx.properties.get(xs, j, ctx.pos), ctx.pos); ctx.properties.set(xs, j, left, ctx.pos); yield* step(ctx, i); } return xs;
 	})),
-	def('entries', [], 'any', '添字と要素を順に返す反復子を作ります。', 'Creates an iterator of index and value pairs.', function* (ctx, r) { return iterator(requireArray(ctx, r), ctx.pos); }),
+	def('entries', [], 'any', '添字と要素を順に返す反復子を作ります。', 'Creates an iterator of index and value pairs.', function* (ctx, r) { return iterator(requireArray(ctx, r)); }),
 ];
 const descriptions = {
 	map: ['関数の結果を新しい配列にします。', 'Maps elements sequentially into a new array.'],

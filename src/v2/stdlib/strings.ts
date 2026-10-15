@@ -1,6 +1,6 @@
 import { requireString, requireNumber, type StdContext, type StdDefinition, type StdFrame } from './core.js';
 import { runtimeError } from '../runtime/errors.js';
-import { valueTypeof, scriptObject, type Value } from '../runtime/values.js';
+import { valueTypeof, scriptObject, type Value } from '../runtime/brands.js';
 
 function* step(ctx: StdContext): StdFrame { ctx.tick(); return yield ctx.checkpoint(); }
 type Units = string | readonly string[];

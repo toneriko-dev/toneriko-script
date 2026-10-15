@@ -1,8 +1,9 @@
 import * as assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
 import { describe, test } from 'vitest';
 import { parse } from '../../src/v2/parser/index.js';
 import { TonerikoScriptSyntaxError, formatDiagnostic } from '../../src/v2/diagnostics.js';
-import { messages } from '../../src/v2/messages.js';
+import { messages, runtimeMessages } from '../../src/v2/messages.js';
 
 const accepted = [
 	['テンプレート補間をまたいで型引数を読まない', 'const t = `${a < b}${c > (d)}`;'],
@@ -227,6 +228,9 @@ const rejected = [
 	['INVALID_ASSIGNMENT_TARGET', '1 = 2;'],
 	['INVALID_META', 'export const meta = { name: f() };'],
 	['INVALID_CONTROL_FLOW', 'break;'],
+	['ARROW_OBJECT_BODY', 'x => { k: v }'],
+	['DUPLICATE_DECLARATION', 'let x; let x;'],
+	['TYPEOF_UNDEFINED_COMPARISON', 'typeof x === "undefined"'],
 ] as const;
 
 function diagnostic(source: string, code: string): void {
@@ -247,8 +251,8 @@ function diagnostic(source: string, code: string): void {
 
 describe('v2 parser: 専用の診断', () => {
 	for (const [code, source] of rejected) test(code, () => diagnostic(source, code));
-	test('すべての診断 code に入力例がある', () => {
-		assert.deepEqual(new Set(rejected.map(([code]) => code)), new Set(Object.keys(messages)));
+	test('すべての構文診断 code に入力例がある', () => {
+		assert.deepEqual(new Set(rejected.map(([code]) => code)), new Set(Object.keys(messages).filter(code => !Object.hasOwn(runtimeMessages, code))));
 	});
 });
 
@@ -567,3 +571,75 @@ for (const [source, code] of [
 for (const source of ['f<\nnumber\n>(1);', 'f<{a: number; b: string}>(x);', 'f<Array<number>>(x);']) {
 	test(source, () => diagnostic(source, 'TYPE_ARGUMENTS'));
 }
+
+describe('インタプリタに渡す前の診断', () => {
+	for (const source of ['x => { k: v }', '(x) => { k: 1 }', 'async x => { k: null }']) {
+		test(`オブジェクトを返す括弧の案内: ${source}`, () => {
+			diagnostic(source, 'ARROW_OBJECT_BODY');
+			assert.throws(() => parse(source), (error: unknown) => error instanceof TonerikoScriptSyntaxError && error.hint.includes('({ … })'));
+		});
+	}
+	for (const source of ['x => ({ k: x })', 'x => { k: { break k; } }', 'x => { k: while (x) break k; }', 'x => { a: b: for (;;) break a; }']) {
+		test(`オブジェクトか有効なラベル: ${source}`, () => parse(source));
+	}
+	for (const operator of ['===', '!==']) {
+		for (const expression of ['typeof x', '(typeof x)', 'typeof obj.x']) {
+			for (const source of [`${expression} ${operator} "undefined"`, `"undefined" ${operator} ${expression}`]) {
+				test(`欠如値の比較の案内: ${source}`, () => diagnostic(source, 'TYPEOF_UNDEFINED_COMPARISON'));
+			}
+		}
+	}
+	for (const source of ['typeof null === "object"', 'typeof x === "number"', 'x == null', 'x != null', '"undefined" === x']) {
+		test(`型と欠如値の有効な比較: ${source}`, () => parse(source));
+	}
+
+	const declarations = [
+		['let x; let x;', false],
+		['const x = 1; let x;', false],
+		['let x, x;', false],
+		['function x() {} function x() {}', false],
+		['let x; function x() {}', false],
+		['function x() {} let x;', false],
+		['{ function x() {} function x() {} }', false],
+		['{ let x; function x() {} }', false],
+		['function f(x) { let x; }', false],
+		['function f({ x }, [x]) {}', false],
+		['function f(x, x) {}', false],
+		['(x, x) => x', false],
+		['(x) => { const x = 1; }', false],
+		['function f() { function x() {} let x; }', false],
+		['function f() { let x; function x() {} }', false],
+		['let [x, x] = [1, 2];', false],
+		['let { a: x, b: x } = {};', false],
+		['let [x, ...x] = [];', false],
+		['try {} catch (x) { let x; }', false],
+		['try {} catch (x) { function x() {} }', false],
+		['try {} catch ({ x, a: x }) {}', false],
+		['switch (0) { case 0: let x; break; case 1: let x; }', false],
+		['switch (0) { case 0: function f() {} break; default: function f() {} }', false],
+		['for (let x = 0, x = 1; false;) {}', false],
+		['for (let [x, x] of []) {}', false],
+		['export const meta = {}; let meta;', false],
+		['function f() { function x() {} function x() {} }', true],
+		['function f(x) { function x() {} }', true],
+		['function f(x = 1) { function x() {} }', true],
+		['function f(x) { { let x; } }', true],
+		['function f() { let f; }', true],
+		['let x; { let x; }', true],
+		['try {} catch (x) { { let x; } }', true],
+		['switch (0) { case 0: { let x; } break; case 1: { let x; } }', true],
+		['for (let x = 0; x < 1; x++) { let x; }', true],
+		['for (const x of []) { let x; }', true],
+		['for (let x = 0; false;) {} let x;', true],
+		['const f = (x = (() => { let x; })) => x;', true],
+	] as const;
+	for (const [source, valid] of declarations) {
+		test(`モジュールの宣言規則: ${source}`, () => {
+			const reference = spawnSync('node', ['--input-type=module', '--check'], { input: source, encoding: 'utf8' });
+			assert.equal(reference.error, undefined);
+			assert.equal(reference.status === 0, valid, reference.stderr);
+			if (valid) parse(source);
+			else diagnostic(source, 'DUPLICATE_DECLARATION');
+		});
+	}
+});

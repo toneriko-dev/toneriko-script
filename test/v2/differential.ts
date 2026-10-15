@@ -415,7 +415,8 @@ describe('v2 parser: TypeScript パーサーとの差分', () => {
 		let compared = 0;
 		const numRuns = 400;
 		fc.assert(fc.property(fc.array(generatedStatement, { minLength: 1, maxLength: 5 }), statements => {
-			compare(statements.join('\n'));
+			// 各文の固定名の宣言が、文を組み合わせただけで重複しないようにします。
+			compare(statements.map(statement => `{ ${statement} }`).join('\n'));
 			compared++;
 		}), { numRuns, seed: 2042026 });
 		assert.ok(compared >= numRuns, `${compared} / ${numRuns}`);

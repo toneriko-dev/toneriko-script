@@ -1,6 +1,7 @@
 import type * as A from '../ast.js';
 import { syntaxError, TonerikoScriptSyntaxError, type Diagnostic, type DiagnosticCode } from '../diagnostics.js';
 import { Scanner, type Token } from './scanner.js';
+import { checkEarlyErrors } from './early-errors.js';
 
 const assignments = new Set(['=', '+=', '-=', '*=', '/=', '%=', '**=', '??=']);
 const bitwise = new Set(['&', '|', '^', '~', '<<', '>>', '>>>', '&=', '|=', '^=', '<<=', '>>=', '>>>=']);
@@ -18,7 +19,9 @@ const forbidden: Record<string, DiagnosticCode> = {
 };
 
 export function parse(source: string): { program: A.Program; warnings: Diagnostic[] } {
-	return { program: new Parser(source).program(), warnings: [] };
+	const program = new Parser(source).program();
+	checkEarlyErrors(program);
+	return { program, warnings: [] };
 }
 
 class Parser {
@@ -175,7 +178,7 @@ class Parser {
 		if (this.at('<') && this.peek(1).raw === ':') this.fail('AISCRIPT_OUTPUT');
 		if (this.at('eval') && this.peek(1).raw === '{') this.fail('AISCRIPT_EVAL');
 		if (this.at('type') && this.peek(1).kind === 'identifier' && !this.peek(1).lineBreakBefore && !reserved.has(String(this.peek(1).value))) this.fail('TYPE_ALIAS');
-		if (this.forbidden(word)) this.fail(this.forbidden(word)!, t);
+		if (t.kind === 'identifier' && this.forbidden(word)) this.fail(this.forbidden(word)!, t);
 		if (t.kind === 'identifier' && this.peek(1).raw === ':') {
 			const label = this.identifier();
 			this.expect(':');
@@ -190,7 +193,7 @@ class Parser {
 			this.labels.delete(label.name);
 			return this.node(t, { type: 'LabeledStatement', label, body });
 		}
-		if (this.forbidden(word)) this.fail(this.forbidden(word)!, t);
+		if (t.kind === 'identifier' && this.forbidden(word)) this.fail(this.forbidden(word)!, t);
 		const expression = this.expression(0, true, true);
 		this.endStatement();
 		return this.node(t, { type: 'ExpressionStatement', expression });
@@ -494,6 +497,10 @@ class Parser {
 			if (left.type === 'UpdateExpression') this.fail('UPDATE_IN_EXPRESSION', left);
 			if (operator === '**' && (left.type === 'UnaryExpression' || left.type === 'AwaitExpression') && !this.parenthesized.has(left)) this.fail('UNARY_POWER', op);
 			const right = this.expression(operator === '**' ? priority : priority + 1, false, boundary, allowIn, false, allowReturnType);
+			if (operator === '===' || operator === '!==') {
+				const undefinedComparison = (a: A.Expression, b: A.Expression): boolean => a.type === 'UnaryExpression' && a.operator === 'typeof' && b.type === 'Literal' && b.value === 'undefined';
+				if (undefinedComparison(left, right) || undefinedComparison(right, left)) this.fail('TYPEOF_UNDEFINED_COMPARISON', op);
+			}
 			if (operator === '==' || operator === '!=') {
 				if (!(left.type === 'Literal' && left.value === null) && !(right.type === 'Literal' && right.value === null)) this.fail('LOOSE_EQUALITY', op);
 			}
@@ -654,6 +661,11 @@ class Parser {
 		const returnType = this.eat(':') ? this.typeAnnotation() : undefined;
 		if (this.peek().lineBreakBefore) this.fail('NEWLINE_ARROW');
 		this.expect('=>');
+		if (this.at('{') && this.peek(1).kind === 'identifier' && this.peek(2).raw === ':') {
+			let offset = 3;
+			while (this.peek(offset).kind === 'identifier' && this.peek(offset + 1).raw === ':') offset += 2;
+			if (!['for', 'while', 'do', '{', 'function', 'async'].includes(this.peek(offset).raw)) this.fail('ARROW_OBJECT_BODY', this.peek(1));
+		}
 		const body = this.at('{') ? this.functionBody() : this.expression(0, false, boundary, true, false, allowReturnType);
 		const expression = this.node(start, { type: 'ArrowFunctionExpression', params, body, async, generator: false, expression: body.type !== 'BlockStatement', ...(returnType ? { returnType } : {}) });
 		// 試し読みした本体は再解析せず、外側の括弧の印が漏れないよう根だけ複製します。

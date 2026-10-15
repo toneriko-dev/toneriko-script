@@ -5,7 +5,40 @@ function entry(message: string, hint: string, english: string, englishHint: stri
 	return { ja: { message, hint }, en: { message: english, hint: englishHint } };
 }
 
+export const runtimeMessages = {
+	TDZ_ACCESS: entry("{name} はまだ初期化されていません。", "宣言の後で使います。", "{name} is not initialized.", "Use it after its declaration."),
+	UNBOUND_IDENTIFIER: entry("{name} は宣言されていません。", "使う前に宣言します。", "{name} is not declared.", "Declare it before use."),
+	CONST_ASSIGNMENT: entry("{name} は再代入できません。", "値を変える変数は let で宣言します。", "Cannot reassign {name}.", "Use let for a mutable binding."),
+	IMPLICIT_COERCION: entry("この演算では暗黙の型変換を使えません。", "数どうし、または文字列どうしで演算します。", "Implicit coercion is not supported for this operation.", "Use operands of the appropriate matching types."),
+	INVALID_STRING_CONVERSION: entry("この値は文字列に連結できません。", "JSON.stringify(x) または x ?? \"\" を使います。", "This value cannot be concatenated with a string.", "Use JSON.stringify(x) or x ?? \"\"."),
+	NOT_CALLABLE: entry("この値は関数ではありません。", "呼び出す値を確認します。", "This value is not callable.", "Check the value being called."),
+	PROTOTYPE_METHOD_CALL: entry("原型のメソッドは使えません。", "k in obj か Object.hasOwn(obj, k) を使います。", "Prototype methods are not available.", "Use k in obj or Object.hasOwn(obj, k)."),
+	STEP_LIMIT_EXCEEDED: entry("実行ステップ数の上限を超えました。", "繰り返し回数を減らします。", "The execution step limit was exceeded.", "Reduce the amount of work."),
+	BUSY_TIME_EXCEEDED: entry("待たずに実行できる時間の上限を超えました。", "繰り返し処理を確認します。", "The uninterrupted execution time limit was exceeded.", "Check the loop or computation."),
+	EXECUTION_ABORTED: entry("実行を中止しました。", "新しい実行には別のインタプリタを使います。", "Execution was aborted.", "Use another interpreter for a new execution."),
+	HOST_ERROR: entry("ホストの処理でエラーが発生しました。", "呼び出した処理を確認します。", "A host operation failed.", "Check the host operation."),
+	FORBIDDEN_PROPERTY: entry("__proto__ はキーに使えません。", "別のキーを使います。", "__proto__ cannot be used as a key.", "Use another key."),
+	NULL_PROPERTY_ACCESS: entry("null のプロパティは読み書きできません。", "?. と ?? で値が無い場合を扱います。", "Cannot access a property of null.", "Use ?. and ?? to handle missing values."),
+	INVALID_PROPERTY_KEY: entry("この値はプロパティのキーに使えません。", "文字列または数を使います。", "Invalid property key.", "Use a string or number."),
+	ACCESSOR_PROPERTY: entry("getter と setter は使えません。", "データのプロパティを渡します。", "Accessor properties are not supported.", "Pass data properties."),
+	ARRAY_INDEX_OUT_OF_RANGE: entry("配列の添字が範囲外です。", "0 から length - 1 までの添字を使います。", "Array index is out of range.", "Use an index between 0 and length - 1."),
+	SPARSE_ARRAY: entry("穴のある配列は使えません。", "省いた要素を明示的な値で埋めます。", "Sparse arrays are not supported.", "Provide an explicit value for every element."),
+	ARRAY_GAP: entry("間を空けて配列に追加できません。", "末尾の添字 length に追加します。", "Cannot create a gap in an array.", "Append at index length."),
+	INVALID_ARRAY_LENGTH: entry("配列の長さが不正です。", "非負の整数を使います。", "Invalid array length.", "Use a non-negative integer."),
+	ARRAY_LENGTH_GROWTH: entry("length を増やして配列を伸ばせません。", "値を末尾に追加します。", "Cannot grow an array by assigning length.", "Append values instead."),
+	ARRAY_DELETE: entry("配列の要素は delete できません。", "要素を削除するメソッドを使います。", "Cannot delete an array element.", "Use an element removal method."),
+	INVALID_ARRAY_PROPERTY: entry("この配列プロパティは使えません。", "整数の添字または用意されたプロパティを使います。", "Unsupported array property.", "Use an array index or a supported property."),
+	READONLY_PROPERTY: entry("このプロパティは変更できません。", "変更できる値を使います。", "This property is read-only.", "Use a writable value."),
+	INVALID_RECEIVER: entry("メソッドを呼び出す対象が不正です。", "元の値のメソッドとして呼びます。", "Invalid method receiver.", "Call the method on a value of the appropriate type."),
+	NOT_ITERABLE: entry("この値は反復できません。", "配列または文字列を使います。", "This value is not iterable.", "Use an array or string."),
+	UNSUPPORTED_VALUE: entry("この値はスクリプトに渡せません。", "対応する基本値、配列、オブジェクト、関数を使います。", "Unsupported script value.", "Use a supported primitive, array, object, or function."),
+} as const;
+
 export const messages = {
+	ARROW_OBJECT_BODY: entry("アロー関数の本体をオブジェクトとして返すには括弧が必要です。", "オブジェクトを返すなら x => ({ … }) と書きます。", "An object return needs parentheses.", "Use x => ({ … }) to return an object."),
+	DUPLICATE_DECLARATION: entry("同じ範囲で {name} が二重に宣言されています。", "名前を変えるか、別のブロックで宣言します。", "Duplicate declaration of {name}.", "Rename the binding or declare it in another block."),
+	TYPEOF_UNDEFINED_COMPARISON: entry("typeof の結果を \"undefined\" と比較できません。", "値が無いことは x == null、否定は x != null で比べます。", "Comparing typeof with \"undefined\" is not supported.", "Use x == null or x != null to test for missing values."),
+	...runtimeMessages,
 	UNEXPECTED_TOKEN: entry('予期しない構文です。', '前後の構文を確認します。', 'Unexpected syntax.', 'Check the surrounding syntax.'),
 	INVALID_NUMBER: entry('数の書き方が不正です。', 'JavaScript の数の書き方にします。', 'Invalid numeric literal.', 'Use JavaScript numeric literal syntax.'),
 	INVALID_ESCAPE: entry('エスケープの書き方が不正です。', 'JavaScript のエスケープで書きます。', 'Invalid escape sequence.', 'Use JavaScript escape sequences.'),

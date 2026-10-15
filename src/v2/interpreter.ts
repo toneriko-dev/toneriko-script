@@ -116,6 +116,7 @@ export class Interpreter {
 	private preparedWithoutTypes = false;
 
 	constructor(globals: Record<string, unknown> = {}, private readonly options: InterpreterOptions = {}) {
+		this.options = { ...options, maxSteps: options.maxSteps ?? 500000 };
 		this.services = new RuntimeServices(options, this.controller.signal, (fn, args, pos) => {
 			const execution = this.execution();
 			return this.run(this.invoke(fn, args, null, execution, pos), execution);

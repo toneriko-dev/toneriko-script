@@ -443,7 +443,7 @@ describe('標準の数と変換', () => {
 test('長い乱数の種は符号単位数のステップを計上し、ハッシュ中にホストへ譲る', async () => {
 	const seed = 'a👩\ud800'.repeat(250000);
 	let clock = 0, yields = 0;
-	const vm = new Interpreter({ seed }, { now: () => ++clock, yieldInterval: 1, maxBusyTime: Infinity, yieldToHost: async () => { yields++; } });
+	const vm = new Interpreter({ seed }, { maxSteps: seed.length + 100, now: () => ++clock, yieldInterval: 1, maxBusyTime: Infinity, yieldToHost: async () => { yields++; } });
 	await vm.exec(parse('const rng = Math.seededRandom(seed); const result = rng();').program);
 	expect(vm.getGlobal('result')).toBe(reference(seed)());
 	expect(vm.stepCount).toBeGreaterThanOrEqual(seed.length);

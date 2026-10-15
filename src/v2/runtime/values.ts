@@ -269,10 +269,10 @@ export class PropertyAccess {
 	*entriesIterator(value: unknown, pos: AST.Pos): Generator<[string, Value], void> {
 		if (value === null || value === undefined) return;
 		if (typeof value === 'string') {
-			const info = this.stringInfo(value);
-			for (let i = 0; i < info.length; i++) {
+			const units = this.strings.units(value);
+			for (let i = 0; i < units.length; i++) {
 				this.onStep();
-				yield [String(i), this.strings.at(value, i)!];
+				yield [String(i), units[i]!];
 			}
 			return;
 		}
@@ -290,15 +290,20 @@ export class PropertyAccess {
 		return [...this.iterableIterator(value, pos)];
 	}
 
-	*iterableIterator(value: unknown, pos: AST.Pos): Generator<Value, void> {
+	iterableIterator(value: unknown, pos: AST.Pos): Generator<Value, void> {
+		if (typeof value !== 'string' && !Array.isArray(value) && !isArrayIterator(value)) throw runtimeError('NOT_ITERABLE', pos, {}, 'TypeError');
+		return this.iterate(value, pos);
+	}
+
+	private *iterate(value: unknown, pos: AST.Pos): Generator<Value, void> {
 		if (isArrayIterator(value)) {
 			while (true) { this.onStep(); const item = nextArrayIterator(value, this, pos); if (item.done) return; yield item.value; }
 		}
 		if (typeof value === 'string') {
-			const info = this.stringInfo(value);
-			for (let i = 0; i < info.length; i++) {
+			const units = this.strings.units(value);
+			for (let i = 0; i < units.length; i++) {
 				this.onStep();
-				yield this.strings.at(value, i)!;
+				yield units[i]!;
 			}
 			return;
 		}

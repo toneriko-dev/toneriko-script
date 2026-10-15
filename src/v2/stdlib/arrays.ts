@@ -1,5 +1,5 @@
 import { type StdFunction, type StdDefinition, type StdContext, type StdFrame, requireArray, requireNumber, isStdFunction, makeFunction } from './core.js';
-import { scriptObject, isScriptFunction, type Value } from '../runtime/brands.js';
+import { scriptObject, scriptObjects, isScriptFunction, type Value } from '../runtime/brands.js';
 import type { PropertyAccess } from '../runtime/values.js';
 import { runtimeError } from '../runtime/errors.js';
 import type { Pos } from '../ast.js';
@@ -52,12 +52,17 @@ export const arrayDefinitions: StdDefinition[] = [
 		const value = ctx.properties.get(xs, xs.length - 1, ctx.pos); ctx.properties.set(xs, 'length', xs.length - 1, ctx.pos); return value;
 	}),
 	def('shift', [], 'any', '先頭の要素を取り除いて返します。', 'Removes and returns the first element.', function* (ctx, r) {
-		const xs = requireArray(ctx, r); if (!xs.length) return null; const first = ctx.properties.get(xs, 0, ctx.pos);
+		const xs = requireArray(ctx, r); if (!xs.length) return null;
+		// スクリプトが作る密な配列は、ホストの要素移動を一つの操作として扱います。
+		if (scriptObjects.has(xs) && Object.getPrototypeOf(xs) === Array.prototype) return xs.shift()!;
+		const first = ctx.properties.get(xs, 0, ctx.pos);
 		for (let i = 1; i < xs.length; i++) { ctx.properties.set(xs, i - 1, ctx.properties.get(xs, i, ctx.pos), ctx.pos); yield* step(ctx, i); }
 		ctx.properties.set(xs, 'length', xs.length - 1, ctx.pos); return first;
 	}),
 	def('unshift', [a('items', 'any[]', false, true)], 'number', '先頭に値を追加し、長さを返します。', 'Prepends values and returns the length.', function* (ctx, r, args) {
-		const xs = requireArray(ctx, r); const old = (yield* copy(ctx, xs)) as Value[];
+		const xs = requireArray(ctx, r);
+		if (scriptObjects.has(xs) && Object.getPrototypeOf(xs) === Array.prototype) return Array.prototype.unshift.apply(xs, args);
+		const old = (yield* copy(ctx, xs)) as Value[];
 		for (let i = 0; i < args.length + old.length; i++) { ctx.properties.set(xs, i, i < args.length ? args[i]! : old[i - args.length]!, ctx.pos); yield* step(ctx, i); }
 		return xs.length;
 	}),
@@ -175,6 +180,7 @@ arrayDefinitions.push({ name: 'Array.from', receiver: 'global', args: [a('items'
 		for (const value of ctx.properties.iterableIterator(source, ctx.pos)) { out.push(fn === null ? value : yield ctx.call(fn, [value, i])); yield* step(ctx, i++); }
 	} else {
 		if (source === null || (typeof source !== 'object' && typeof source !== 'function')) throw runtimeError('STDLIB_ARGUMENT_TYPE', ctx.pos, { expected: 'array-like object' }, 'TypeError');
+		if (!scriptObjects.has(source) || Object.getPrototypeOf(source) !== null) throw runtimeError('NOT_ITERABLE', ctx.pos, {}, 'TypeError');
 		const raw = ctx.properties.get(source, 'length', ctx.pos);
 		const length = Math.min(Math.max(integer(ctx, raw === null ? undefined : raw, 0), 0), Number.MAX_SAFE_INTEGER);
 		if (length > 0xffffffff) throw runtimeError('INVALID_ARRAY_LENGTH', ctx.pos, {}, 'RangeError');

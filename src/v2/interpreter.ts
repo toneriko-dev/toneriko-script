@@ -313,22 +313,25 @@ export class Interpreter {
 			case 'RestElement': yield this.bind(pattern.argument, value, env, execution, initialize, reference); return null;
 			case 'ArrayPattern': {
 				yield this.prepared(value, execution, pos);
-				const items = Array.isArray(value) ? value : yield this.spread(value, execution, pos);
+				const items = execution.properties.iterableIterator(value, pos);
 				let exhausted = false;
-				for (let i = 0; i < pattern.elements.length; i++) {
-					const part = pattern.elements[i];
+				for (const part of pattern.elements) {
 					const target: Reference | null = part ? yield this.bindingReference(part, env, execution) : null;
 					let item: Value = null;
-					if (i >= items.length) exhausted = true;
 					if (part?.type === 'RestElement') {
 						const rest: Value[] = scriptObject([]);
-						if (!exhausted) for (let index = i; index < items.length; index++) {
-							this.tick(execution, pos); rest.push(execution.properties.get(items, index, pos));
+						while (!exhausted) {
+							const next = items.next(); exhausted = !!next.done;
+							if (!next.done) rest.push(next.value);
 							if (execution.clock >= 64) yield this.checkpoint();
 						}
 						item = rest;
-					} else if (!exhausted) item = execution.properties.get(items, i, pos);
+					} else if (!exhausted) {
+						const next = items.next(); exhausted = !!next.done;
+						if (!next.done) item = next.value;
+					}
 					if (part) yield this.bind(part, item, env, execution, initialize, target);
+					if (execution.clock >= 64) yield this.checkpoint();
 				}
 				return null;
 			}

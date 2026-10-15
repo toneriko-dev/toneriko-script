@@ -162,6 +162,14 @@ export class GraphemeCache {
 		return result.value.parts ? result.value.parts[index] : value[index];
 	}
 
+	/** 反復中は分割結果を保持し、キャッシュから消えても分割し直しません。 */
+	units(value: string): string | readonly string[] {
+		const preparation = this.prepareParts(value);
+		let result = preparation.next();
+		while (!result.done) result = preparation.next();
+		return result.value.parts ?? value;
+	}
+
 	graphemes(value: string): readonly string[] {
 		const preparation = this.prepareParts(value);
 		let result = preparation.next();

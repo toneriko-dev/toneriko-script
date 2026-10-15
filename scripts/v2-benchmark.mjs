@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
 import { performance } from 'node:perf_hooks';
+import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import { Parser, Interpreter as Legacy } from '../built/index.js';
 import { Interpreter } from '../built/v2/interpreter.js';
 import { parse } from '../built/v2/parser/index.js';
@@ -19,6 +21,8 @@ function quantile(values, q) {
 }
 async function run(workload, version) {
 	const output = [];
+	const rssBeforeBytes = process.memoryUsage().rss;
+	let sampledRssPeakBytes = rssBeforeBytes;
 	let yields = 0;
 	let maxTimerDelayMs = 0;
 	let lastTimer = performance.now();
@@ -30,7 +34,11 @@ async function run(workload, version) {
 	const parseStarted = performance.now();
 	const ast = version === 'v1' ? Parser.parse(workload.legacy) : parse(workload.v2).program;
 	const parseMs = performance.now() - parseStarted;
-	const yieldToHost = async () => { yields++; await defaultYieldToHost(); };
+	const yieldToHost = async () => {
+		yields++;
+		sampledRssPeakBytes = Math.max(sampledRssPeakBytes, process.memoryUsage().rss);
+		await defaultYieldToHost();
+	};
 	const started = performance.now();
 	const interpreter = version === 'v1'
 		? new Legacy({}, { out: value => { assert.equal(value.type, 'num'); output.push(value.value); }, yieldInterval: 8, yieldToHost })
@@ -41,8 +49,20 @@ async function run(workload, version) {
 		// 出力の一致は速度の集計とは別に確認し、失敗した試行を捨てません。
 		assert.deepEqual(output, [workload.expected], `${workload.name} ${version}`);
 		await defaultYieldToHost();
-		return { executionMs, includingParseMs: executionMs + parseMs, steps: interpreter.stepCount, yields, maxTimerDelayMs };
+		const rssAfterBytes = process.memoryUsage().rss;
+		return { executionMs, includingParseMs: executionMs + parseMs, steps: interpreter.stepCount, yields, maxTimerDelayMs,
+			rssBeforeBytes, rssAfterBytes, rssDeltaBytes: rssAfterBytes - rssBeforeBytes,
+			sampledRssPeakBytes: Math.max(sampledRssPeakBytes, rssAfterBytes), maxRssKiB: process.resourceUsage().maxRSS };
 	} finally { clearInterval(timer); }
+}
+if (process.argv[2] === '--rss-worker') {
+	const workload = workloads.find(item => item.name === process.argv[3]);
+	assert.ok(workload, '未知の測定課題です');
+	assert.ok(['v1', 'v2'].includes(process.argv[4]), '未知の版です');
+	const result = await run(workload, process.argv[4]);
+	assert.ok(result.maxRssKiB * 1024 < 4 * 1024 ** 3, 'RSS が 4 GiB を超えました');
+	console.log(JSON.stringify({ workload: workload.name, version: process.argv[4], warmup: 0, runs: 1, excluded: 0, expectedOutput: [workload.expected], ...result }));
+	process.exit(0);
 }
 const report = {
 	runtime: process.versions.bun ? `Bun ${process.versions.bun}` : `Node ${process.versions.node}`,
@@ -67,6 +87,9 @@ for (const workload of workloads) {
 		steps: [...new Set(rows.map(row => row.steps))],
 		yields: rows.map(row => row.yields),
 		maxTimerDelayMs: Math.max(...rows.map(row => row.maxTimerDelayMs)),
+		rssDeltaP50Bytes: quantile(rows.map(row => row.rssDeltaBytes), 0.5),
+		rssDeltaP95Bytes: quantile(rows.map(row => row.rssDeltaBytes), 0.95),
+		sampledRssPeakBytes: Math.max(...rows.map(row => row.sampledRssPeakBytes)),
 	});
 	report.workloads.push({ name: workload.name, expectedOutput: [workload.expected], v1: summarize(records.v1), v2: summarize(records.v2), records });
 }
@@ -83,6 +106,15 @@ for (const workload of [
 	const v1 = await run(workload, 'v1');
 	const v2 = await run(workload, 'v2');
 	report.stepCalibration.push({ name: workload.name, expectedOutput: [workload.expected], runs: 1, v1Steps: v1.steps, v2Steps: v2.steps });
+}
+// 単独プロセスの RSS も残し、他方の版の割り当てや GC の影響と区別します。
+report.rssColdRuns = [];
+for (const workload of workloads) for (const version of ['v1', 'v2']) {
+	const child = spawnSync(process.execPath, [...(process.versions.bun ? [] : ['--max-old-space-size=1024']), fileURLToPath(import.meta.url), '--rss-worker', workload.name, version], {
+		encoding: 'utf8', timeout: 60_000, maxBuffer: 4 * 1024 * 1024,
+	});
+	assert.equal(child.status, 0, `${workload.name} ${version}: ${child.error ?? child.stderr}`);
+	report.rssColdRuns.push(JSON.parse(child.stdout));
 }
 report.memory = process.memoryUsage();
 report.maxRssKiB = process.resourceUsage().maxRSS;

@@ -1,5 +1,6 @@
 import type * as AST from '../ast.js';
-import { runtimeError } from './errors.js';
+import { RuntimeError, runtimeError } from './errors.js';
+import { GraphemeCache } from './strings.js';
 
 export type Value = null | boolean | number | string | object;
 export const SCRIPT_FUNCTION = Symbol('script function');
@@ -42,15 +43,34 @@ function checkFunctionProperty(key: string, pos: AST.Pos): void {
 	if (key === 'name' || key === 'length' || key === 'prototype') throw runtimeError('UNSUPPORTED_VALUE', pos, { key }, 'TypeError');
 }
 
-type GraphemeInfo = { length: number; parts: readonly string[] | null };
+function opaqueFunction(value: unknown): boolean {
+	return typeof value === 'function' || isScriptFunction(value) || isBuiltinMethod(value);
+}
+
+export const errorValue = (Error as ErrorConstructor & { isError(value: unknown): value is Error }).isError;
+
+function publicErrorKey(value: Error, key: string): boolean {
+	return key === 'name' || key === 'message' || key === 'cause' || (value instanceof RuntimeError && (key === 'code' || key === 'pos'));
+}
+
+/** エラーの標準名と文だけは標準の原型にあるデータも扱い、getter は実行しない。 */
+function errorDescriptor(value: Error, key: string): PropertyDescriptor | undefined {
+	let object: object | null = value;
+	while (object) {
+		const descriptor = Object.getOwnPropertyDescriptor(object, key);
+		if (descriptor) return descriptor;
+		if (key !== 'name' && key !== 'message') return undefined;
+		object = Object.getPrototypeOf(object);
+	}
+	return undefined;
+}
 
 /** プロパティ操作は原型を参照せず、書記素のキャッシュを実行単位で共有する。 */
 export class PropertyAccess {
-	private readonly strings = new Map<string, GraphemeInfo>();
+	private readonly strings: GraphemeCache;
 	private arrays = new WeakSet<object>();
-	private readonly segmenter = new Intl.Segmenter(undefined, { granularity: 'grapheme' });
 
-	constructor(private readonly onStep: () => void = () => {}) {}
+	constructor(private readonly onStep: () => void = () => {}) { this.strings = new GraphemeCache(onStep); }
 
 	clear(): void { this.strings.clear(); }
 
@@ -71,13 +91,17 @@ export class PropertyAccess {
 
 	private *prepareArray(value: unknown[], pos: AST.Pos): Generator<void, void> {
 		if (this.arrays.has(value)) return;
-		for (let i = 0; i < value.length; i++) {
+		let indices = 0;
+		for (const key of Reflect.ownKeys(value)) {
+			if (key === 'length') continue;
 			this.onStep();
-			const descriptor = Object.getOwnPropertyDescriptor(value, String(i));
+			if (typeof key !== 'string' || indexOf(key) === null) throw runtimeError('INVALID_ARRAY_PROPERTY', pos, { key: String(key) });
+			const descriptor = Object.getOwnPropertyDescriptor(value, key);
 			if (!descriptor) throw runtimeError('SPARSE_ARRAY', pos);
 			if (!('value' in descriptor)) throw runtimeError('ACCESSOR_PROPERTY', pos, {}, 'TypeError');
-			if ((i + 1) % 64 === 0) yield;
+			if (++indices % 64 === 0) yield;
 		}
+		if (indices !== value.length) throw runtimeError('SPARSE_ARRAY', pos);
 		this.arrays.add(value);
 	}
 
@@ -88,50 +112,18 @@ export class PropertyAccess {
 		return key;
 	}
 
-	private stringInfo(value: string): GraphemeInfo {
-		const cached = this.strings.get(value);
-		if (cached) return cached;
-		for (const _pause of this.prepareString(value)) { /* 同期 API は中断地点まで含めて処理する。 */ }
-		return this.strings.get(value)!;
-	}
+	private stringInfo(value: string) { return this.strings.info(value); }
 
 	/** 64 要素以下の区間で制御を返し、評価器が時間の上限と譲る時刻を確認できるようにする。 */
-	*prepare(value: unknown, pos: AST.Pos): Generator<void, void> {
-		if (typeof value === 'string') yield* this.prepareString(value);
-		else if (Array.isArray(value)) yield* this.prepareArray(value, pos);
+	*prepare(value: unknown, pos: AST.Pos, parts = false): Generator<void, void> {
+		if (typeof value === 'string') {
+			if (parts) yield* this.strings.prepareParts(value);
+			else yield* this.strings.prepare(value);
+		} else if (Array.isArray(value)) yield* this.prepareArray(value, pos);
 	}
 
-	private *prepareString(value: string): Generator<void, void> {
-		const cached = this.strings.get(value);
-		if (cached) return;
-		let ascii = true;
-		for (let i = 0; i < value.length; i++) {
-			this.onStep();
-			if (value.charCodeAt(i) > 127 || (value.charCodeAt(i) === 13 && value.charCodeAt(i + 1) === 10)) {
-				ascii = false;
-				break;
-			}
-			if ((i + 1) % 64 === 0) yield;
-		}
-		let info: GraphemeInfo;
-		if (ascii) {
-			info = { length: value.length, parts: null };
-		} else {
-			const parts: string[] = [];
-			for (const part of this.segmenter.segment(value)) {
-				this.onStep();
-				parts.push(part.segment);
-				if (parts.length % 64 === 0) yield;
-			}
-			info = { length: parts.length, parts };
-		}
-		this.strings.set(value, info);
-	}
-
-	graphemes(value: string): readonly string[] {
-		const info = this.stringInfo(value);
-		return info.parts ?? value.split('');
-	}
+	concat(left: string, right: string): string { return this.strings.concat(left, right); }
+	graphemes(value: string): readonly string[] { return this.strings.graphemes(value); }
 
 	get(value: unknown, property: unknown, pos: AST.Pos): Value {
 		const key = this.key(property, pos);
@@ -140,7 +132,7 @@ export class PropertyAccess {
 			const info = this.stringInfo(value);
 			if (key === 'length') return info.length;
 			const index = indexOf(key);
-			if (index !== null) return (info.parts ? info.parts[index] : value[index]) ?? null;
+			if (index !== null) return this.strings.at(value, index) ?? null;
 			return methods.string[key] ?? null;
 		}
 		if (Array.isArray(value)) {
@@ -151,11 +143,13 @@ export class PropertyAccess {
 			if (index !== null && !Object.hasOwn(value, key)) throw runtimeError('SPARSE_ARRAY', pos);
 			if (key !== 'length' && index === null) return methods.array[key] ?? null;
 		}
-		if (isScriptFunction(value) || isBuiltinMethod(value)) {
+		if (opaqueFunction(value)) {
 			checkFunctionProperty(key, pos);
 			return null;
 		}
-		const descriptor = Object.getOwnPropertyDescriptor(Object(value), key);
+		const error = errorValue(value);
+		if (error && !publicErrorKey(value, key)) return null;
+		const descriptor = error ? errorDescriptor(value, key) : Object.getOwnPropertyDescriptor(Object(value), key);
 		if (!descriptor) return null;
 		if (!('value' in descriptor)) throw runtimeError('ACCESSOR_PROPERTY', pos, { key }, 'TypeError');
 		return this.normalize(descriptor.value, pos);
@@ -164,7 +158,7 @@ export class PropertyAccess {
 	set(value: unknown, property: unknown, next: unknown, pos: AST.Pos): Value {
 		const key = this.key(property, pos);
 		if (value === null || value === undefined) throw runtimeError('NULL_PROPERTY_ACCESS', pos, { key }, 'TypeError');
-		if ((typeof value !== 'object' && typeof value !== 'function') || isScriptFunction(value) || isBuiltinMethod(value)) {
+		if (typeof value !== 'object' || opaqueFunction(value) || (errorValue(value) && !publicErrorKey(value, key))) {
 			throw runtimeError('READONLY_PROPERTY', pos, { key }, 'TypeError');
 		}
 		const normalized = this.normalize(next, pos);
@@ -190,20 +184,24 @@ export class PropertyAccess {
 	has(value: unknown, property: unknown, pos: AST.Pos): boolean {
 		const key = this.key(property, pos);
 		if (value === null || (typeof value !== 'object' && typeof value !== 'function')) throw runtimeError('INVALID_RECEIVER', pos, {}, 'TypeError');
-		if (isScriptFunction(value) || isBuiltinMethod(value)) {
+		if (opaqueFunction(value)) {
 			checkFunctionProperty(key, pos);
 			return false;
 		}
+		if (Array.isArray(value)) this.checkArray(value, pos);
+		if (errorValue(value)) return publicErrorKey(value, key) && errorDescriptor(value, key) !== undefined;
 		return Object.hasOwn(value, key);
 	}
 
 	delete(value: unknown, property: unknown, pos: AST.Pos): boolean {
 		const key = this.key(property, pos);
 		if (value === null || value === undefined) throw runtimeError('NULL_PROPERTY_ACCESS', pos, { key }, 'TypeError');
-		if (isScriptFunction(value) || isBuiltinMethod(value)) {
+		if (opaqueFunction(value)) {
 			checkFunctionProperty(key, pos);
 			return true;
 		}
+		if (errorValue(value) && !publicErrorKey(value, key)) return true;
+		if (Array.isArray(value)) this.checkArray(value, pos);
 		if (Array.isArray(value) && (indexOf(key) !== null || key === 'length')) throw runtimeError('ARRAY_DELETE', pos);
 		if (typeof value === 'string' && (indexOf(key) !== null || key === 'length')) throw runtimeError('READONLY_PROPERTY', pos, { key }, 'TypeError');
 		if (!Reflect.deleteProperty(Object(value), key)) throw runtimeError('READONLY_PROPERTY', pos, { key }, 'TypeError');
@@ -220,14 +218,16 @@ export class PropertyAccess {
 			const info = this.stringInfo(value);
 			for (let i = 0; i < info.length; i++) {
 				this.onStep();
-				yield [String(i), (info.parts ? info.parts[i] : value[i])!];
+				yield [String(i), this.strings.at(value, i)!];
 			}
 			return;
 		}
-		if (isScriptFunction(value) || isBuiltinMethod(value)) return;
+		if (opaqueFunction(value)) return;
 		if (Array.isArray(value)) this.checkArray(value, pos);
+		const error = errorValue(value);
 		for (const key of Object.keys(Object(value))) {
 			this.onStep();
+			if (error && !publicErrorKey(value, key)) continue;
 			this.key(key, pos);
 			yield [key, this.get(value, key, pos)];
 		}
@@ -242,7 +242,7 @@ export class PropertyAccess {
 			const info = this.stringInfo(value);
 			for (let i = 0; i < info.length; i++) {
 				this.onStep();
-				yield (info.parts ? info.parts[i] : value[i])!;
+				yield this.strings.at(value, i)!;
 			}
 			return;
 		}
@@ -271,7 +271,7 @@ export class PropertyAccess {
 			const info = this.stringInfo(receiver);
 			const integer = Number.isNaN(input) ? 0 : Math.trunc(input);
 			const index = integer < 0 ? info.length + integer : integer;
-			return (info.parts ? info.parts[index] : receiver[index]) ?? null;
+			return this.strings.at(receiver, index) ?? null;
 		}
 		throw runtimeError('INVALID_RECEIVER', pos, {}, 'TypeError');
 	}

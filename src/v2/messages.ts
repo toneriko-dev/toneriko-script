@@ -14,6 +14,7 @@ export const runtimeMessages = {
 	INVALID_STRING_CONVERSION: entry("この値は文字列に連結できません。", "JSON.stringify(x) または x ?? \"\" を使います。", "This value cannot be concatenated with a string.", "Use JSON.stringify(x) or x ?? \"\"."),
 	NOT_CALLABLE: entry("この値は関数ではありません。", "呼び出す値を確認します。", "This value is not callable.", "Check the value being called."),
 	PROTOTYPE_METHOD_CALL: entry("原型のメソッドは使えません。", "k in obj か Object.hasOwn(obj, k) を使います。", "Prototype methods are not available.", "Use k in obj or Object.hasOwn(obj, k)."),
+	CALL_DEPTH_EXCEEDED: entry("関数呼び出しの深さが上限 {limit} を超えました。", "再帰の深さを減らします。", "The call depth limit of {limit} was exceeded.", "Reduce the recursion depth."),
 	STEP_LIMIT_EXCEEDED: entry("実行ステップ数の上限を超えました。", "繰り返し回数を減らします。", "The execution step limit was exceeded.", "Reduce the amount of work."),
 	BUSY_TIME_EXCEEDED: entry("待たずに実行できる時間の上限を超えました。", "繰り返し処理を確認します。", "The uninterrupted execution time limit was exceeded.", "Check the loop or computation."),
 	EXECUTION_ABORTED: entry("実行を中止しました。", "新しい実行には別のインタプリタを使います。", "Execution was aborted.", "Use another interpreter for a new execution."),

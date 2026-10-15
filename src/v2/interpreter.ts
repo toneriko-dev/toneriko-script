@@ -2,7 +2,7 @@ import type * as A from './ast.js';
 import { defaultYieldToHost, macrotaskTick } from '../interpreter/host-yield.js';
 import { Environment, boundNames } from './runtime/environment.js';
 import { ExecutionStopped, RuntimeError, runtimeError } from './runtime/errors.js';
-import { PropertyAccess, SCRIPT_FUNCTION, isScriptFunction, isBuiltinMethod, valueTypeof } from './runtime/values.js';
+import { PropertyAccess, SCRIPT_FUNCTION, isScriptFunction, isBuiltinMethod, valueTypeof, errorValue } from './runtime/values.js';
 import type { Value, ScriptFunction } from './runtime/values.js';
 export { RuntimeError, ExecutionStopped } from './runtime/errors.js';
 export type { Value } from './runtime/values.js';
@@ -14,9 +14,11 @@ class ScriptThrown {
 }
 type Completion = { kind: 'return' | 'break' | 'continue'; value: Value; label: string | null };
 type Reference = { kind: 'binding'; name: string; env: Environment } | { kind: 'property'; object: Value; key: Value };
-type Frame = Generator<Frame | Waiting, any, any>;
+type Ready = { ready: any };
+type Frame = Generator<Frame | Waiting | Ready, any, any>;
+type Synchronous = { cost: number; evaluate: (env: Environment, execution: Execution) => any };
 type Waiting = { wait: PromiseLike<unknown>; pos: A.Pos };
-type Execution = { steps: number; clock: number; properties: PropertyAccess; pos: A.Pos };
+type Execution = { callDepth: number; steps: number; clock: number; properties: PropertyAccess; pos: A.Pos };
 export type HostContext = { call(fn: Value, args: Value[]): Promise<Value>; signal: AbortSignal };
 const hostBodies = new WeakMap<Function, (args: Value[], context: HostContext) => unknown>();
 export function hostFunction(body: (args: Value[], context: HostContext) => unknown): (...args: Value[]) => unknown {
@@ -26,6 +28,8 @@ export function hostFunction(body: (args: Value[], context: HostContext) => unkn
 }
 export type InterpreterOptions = {
 	maxSteps?: number;
+	/** 同時に実行するスクリプト関数の数を制限します。 */
+	maxCallDepth?: number;
 	maxBusyTime?: number;
 	yieldInterval?: number;
 	yieldToHost?: () => Promise<void>;
@@ -35,6 +39,9 @@ export type InterpreterOptions = {
 
 export class Interpreter {
 	public stepCount = 0;
+	public evaluationFrameCount = 0;
+	private readonly synchronousNodes = new WeakMap<A.Statement | A.Expression, Synchronous | null>();
+	private readonly maxCallDepth: number;
 	private readonly global: Environment;
 	private readonly controller = new AbortController();
 	private stopped: ExecutionStopped | null = null;
@@ -54,6 +61,8 @@ export class Interpreter {
 		this.now = options.now ?? (() => performance.now());
 		this.yieldInterval = options.yieldInterval ?? 8;
 		this.maxBusyTime = options.maxBusyTime ?? 5000;
+		this.maxCallDepth = options.maxCallDepth ?? 10000;
+		if (!Number.isSafeInteger(this.maxCallDepth) || this.maxCallDepth < 1) throw new RangeError('Invalid call depth limit');
 		if (!(this.yieldInterval >= 0) || !(this.maxBusyTime > 0) || (options.maxSteps !== undefined && (!Number.isSafeInteger(options.maxSteps) || options.maxSteps < 0))) throw new RangeError('Invalid execution limit');
 		this.yieldToHost = options.yieldToHost ?? defaultYieldToHost;
 		const host = new Environment();
@@ -77,7 +86,7 @@ export class Interpreter {
 	abort(): void { this.stop('EXECUTION_ABORTED', origin); }
 
 	private execution(): Execution {
-		const execution: Execution = { steps: 0, clock: 0, properties: undefined!, pos: origin };
+		const execution: Execution = { callDepth: 0, steps: 0, clock: 0, properties: undefined!, pos: origin };
 		execution.properties = new PropertyAccess(() => this.tick(execution, execution.pos));
 		return execution;
 	}
@@ -149,7 +158,7 @@ export class Interpreter {
 						this.armIdle();
 					}
 				}
-				let result: IteratorResult<Frame | Waiting, any>;
+				let result: IteratorResult<Frame | Waiting | Ready, any>;
 				try { result = throwing ? frames.at(-1)!.throw(value) : frames.at(-1)!.next(value); }
 				catch (error) {
 					if (error instanceof ExecutionStopped) throw error;
@@ -157,7 +166,8 @@ export class Interpreter {
 				}
 				throwing = false;
 				if (result.done) { frames.pop(); value = result.value; continue; }
-				if ('wait' in result.value) {
+				if ('ready' in result.value) { value = result.value.ready; }
+				else if ('wait' in result.value) {
 					this.checkTime(result.value.pos);
 					try { value = await this.wait(result.value.wait); }
 					catch (error) { value = error; throwing = true; }
@@ -166,8 +176,9 @@ export class Interpreter {
 			}
 			if (throwing) {
 				if (value instanceof ScriptThrown && !internal) {
-					const error = runtimeError('UNCAUGHT_EXCEPTION', value.pos, {}, value.value instanceof Error ? value.value.name : undefined);
-					if (value.value instanceof Error) error.message = value.value.message;
+					const isError = errorValue(value.value);
+					const error = runtimeError('UNCAUGHT_EXCEPTION', value.pos, {}, isError ? this.text(execution.properties.get(value.value, 'name', value.pos), value.pos) : undefined);
+					if (isError) error.message = this.text(execution.properties.get(value.value, 'message', value.pos), value.pos);
 					Object.assign(error, { thrownValue: value.value, cause: value.value });
 					throw error;
 				}
@@ -213,7 +224,8 @@ export class Interpreter {
 		const object = yield this.evaluate(node.object, env, execution);
 		if (object === shortCircuit || (node.optional && object === null)) return shortCircuit;
 		const key = node.computed ? yield this.evaluate(node.property, env, execution) : (node.property as A.Identifier).name;
-		yield this.prepared(object, execution, node.loc.start);
+		execution.properties.key(key, node.loc.start);
+		yield this.prepared(object, execution, node.loc.start, key !== 'length');
 		return { kind: 'property', object, key } satisfies Reference;
 	}
 	private read(ref: Reference, execution: Execution, pos: A.Pos): Value {
@@ -279,9 +291,10 @@ export class Interpreter {
 						yield this.bind(property.argument, rest, env, execution, initialize, target);
 					} else {
 						const key = property.computed ? yield this.evaluate(property.key as A.Expression, env, execution) : property.key.type === 'Identifier' ? property.key.name : (property.key as A.Literal).value;
-						excluded.add(String(key));
+						const validatedKey = execution.properties.key(key, property.loc.start);
+						excluded.add(validatedKey);
 						const target: Reference | null = yield this.bindingReference(property.value as A.Pattern, env, execution);
-						yield this.bind(property.value as A.Pattern, execution.properties.get(value, key, property.loc.start), env, execution, initialize, target);
+						yield this.bind(property.value as A.Pattern, execution.properties.get(value, validatedKey, property.loc.start), env, execution, initialize, target);
 					}
 				}
 				return null;
@@ -296,7 +309,7 @@ export class Interpreter {
 		if (operator === '===' || operator === '==') return left === right;
 		if (operator === '!==' || operator === '!=') return left !== right;
 		if (operator === 'in') return execution.properties.has(right, left, pos);
-		if (operator === '+' && (typeof left === 'string' || typeof right === 'string')) return this.text(left, pos) + this.text(right, pos);
+		if (operator === '+' && (typeof left === 'string' || typeof right === 'string')) return execution.properties.concat(this.text(left, pos), this.text(right, pos));
 		if (['<', '<=', '>', '>='].includes(operator) && typeof left === 'string' && typeof right === 'string') {
 			if (operator === '<') return left < right;
 			if (operator === '<=') return left <= right;
@@ -320,8 +333,8 @@ export class Interpreter {
 	}
 
 	private *checkpoint(): Frame { return null; }
-	private *prepared(value: unknown, execution: Execution, pos: A.Pos): Frame {
-		for (const _ of execution.properties.prepare(value, pos)) yield this.checkpoint();
+	private *prepared(value: unknown, execution: Execution, pos: A.Pos, parts = true): Frame {
+		for (const _ of execution.properties.prepare(value, pos, parts)) yield this.checkpoint();
 		return null;
 	}
 	private *spread(value: Value, execution: Execution, pos: A.Pos): Frame {
@@ -359,19 +372,23 @@ export class Interpreter {
 			return execution.properties.callMethod(fn, receiver, args, pos);
 		}
 		if (isScriptFunction(fn)) {
-			const parameters = new Environment(fn.environment as Environment);
-			for (const pattern of fn.params) for (const name of boundNames(pattern)) {
-				this.tick(execution, pattern.loc.start); parameters.declare(name, true);
-			}
-			for (let i = 0; i < fn.params.length; i++) {
-				const pattern = fn.params[i]!;
-				yield this.bind(pattern, pattern.type === 'RestElement' ? args.slice(i) : args[i] ?? null, parameters, execution, true);
-			}
-			if (fn.body.type !== 'BlockStatement') return yield this.evaluate(fn.body, parameters, execution);
-			// 既定引数の閉包からは本体の宣言が見えません。
-			const body = new Environment(parameters);
-			const result: Completion | null = yield this.sequence(fn.body.body, body, execution);
-			return result?.kind === 'return' ? result.value : null;
+			if (execution.callDepth >= this.maxCallDepth) throw runtimeError('CALL_DEPTH_EXCEEDED', pos, { limit: this.maxCallDepth }, 'RangeError');
+			execution.callDepth++;
+			try {
+				const parameters = new Environment(fn.environment as Environment);
+				for (const pattern of fn.params) for (const name of boundNames(pattern)) {
+					this.tick(execution, pattern.loc.start); parameters.declare(name, true);
+				}
+				for (let i = 0; i < fn.params.length; i++) {
+					const pattern = fn.params[i]!;
+					yield this.bind(pattern, pattern.type === 'RestElement' ? args.slice(i) : args[i] ?? null, parameters, execution, true);
+				}
+				if (fn.body.type !== 'BlockStatement') return yield this.evaluate(fn.body, parameters, execution);
+				// 既定引数の閉包からは本体の宣言が見えません。
+				const body = new Environment(parameters);
+				const result: Completion | null = yield this.sequence(fn.body.body, body, execution);
+				return result?.kind === 'return' ? result.value : null;
+			} finally { execution.callDepth--; }
 		}
 		if (typeof fn !== 'function') throw runtimeError('NOT_CALLABLE', pos, {}, 'TypeError');
 		this.checkTime(pos);
@@ -385,23 +402,173 @@ export class Interpreter {
 			};
 			let result = hostBodies.has(fn) ? hostBodies.get(fn)!(args, context) : Reflect.apply(fn, receiver, args);
 			this.checkTime(pos);
-			if (result !== null && (typeof result === 'object' || typeof result === 'function') && typeof result.then === 'function') result = yield { wait: result, pos };
+			if (result !== null && !errorValue(result) && (typeof result === 'object' || typeof result === 'function') && typeof result.then === 'function') result = yield { wait: result, pos };
 			execution.properties.invalidateHostArrays();
 			yield this.prepared(result, execution, pos);
 			return execution.properties.normalize(result, pos);
 		} catch (error) {
 			if (error instanceof ExecutionStopped || error instanceof RuntimeError || error instanceof ScriptThrown) throw error;
-			if (error instanceof Error || Object.prototype.toString.call(error) === '[object Error]') {
+			if (errorValue(error)) {
 				const host = error as Error;
-				const wrapped = runtimeError('HOST_ERROR', pos, {}, host.name);
-				wrapped.message = host.message;
+				const wrapped = runtimeError('HOST_ERROR', pos, {}, this.text(execution.properties.get(host, 'name', pos), pos));
+				wrapped.message = this.text(execution.properties.get(host, 'message', pos), pos);
+				if (Object.hasOwn(host, 'cause')) Object.defineProperty(wrapped, 'cause', { value: execution.properties.get(host, 'cause', pos), configurable: true, writable: true });
 				throw wrapped;
 			}
 			yield this.prepared(error, execution, pos);
 			throw new ScriptThrown(execution.properties.normalize(error, pos), pos);
 		}
 	}
-	private *evaluate(node: A.Statement | A.Expression, env: Environment, execution: Execution, labels: string[] = []): Frame {
+	private evaluate(node: A.Statement | A.Expression, env: Environment, execution: Execution, labels: string[] = []): Frame | Ready {
+		const synchronous = this.synchronous(node);
+		if (synchronous) return { ready: synchronous.evaluate(env, execution) };
+		this.evaluationFrameCount++;
+		return this.evaluateSuspending(node, env, execution, labels);
+	}
+
+	/** 同期区間の構文は最大32ステップとし、深い構文や中断を伴う操作はスケジューラへ返します。 */
+	private synchronous(node: A.Statement | A.Expression, depth = 0): Synchronous | null {
+		if (depth >= 32) return null;
+		if (this.synchronousNodes.has(node)) return this.synchronousNodes.get(node)!;
+		const pos = node.loc.start;
+		let cost = 1;
+		let valid = true;
+		const child = (part: A.Statement | A.Expression): Synchronous['evaluate'] => {
+			const result = this.synchronous(part, depth + 1);
+			if (!result) { valid = false; return () => null; }
+			cost += result.cost;
+			return result.evaluate;
+		};
+		let body: Synchronous['evaluate'] | null = null;
+		switch (node.type) {
+			case 'Literal': body = () => node.value; break;
+			case 'Identifier': body = env => env.read(node.name, pos); break;
+			case 'EmptyStatement': case 'FunctionDeclaration': body = () => null; break;
+			case 'ExpressionStatement': {
+				const expression = child(node.expression);
+				body = (env, execution) => { expression(env, execution); return null; };
+				break;
+			}
+			case 'BlockStatement': {
+				const statements = node.body.map(child);
+				for (const statement of node.body) {
+					if (statement.type === 'VariableDeclaration') cost += statement.declarations.length;
+					if (statement.type === 'FunctionDeclaration') cost++;
+				}
+				body = (env, execution) => {
+					const scope = new Environment(env);
+					this.prepare(node.body, scope, execution);
+					for (const statement of statements) {
+						const result = statement(scope, execution);
+						if (result) return result;
+					}
+					return null;
+				};
+				break;
+			}
+			case 'VariableDeclaration': {
+				if (node.declarations.some(declaration => declaration.id.type !== 'Identifier')) break;
+				const declarations = node.declarations.map(declaration => ({
+					id: declaration.id as A.Identifier,
+					value: declaration.init ? child(declaration.init) : () => null,
+				}));
+				cost += declarations.length;
+				body = (env, execution) => {
+					for (const declaration of declarations) {
+						const value = declaration.value(env, execution);
+						this.tick(execution, declaration.id.loc.start);
+						env.write(declaration.id.name, value, declaration.id.loc.start, true);
+					}
+					return null;
+				};
+				break;
+			}
+			case 'ReturnStatement': {
+				const argument = node.argument ? child(node.argument) : () => null;
+				body = (env, execution) => ({ kind: 'return', value: argument(env, execution), label: null } satisfies Completion);
+				break;
+			}
+			case 'BreakStatement': case 'ContinueStatement':
+				body = () => ({ kind: node.type === 'BreakStatement' ? 'break' : 'continue', value: null, label: node.label?.name ?? null } satisfies Completion);
+				break;
+			case 'IfStatement': {
+				const test = child(node.test), consequent = child(node.consequent), alternate = node.alternate ? child(node.alternate) : () => null;
+				body = (env, execution) => test(env, execution) ? consequent(env, execution) : alternate(env, execution);
+				break;
+			}
+			case 'BinaryExpression': {
+				const left = child(node.left), right = child(node.right);
+				// in は配列の検証を伴うため、同期区間には含めません。
+				if (node.operator === 'in') break;
+				body = (env, execution) => this.binary(node.operator, left(env, execution), right(env, execution), execution, pos);
+				break;
+			}
+			case 'LogicalExpression': {
+				const left = child(node.left), right = child(node.right);
+				body = (env, execution) => {
+					const value = left(env, execution);
+					return (node.operator === '&&' ? !value : node.operator === '||' ? !!value : value !== null) ? value : right(env, execution);
+				};
+				break;
+			}
+			case 'ConditionalExpression': {
+				const test = child(node.test), consequent = child(node.consequent), alternate = child(node.alternate);
+				body = (env, execution) => test(env, execution) ? consequent(env, execution) : alternate(env, execution);
+				break;
+			}
+			case 'UnaryExpression': {
+				if (node.operator === 'delete') break;
+				const argument = child(node.argument);
+				body = (env, execution) => {
+					if (node.operator === 'typeof' && node.argument.type === 'Identifier' && !env.resolve(node.argument.name)) return 'undefined';
+					const value = argument(env, execution);
+					if (node.operator === '!') return !value;
+					if (node.operator === 'typeof') return valueTypeof(value);
+					if (typeof value !== 'number') throw runtimeError('IMPLICIT_COERCION', pos, {}, 'TypeError');
+					return node.operator === '-' ? -value : +value;
+				};
+				break;
+			}
+			case 'AssignmentExpression': {
+				if (node.left.type !== 'Identifier') break;
+				const target = node.left;
+				const right = child(node.right);
+				cost++;
+				body = (env, execution) => {
+					this.tick(execution, target.loc.start);
+					const previous = node.operator === '=' ? null : env.read(target.name, pos);
+					if (node.operator === '??=' && previous !== null) return previous;
+					const value = right(env, execution);
+					const assigned = node.operator === '=' || node.operator === '??=' ? value : this.binary(node.operator.slice(0, -1) as A.BinaryExpression['operator'], previous, value, execution, pos);
+					env.write(target.name, assigned, pos);
+					return assigned;
+				};
+				break;
+			}
+			case 'UpdateExpression': {
+				if (node.argument.type !== 'Identifier') break;
+				const target = node.argument;
+				cost++;
+				body = (env, execution) => {
+					this.tick(execution, target.loc.start);
+					const value = env.read(target.name, pos);
+					if (typeof value !== 'number') throw runtimeError('IMPLICIT_COERCION', pos, {}, 'TypeError');
+					const next = value + (node.operator === '++' ? 1 : -1);
+					env.write(target.name, next, pos);
+					return node.prefix ? next : value;
+				};
+				break;
+			}
+		}
+		const result: Synchronous | null = valid && body && cost <= 32 ? {
+			cost,
+			evaluate: (env, execution) => { this.tick(execution, pos); return body!(env, execution); },
+		} : null;
+		this.synchronousNodes.set(node, result);
+		return result;
+	}
+
+	private *evaluateSuspending(node: A.Statement | A.Expression, env: Environment, execution: Execution, labels: string[] = []): Frame {
 		const pos = node.loc.start;
 		const properties = execution.properties;
 		this.tick(execution, pos);
@@ -426,31 +593,41 @@ export class Interpreter {
 				return result?.kind === 'break' && result.label === node.label.name ? null : result;
 			}
 			case 'WhileStatement': case 'DoWhileStatement': {
+				const test = this.synchronous(node.test);
+				const body = this.synchronous(node.body);
 				let first = true;
-				while ((first && node.type === 'DoWhileStatement') || (yield this.evaluate(node.test, env, execution))) {
+				while ((first && node.type === 'DoWhileStatement') || (test ? test.evaluate(env, execution) : yield this.evaluate(node.test, env, execution))) {
 					first = false;
-					const result: Completion | null = yield this.evaluate(node.body, env, execution);
+					const result: Completion | null = body ? body.evaluate(env, execution) : yield this.evaluate(node.body, env, execution);
 					if (result) {
 						if (result.kind === 'break' && (result.label === null || labels.includes(result.label))) break;
 						if (result.kind !== 'continue' || (result.label !== null && !labels.includes(result.label))) return result;
 					}
+					if (execution.clock >= 64) yield this.checkpoint();
 				}
 				return null;
 			}
 			case 'ForStatement': {
+				const test = node.test ? this.synchronous(node.test) : null;
+				const body = this.synchronous(node.body);
+				const update = node.update ? this.synchronous(node.update) : null;
 				let loop = new Environment(env);
 				if (node.init?.type === 'VariableDeclaration') this.prepare([node.init], loop, execution);
 				if (node.init) yield this.evaluate(node.init, loop, execution);
 				const perIteration = node.init?.type === 'VariableDeclaration' && node.init.kind === 'let';
 				if (perIteration) loop = loop.iteration();
-				while (!node.test || (yield this.evaluate(node.test, loop, execution))) {
-					const result: Completion | null = yield this.evaluate(node.body, loop, execution);
+				while (!node.test || (test ? test.evaluate(loop, execution) : yield this.evaluate(node.test, loop, execution))) {
+					const result: Completion | null = body ? body.evaluate(loop, execution) : yield this.evaluate(node.body, loop, execution);
 					if (result) {
 						if (result.kind === 'break' && (result.label === null || labels.includes(result.label))) break;
 						if (result.kind !== 'continue' || (result.label !== null && !labels.includes(result.label))) return result;
 					}
 					if (perIteration) loop = loop.iteration();
-					if (node.update) yield this.evaluate(node.update, loop, execution);
+					if (node.update) {
+						if (update) update.evaluate(loop, execution);
+						else yield this.evaluate(node.update, loop, execution);
+					}
+					if (execution.clock >= 64) yield this.checkpoint();
 				}
 				return null;
 			}
@@ -546,14 +723,15 @@ export class Interpreter {
 						}
 					} else {
 						const key = property.computed ? yield this.evaluate(property.key as A.Expression, env, execution) : property.key.type === 'Identifier' ? property.key.name : (property.key as A.Literal).value;
-						properties.set(result, key, yield this.evaluate(property.value as A.Expression, env, execution), property.loc.start);
+						const validatedKey = properties.key(key, property.loc.start);
+						properties.set(result, validatedKey, yield this.evaluate(property.value as A.Expression, env, execution), property.loc.start);
 					}
 				}
 				return result;
 			}
 			case 'TemplateLiteral': {
 				let result = node.quasis[0]!.value.cooked;
-				for (let i = 0; i < node.expressions.length; i++) result += this.text(yield this.evaluate(node.expressions[i]!, env, execution), pos) + node.quasis[i + 1]!.value.cooked;
+				for (let i = 0; i < node.expressions.length; i++) result = properties.concat(properties.concat(result, this.text(yield this.evaluate(node.expressions[i]!, env, execution), pos)), node.quasis[i + 1]!.value.cooked);
 				return result;
 			}
 			case 'BinaryExpression': return this.binary(node.operator, yield this.evaluate(node.left, env, execution), yield this.evaluate(node.right, env, execution), execution, pos);
@@ -598,6 +776,10 @@ export class Interpreter {
 				if (shadowed) throw runtimeError('NOT_CALLABLE', pos, {}, 'TypeError');
 				const error = args.length ? new Error(this.text(args[0]!, pos)) : new Error();
 				Object.defineProperty(error, 'name', { value: 'Error', configurable: true, writable: true });
+				const options = args[1];
+				if (options !== null && (typeof options === 'object' || typeof options === 'function') && properties.has(options, 'cause', pos)) {
+					Object.defineProperty(error, 'cause', { value: properties.get(options, 'cause', pos), configurable: true, writable: true });
+				}
 				return error;
 			}
 			case 'UnaryExpression': {

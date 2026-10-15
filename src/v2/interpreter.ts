@@ -557,7 +557,7 @@ export class Interpreter {
 				if (property.type === 'RestElement') {
 					const target: Reference | null = yield this.bindingReference(property, env, execution);
 					const rest = scriptObject(Object.create(null));
-					if (initialize && !dynamic) this.registerPattern(property.argument, env, this.typePlan.project(property.argument, plan.check, excluded));
+					if (initialize && !dynamic && !plan.transient) this.registerPattern(property.argument, env, this.typePlan.project(property.argument, plan.check, excluded));
 					for (const [key, item] of execution.properties.entriesIterator(value, pos)) {
 						if (!excluded.has(key)) rest[key] = item;
 						if (execution.clock >= 64) yield this.checkpoint();
@@ -568,11 +568,14 @@ export class Interpreter {
 					const validated = execution.properties.key(key, property.loc.start);
 					excluded.add(validated);
 					if (initialize) {
-						const projection = this.typePlan.project(property.value as A.Pattern, plan.check, validated);
 						if (property.computed && property.key.type !== 'Literal') {
-							for (const _ of this.typePlan.prepareProjection(property.value as A.Pattern, projection, () => this.tick(execution, pos))) yield this.checkpoint();
+							const preparation = this.typePlan.projectDynamic(property.value as A.Pattern, plan.check, validated, () => this.tick(execution, pos));
+							let result = preparation.next();
+							while (!result.done) { yield this.checkpoint(); result = preparation.next(); }
+							this.registerPattern(property.value as A.Pattern, env, result.value);
+						} else if (!plan.transient) {
+							this.registerPattern(property.value as A.Pattern, env, this.typePlan.project(property.value as A.Pattern, plan.check, validated));
 						}
-						this.registerPattern(property.value as A.Pattern, env, projection);
 					}
 					const target: Reference | null = yield this.bindingReference(property.value as A.Pattern, env, execution);
 					yield this.bind(property.value as A.Pattern, execution.properties.get(value, validated, property.loc.start), env, execution, initialize, target);

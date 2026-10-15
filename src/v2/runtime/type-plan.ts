@@ -2,7 +2,7 @@ import type * as A from '../ast.js';
 import { parsedTypeAnnotations } from '../type-metadata.js';
 import { compileType, isComposite, prepareType, type TypeCheck } from './type-checks.js';
 
-export type PatternCheck = { check: TypeCheck; explicit: boolean };
+export type PatternCheck = { check: TypeCheck; explicit: boolean; transient?: boolean };
 const nullable = (check: TypeCheck): TypeCheck => ({ kind: 'union', types: [check, { kind: 'null' }] });
 
 export function projectType(check: TypeCheck, key: string | null, rest = false): TypeCheck {
@@ -18,7 +18,6 @@ export class TypePlan {
 	readonly returns = new WeakMap<A.FunctionDeclaration | A.ArrowFunctionExpression, TypeCheck>();
 	readonly compositeNames = new Set<string>();
 	private readonly programs = new WeakSet<A.Program>();
-	private readonly preparedProjections = new WeakSet<WeakMap<A.Pattern | A.MemberExpression, PatternCheck>>();
 	private readonly projections = new WeakMap<A.Pattern | A.MemberExpression, WeakMap<TypeCheck, Map<string | null, WeakMap<A.Pattern | A.MemberExpression, PatternCheck>>>>();
 	hasTypes = false;
 
@@ -61,21 +60,48 @@ export class TypePlan {
 		return projected.patterns;
 	}
 
-	*prepareProjection(pattern: A.Pattern | A.MemberExpression, projection: WeakMap<A.Pattern | A.MemberExpression, PatternCheck>, tick: () => void): Generator<void, void> {
-		if (this.preparedProjections.has(projection)) return;
+	*projectDynamic(pattern: A.Pattern | A.MemberExpression, source: TypeCheck, key: string, tick: () => void): Generator<void, WeakMap<A.Pattern | A.MemberExpression, PatternCheck>> {
+		const projection = new WeakMap<A.Pattern | A.MemberExpression, PatternCheck>();
 		let steps = 0;
 		const step = () => { tick(); return ++steps % 64 === 0; };
-		const pending = [pattern];
-		while (pending.length) {
-			const part = pending.pop()!;
-			const check = projection.get(part)?.check;
-			if (check) yield* prepareType(check, step);
-			if (part.type === 'AssignmentPattern') pending.push(part.left);
-			else if (part.type === 'RestElement') pending.push(part.argument);
-			else if (part.type === 'ArrayPattern') { for (const item of part.elements) if (item) pending.push(item); }
-			else if (part.type === 'ObjectPattern') { for (const property of part.properties) pending.push(property.type === 'RestElement' ? property.argument : property.value as A.Pattern); }
+		const original = this.patterns;
+		function* build(part: A.Pattern | A.MemberExpression, inherited?: TypeCheck): Generator<void, void> {
+			if (step()) yield;
+			const annotation = 'typeAnnotation' in part ? part.typeAnnotation : undefined;
+			let check = annotation ? original.get(part)?.check : inherited;
+			if (!annotation && check && 'optional' in part && part.optional) check = nullable(check);
+			if (check) {
+				projection.set(part, {check, explicit:!!annotation, transient:true});
+				yield* prepareType(check, step);
+			}
+			if (part.type === 'AssignmentPattern') yield* build(part.left, check);
+			else if (part.type === 'RestElement') yield* build(part.argument, check);
+			else if (part.type === 'ArrayPattern') {
+				for (const item of part.elements) {
+					if (item) yield* build(item, check ? projectType(check, null, item.type === 'RestElement') : undefined);
+					else if (step()) yield;
+				}
+			} else if (part.type === 'ObjectPattern') {
+				let dynamic = false;
+				const removed = new Set<string>();
+				for (const property of part.properties) {
+					if (step()) yield;
+					if (property.type === 'RestElement') continue;
+					if (property.computed && property.key.type !== 'Literal') dynamic = true;
+					else removed.add(property.key.type === 'Identifier' ? property.key.name : String((property.key as A.Literal).value));
+				}
+				for (const property of part.properties) {
+					if (property.type === 'RestElement') yield* build(property, check && !dynamic ? restType(check, removed) : undefined);
+					else {
+						const dynamicKey = property.computed && property.key.type !== 'Literal';
+						const key = property.key.type === 'Identifier' ? property.key.name : String((property.key as A.Literal).value);
+						yield* build(property.value as A.Pattern, check && !dynamicKey ? projectType(check, key) : undefined);
+					}
+				}
+			}
 		}
-		this.preparedProjections.add(projection);
+		yield* build(pattern, projectType(source, key));
+		return projection;
 	}
 
 	private names(pattern: A.Pattern | A.MemberExpression): string[] {

@@ -56,7 +56,10 @@ const mutations=[
 	["union-copy-budget", "src/v2/interpreter.ts", "if (copiedCheck) checkCopiedElement(copiedCheck.element, next.value, label, index, pos, diagnosticName, copyStep);", "if (copiedCheck) checkCopiedElement(copiedCheck.element, next.value, label, index, pos, diagnosticName, () => { void copyStep; });", "test/v2/rest-types.ts", "restコピーの広い合併は2つ目以降の照合枝を課金する: 10 枝"],
 	["union-first-branch-free", "src/v2/runtime/type-checks.ts", "const pause = state.first ? false : tick();", "const pause = tick();", "test/v2/rest-types.ts", "restコピーの入れ子合併は成功した枝で短絡する: 1"],
 	["object-rest-projection-cache", "src/v2/runtime/type-plan.ts", "if (cached) return cached;", "if (cached && Boolean(0)) return cached;", "test/v2/rest-types.ts", "object内のrest射影は型と経路ごとに一度だけ展開する: loop"],
-	["dynamic-projection-budget", "src/v2/interpreter.ts", "this.typePlan.prepareProjection(property.value as A.Pattern, projection, () => this.tick(execution, pos))", "this.typePlan.prepareProjection(property.value as A.Pattern, projection, () => {})", "test/v2/rest-types.ts", "異なる動的キーの広い射影準備は実行予算に含める"],
+	["dynamic-projection-budget", "src/v2/interpreter.ts", "this.typePlan.projectDynamic(property.value as A.Pattern, plan.check, validated, () => this.tick(execution, pos))", "this.typePlan.projectDynamic(property.value as A.Pattern, plan.check, validated, () => {})", "test/v2/rest-types.ts", "異なる動的キーの広い射影準備は実行予算に含める"],
+	["dynamic-projection-cache-retention", "src/v2/runtime/type-plan.ts", "yield* build(pattern, projectType(source, key));", "this.project(pattern, source, key);\n\t\tyield* build(pattern, projectType(source, key));", "test/v2/rest-types.ts", "動的キー射影を静的キャッシュへ保持しない: 200000 回、長さ 0"],
+	["dynamic-nested-projection-regeneration", "src/v2/interpreter.ts", "} else if (!plan.transient) {", "} else if (true) {", "test/v2/rest-types.ts", "動的射影内の入れ子objectは準備済みの束縛計画を再利用する"],
+	["dynamic-pattern-build-budget", "src/v2/runtime/type-plan.ts", "if (step()) yield;\n\t\t\tconst annotation", "const annotation", "test/v2/rest-types.ts", "動的射影のパターン生成も64ステップごとに譲る: array"],
 ].map(([name,file,before,after,testFile,testName])=>({name,file,before,after,testFile,testName}));
 const selected=process.env.V2_TYPES_MUTATIONS ? mutations.filter(item=>process.env.V2_TYPES_MUTATIONS.split(',').includes(item.name)) : mutations;
 assert.ok(selected.length,'対象の変異がありません');

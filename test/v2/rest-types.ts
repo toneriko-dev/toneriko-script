@@ -48,7 +48,7 @@ describe('restで実際にコピーする値の型検査', () => {
 		expect(large.visits).toBe(2500);
 	});
 
-	test('動的キーのrest射影キャッシュはキーごとに型を分離する', async () => {
+	test('動的キーの束縛専用rest射影はキーごとに型を分離する', async () => {
 		const interpreter = new Interpreter();
 		await interpreter.exec(parse('function f(key,bad){let {[key]:[,...r]}:{a:number[],b:string[]}={a:[1,2],b:["x","y"]};if(bad)r=[true];return r;}let a=f("a",false);let b=f("b",false);let again=f("a",false);let rejected=0;try{f("a",true);}catch(e){rejected++;}try{f("b",true);}catch(e){rejected++;}').program);
 		expect(interpreter.getGlobal('a')).toEqual([2]);
@@ -60,6 +60,82 @@ describe('restで実際にコピーする値の型検査', () => {
 		expect(interpreter.getGlobal('nestedB')).toEqual(['y']);
 		expect(interpreter.getGlobal('nestedAgain')).toEqual([2]);
 		expect(interpreter.getGlobal('nestedRejected')).toBe(2);
+	});
+
+	test.each([[200000,0],[200,1000000]])('動的キー射影を静的キャッシュへ保持しない: %s 回、長さ %s', async (count, length) => {
+		const interpreter = new Interpreter({}, {now:()=>0});
+		const plan = (interpreter as unknown as {typePlan:TypePlan}).typePlan;
+		let cacheCalls = 0;
+		const project = plan.project.bind(plan);
+		plan.project = (...args) => { cacheCalls++; return project(...args); };
+		await interpreter.exec(parse('function f(key){let {[key]:x}:{}={};}').program);
+		const fn = interpreter.getGlobal('f');
+		for (let index=0;index<count;index++) await interpreter.call(fn, ['x'.repeat(length)+index]);
+		expect(cacheCalls).toBe(0);
+	});
+
+	test('1回のexecで使う長い動的キーも静的キャッシュ項目を増やさない', async () => {
+		const interpreter = new Interpreter({makeKey:(index:number)=>({key:String(index).padStart(6,'0')+'x'.repeat(1048576-6)})});
+		const program = parse('function g(i){let {[makeKey(i).key]:x}:{a:number}={a:1};return x;}let good=0;for(let i=0;i<200;i++){if(g(i)===null)good++;}').program;
+		const plan = (interpreter as unknown as {typePlan:TypePlan}).typePlan;
+		const cache = (plan as unknown as {projections:WeakMap<A.Node,unknown>}).projections;
+		const fn = program.body[0] as A.FunctionDeclaration;
+		const declaration = fn.body.body[0] as A.VariableDeclaration;
+		const root = declaration.declarations[0].id as A.ObjectPattern;
+		const target = (root.properties[0] as A.Property).value;
+		let cacheCalls = 0;
+		const project = plan.project.bind(plan);
+		plan.project = (...args) => { cacheCalls++; return project(...args); };
+		expect(cache.has(target)).toBe(false);
+		await interpreter.exec(program);
+		expect(interpreter.getGlobal('good')).toBe(200);
+		expect(cacheCalls).toBe(0);
+		expect(cache.has(target)).toBe(false);
+	});
+
+	test.each(['array','object'])('動的射影のパターン生成も64ステップごとに譲る: %s', mode => {
+		const members = Array.from({length:128},(_,index)=>`x${index}`).join(',');
+		const pattern = mode === 'array' ? `[${members}]` : `{${members}}`;
+		const program = parse(`let {[key]:${pattern}}:{v:any}=h;`).program;
+		const interpreter = new Interpreter();
+		interpreter.prepareProgram(program);
+		const plan = (interpreter as unknown as {typePlan:TypePlan}).typePlan;
+		const declaration = program.body[0] as A.VariableDeclaration;
+		const root = declaration.declarations[0].id as A.ObjectPattern;
+		const target = (root.properties[0] as A.Property).value as A.Pattern;
+		let ticks = 0;
+		const pauses: number[] = [];
+		for (const _ of plan.projectDynamic(target, plan.patterns.get(root)!.check, 'v', ()=>{ticks++;})) pauses.push(ticks);
+		expect(ticks).toBeGreaterThan(256);
+		expect(pauses).toEqual(Array.from({length:Math.floor(ticks/64)},(_,index)=>(index+1)*64));
+	});
+
+	test('動的射影内の入れ子objectは準備済みの束縛計画を再利用する', async () => {
+		const width = 2000;
+		const annotation = ['{v:number[]}',...Array.from({length:width-1},(_,index)=>`{v:{k${index}:number}[]}`)].join('|');
+		const program = parse(`let key="a";let {[key]:{v:[,...r]}}:{a:(${annotation})}={a:{v:[1,2]}};`).program;
+		const interpreter = new Interpreter();
+		interpreter.prepareProgram(program);
+		const plan = (interpreter as unknown as {typePlan:TypePlan}).typePlan;
+		const declaration = program.body[1] as A.VariableDeclaration;
+		const root = declaration.declarations[0].id;
+		const check = plan.patterns.get(root)!.check;
+		if (check.kind !== 'object') throw new Error('object expected');
+		const union = check.byKey.get('a')!.check;
+		if (union.kind !== 'union') throw new Error('union expected');
+		let visits = 0;
+		union.types = new Proxy(union.types, {get(target,key,receiver) {
+			if (typeof key === 'string' && /^(0|[1-9][0-9]*)$/.test(key)) visits++;
+			return Reflect.get(target,key,receiver);
+		}});
+		let cacheCalls = 0;
+		const project = plan.project.bind(plan);
+		plan.project = (...args) => { cacheCalls++; return project(...args); };
+		await interpreter.exec(program);
+		expect(cacheCalls).toBe(0);
+		expect(visits).toBe(width+1);
+		expect(interpreter.stepCount).toBeGreaterThan(width*2);
+		expect(interpreter.getGlobal('r')).toEqual([2]);
 	});
 
 	test('異なる動的キーの広い射影準備は実行予算に含める', async () => {

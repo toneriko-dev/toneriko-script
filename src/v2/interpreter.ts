@@ -9,7 +9,7 @@ import { ExecutionStopped, RuntimeError, runtimeError, scriptErrorDiagnostic, cr
 import { PropertyAccess, SCRIPT_FUNCTION, isScriptFunction, valueTypeof, errorValue, scriptObject } from './runtime/values.js';
 import type { Value, ScriptFunction } from './runtime/values.js';
 import { TypePlan, projectType, restType, type PatternCheck } from './runtime/type-plan.js';
-import { checkValue, checkScalar, checkCopiedElement, prepareArrayCopyCheck, checkArrayCopyItem, isComposite, type ArrayCopyCheck, type TypeCheck } from './runtime/type-checks.js';
+import { checkValue, checkScalar, checkCopiedElement, copiedArrayType, isComposite, type TypeCheck } from './runtime/type-checks.js';
 export { RuntimeError, ExecutionStopped } from './runtime/errors.js';
 export type { Value } from './runtime/values.js';
 
@@ -497,8 +497,8 @@ export class Interpreter {
 			this.writeChecked(env, pattern.name, value, pos, initialize);
 			return null;
 		}
-		const streaming = plan?.explicit && pattern.type === 'ArrayPattern' && pattern.elements.some(part => part?.type === 'RestElement') && Array.isArray(value) && (plan.check.kind === 'union' || plan.check.kind === 'array' && (plan.check.element.kind === 'union' || plan.check.element.kind === 'projection'));
-		if (plan?.explicit && !streaming) {
+
+		if (plan?.explicit) {
 			const label = patternLabel(pattern);
 			yield this.checkType(plan.check, value, label, execution, pos, name => patternDiagnosticName(pattern, label, name));
 		}
@@ -510,17 +510,12 @@ export class Interpreter {
 			this.tick(execution, pos);
 			yield this.prepared(value, execution, pos);
 			const items = execution.properties.iterableIterator(value, pos);
-			const sourceCheck = checkedValue ?? plan.check;
-			const copiedCheck = sourceCheck.kind === 'array' && sourceCheck.element.kind !== 'union' && sourceCheck.element.kind !== 'projection' ? sourceCheck : undefined;
+			const restPattern = pattern.elements.find(part => part?.type === 'RestElement')!;
+			const restPlan = this.runtimePatterns.get(env)?.get(restPattern) ?? this.typePlan.patterns.get(restPattern);
+			const copiedCheck = copiedArrayType(restPlan?.check ?? projectType(plan.check, null, true));
 			const label = patternLabel(pattern);
 			const diagnosticName = (name: string) => patternDiagnosticName(pattern, label, name);
-			let stream: ArrayCopyCheck | undefined;
-			if (streaming) {
-				const preparing = prepareArrayCopyCheck(plan.check,value,label,pos,()=>this.tick(execution,pos));
-				let result = preparing.next();
-				while (!result.done) { yield this.checkpoint(); result = preparing.next(); }
-				stream = result.value;
-			}
+
 			let exhausted = false;
 			let index = 0;
 			for (const part of pattern.elements) {
@@ -531,24 +526,21 @@ export class Interpreter {
 					while (!exhausted) {
 						const next = items.next(); exhausted = !!next.done;
 						if (!next.done) {
-							if (stream) for (const _ of checkArrayCopyItem(stream,next.value,label,index,pos,diagnosticName)) yield this.checkpoint();
-							else if (copiedCheck) checkCopiedElement(copiedCheck.element, next.value, label, index, pos, diagnosticName);
+							if (copiedCheck) checkCopiedElement(copiedCheck.element, next.value, label, index, pos, diagnosticName);
 							rest.push(next.value); index++;
 						}
 						if (execution.clock >= 64) yield this.checkpoint();
 					}
-					yield this.bindTyped(part, rest, env, execution, initialize, target, stream?.root ?? copiedCheck);
+					yield this.bindTyped(part, rest, env, execution, initialize, target, copiedCheck);
 				} else {
-					let obtained = false;
 					if (!exhausted) {
 						const next = items.next(); exhausted = !!next.done;
 						if (!next.done) {
-							item = next.value; obtained = true;
-							if (stream) for (const _ of checkArrayCopyItem(stream,item,label,index,pos,diagnosticName)) yield this.checkpoint();
+							item = next.value;
 							index++;
 						}
 					}
-					if (part) yield this.bindTyped(part, item, env, execution, initialize, target, stream && obtained && (item === null || typeof item !== 'object') ? stream.root : undefined);
+					if (part) yield this.bind(part, item, env, execution, initialize, target);
 				}
 				if (execution.clock >= 64) yield this.checkpoint();
 			}

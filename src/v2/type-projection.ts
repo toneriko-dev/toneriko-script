@@ -17,6 +17,7 @@ export function projectBranch<T>(type: T, operation: ProjectionOperation, adapte
 	const kind = adapter.kind(type);
 	if (kind === 'any') return type;
 	if (operation.kind === 'array') {
+		if (kind === 'object') return adapter.keyword('any', type);
 		if (kind === 'array') return operation.rest ? type : adapter.element(type);
 		if (kind === 'string') return operation.rest ? adapter.array(type, type) : type;
 		return undefined;
@@ -30,12 +31,15 @@ export function projectBranch<T>(type: T, operation: ProjectionOperation, adapte
 	return adapter.property(type, operation.key) ?? adapter.keyword('any', type);
 }
 
-export function combineProjections<T>(parts: readonly (T | undefined)[], adapter: ProjectionAdapter<T>, union: (types: T[]) => T): T | undefined {
+export function combineProjections<T>(parts: readonly (T | undefined)[], adapter: ProjectionAdapter<T>, union: (types: T[]) => T, operation?: ProjectionOperation): T | undefined {
 	const types: T[] = [];
 	for (const part of parts) {
 		if (part === undefined) continue;
 		if (adapter.kind(part) === 'any') return part;
 		types.push(part);
 	}
-	return types.length === 0 ? undefined : types.length === 1 ? types[0] : union(types);
+	if (types.length === 0) return undefined;
+	if (types.length === 1) return types[0];
+	if (operation?.kind === 'array' && operation.rest) return adapter.array(union(types.map(type => adapter.element(type))), types[0]!);
+	return union(types);
 }

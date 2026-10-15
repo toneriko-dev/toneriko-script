@@ -38,7 +38,7 @@ function projectAnnotation(annotation: A.TypeAnnotation | undefined, operation: 
 	if (!annotation) return undefined;
 	if (annotation.type === 'ParenthesizedTypeAnnotation') return projectAnnotation(annotation.typeAnnotation, operation);
 	if (annotation.type === 'UnionTypeAnnotation') {
-		return combineProjections(annotation.types.map(type => projectAnnotation(type, operation)), projectionAdapter, types => ({ ...annotation, types }));
+		return combineProjections(annotation.types.map(type => projectAnnotation(type, operation)), projectionAdapter, types => ({ ...annotation, types }), operation);
 	}
 	return projectBranch(annotation, operation, projectionAdapter);
 }

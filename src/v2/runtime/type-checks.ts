@@ -66,10 +66,9 @@ function* resolveType(check: TypeCheck, tick: () => boolean): Generator<void, Ty
 	if (source.kind === 'union') {
 		const types: (TypeCheck | undefined)[] = [];
 		for (const part of source.types) {
-			if (tick()) yield;
 			types.push(yield* resolveType({kind:'projection',source:part,operation:check.operation},tick));
 		}
-		result = combineProjections(types, projectionAdapter, types => ({kind:'union',types}));
+		result = combineProjections(types, projectionAdapter, types => ({kind:'union',types}), operation);
 	} else {
 		let rest: TypeCheck | undefined;
 		if (operation.kind === 'objectRest' && source.kind === 'object') {
@@ -166,49 +165,15 @@ export function checkScalar(check: TypeCheck, value: Value, name: string, pos: A
 	fail({ name, check, value }, pos);
 }
 
+/** コピー前に射影だけを展開し、同じコピーの走査内で要素を検査する。 */
+export function copiedArrayType(check: TypeCheck): Extract<TypeCheck, {kind:'array'}> | undefined {
+	const resolved = resolvedType(check);
+	return resolved.kind === 'array' ? resolved : undefined;
+}
+
 /** コピーの取得直後に外形を確かめ、途中で譲らず実際に束縛する値を守る。 */
 export function checkCopiedElement(check: TypeCheck, value: Value, name: string, index: number, pos: A.Pos, diagnosticName: (name: string) => string): void {
 	if (!matchesOuter(check, value)) fail({ name: diagnosticName(`${name}[${index}]`), check, value }, pos);
-}
-
-export type ArrayCopyCheck = {
-	root: TypeCheck;
-	value: Value;
-	candidates: Extract<TypeCheck, {kind:'array'}>[];
-	step: () => boolean;
-};
-
-/** 明示した配列合併は、取得する全要素を満たす候補だけを残す。 */
-export function* prepareArrayCopyCheck(check: TypeCheck, value: Value, name: string, pos: A.Pos, tick: () => void): Generator<void, ArrayCopyCheck> {
-	let steps = 0;
-	const step = () => { tick(); return ++steps % 64 === 0; };
-	step();
-	const candidates: Extract<TypeCheck, {kind:'array'}>[] = [];
-	const pending = [check];
-	while (pending.length) {
-		const part = pending.pop()!;
-		if (part !== check && step()) yield;
-		if (part.kind === 'union') { for (let i=part.types.length-1;i>=0;i--) pending.push(part.types[i]!); }
-		else if (part.kind === 'array') candidates.push(part);
-		else if (part.kind === 'any') candidates.push({kind:'array',element:part});
-	}
-	if (!candidates.length) fail({name,check,value},pos);
-	return {root:check,value,candidates,step};
-}
-
-export function* checkArrayCopyItem(state: ArrayCopyCheck, value: Value, name: string, index: number, pos: A.Pos, diagnosticName: (name: string) => string): Generator<void, void> {
-	if (state.step()) yield;
-	const remaining: Extract<TypeCheck, {kind:'array'}>[] = [];
-	for (let i=0;i<state.candidates.length;i++) {
-		if (i>0 && state.step()) yield;
-		const candidate = state.candidates[i]!;
-		if (yield* matchesShallow(candidate.element,value,state.step)) remaining.push(candidate);
-	}
-	if (!remaining.length) {
-		if (state.root.kind === 'array') fail({name:diagnosticName(`${name}[${index}]`),check:state.root.element,value},pos);
-		fail({name,check:state.root,value:state.value},pos);
-	}
-	state.candidates = remaining;
 }
 
 /** 合併の枝にも同じ予算を使い、要素の検査では入れ子の外形までに留める。 */

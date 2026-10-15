@@ -168,6 +168,12 @@ export class Interpreter {
 				try { result = throwing ? frames.at(-1)!.throw(value) : frames.at(-1)!.next(value); }
 				catch (error) {
 					if (error instanceof ExecutionStopped) throw error;
+					// ホスト例外は ScriptThrown に包まれており、内部の例外だけを作り直す。
+					if (!(error instanceof RuntimeError) && !(error instanceof ScriptThrown) && errorValue(error, execution.pos)) {
+						const name = execution.properties.get(error, 'name', execution.pos);
+						const message = execution.properties.get(error, 'message', execution.pos);
+						error = new ScriptThrown(createScriptError(typeof name === 'string' ? name : 'Error', typeof message === 'string' ? message : ''), execution.pos);
+					}
 					frames.pop(); value = error; throwing = true; continue;
 				}
 				throwing = false;
@@ -181,6 +187,8 @@ export class Interpreter {
 				} else { frames.push(result.value); value = undefined; }
 			}
 			if (throwing) {
+				// ホストへのコールバックから出る診断も、スクリプト由来の値として識別する。
+				if (internal && value instanceof RuntimeError) throw new ScriptThrown(createScriptError(value.name, value.message, value), value.pos, value);
 				if (value instanceof ScriptThrown && !internal) {
 					let name: unknown;
 					let message: unknown;
@@ -445,25 +453,28 @@ export class Interpreter {
 		}
 		if (typeof fn !== 'function') throw runtimeError('NOT_CALLABLE', pos, {}, 'TypeError');
 		this.checkTime(pos);
-		try {
-			const context: HostContext = {
-				call: (callback, arguments_) => {
-					this.resume();
-					return this.run(this.invoke(callback, arguments_, null, execution, pos), execution, true);
-				},
-				signal: this.controller.signal,
-			};
-			let result = hostBodies.has(fn) ? hostBodies.get(fn)!(args, context) : Reflect.apply(fn, receiver, args);
-			this.checkTime(pos);
-			const pending = this.promiseResult(result);
-			if (pending) result = (yield { wait: pending, pos }).value;
-			yield this.prepared(result, execution, pos);
-			return execution.properties.normalize(result, pos);
-		} catch (error) {
-			if (error instanceof ExecutionStopped || error instanceof RuntimeError || error instanceof ScriptThrown) throw error;
-			yield this.prepared(error, execution, pos);
+		const context: HostContext = {
+			call: (callback, arguments_) => {
+				this.resume();
+				return this.run(this.invoke(callback, arguments_, null, execution, pos), execution, true);
+			},
+			signal: this.controller.signal,
+		};
+		const hostException = (error: unknown): never => {
+			if (error instanceof ExecutionStopped || error instanceof ScriptThrown) throw error;
 			throw new ScriptThrown(execution.properties.normalize(error, pos), pos, scriptErrorDiagnostic(error));
+		};
+		let result: unknown;
+		try { result = hostBodies.has(fn) ? hostBodies.get(fn)!(args, context) : Reflect.apply(fn, receiver, args); }
+		catch (error) { hostException(error); }
+		this.checkTime(pos);
+		const pending = this.promiseResult(result);
+		if (pending) {
+			try { result = (yield { wait: pending, pos }).value; }
+			catch (error) { hostException(error); }
 		}
+		yield this.prepared(result, execution, pos);
+		return execution.properties.normalize(result, pos);
 	}
 	private evaluate(node: A.Statement | A.Expression, env: Environment, execution: Execution, labels: string[] = []): Frame | Ready {
 		const synchronous = this.synchronous(node);
@@ -718,7 +729,7 @@ export class Interpreter {
 			}
 			case 'ThrowStatement': {
 				const value = yield this.evaluate(node.argument, env, execution);
-				throw value instanceof RuntimeError ? value : new ScriptThrown(value, pos, scriptErrorDiagnostic(value));
+				throw new ScriptThrown(value, pos, scriptErrorDiagnostic(value));
 			}
 			case 'TryStatement': {
 				let result: Completion | null = null;

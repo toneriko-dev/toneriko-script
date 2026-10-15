@@ -98,7 +98,7 @@ describe('連結文字列の書記素キャッシュ', () => {
 		}
 		expect(steps).toBeLessThan(30_000);
 		const pauses = [...cache.prepareParts(value)];
-		expect(pauses.length).toBe(79);
+		expect(pauses.length).toBe(157);
 		expect(cache.at(value, 4999)).toBe('\r\n');
 		const scanned = cache.stats.scannedCharacters;
 		for (let i = 0; i < 5000; i++) expect(cache.at(value, i)).toBe('\r\n');

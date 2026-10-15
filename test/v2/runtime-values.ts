@@ -113,7 +113,7 @@ describe('v2 の値とプロパティ', () => {
 		expect(steps).toBeGreaterThanOrEqual(64);
 		expect(steps).toBeLessThanOrEqual(65);
 		const remaining = [...preparation];
-		expect(remaining.length).toBe(2);
+		expect(remaining.length).toBe(Math.floor(value.length / 64) - 1);
 		const completedSteps = steps;
 		expect(properties.get(value, 'length', pos)).toBe(192);
 		expect(steps).toBe(completedSteps);

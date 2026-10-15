@@ -9,10 +9,15 @@ export type GraphemeInfo = {
 };
 export type GraphemeCacheLimits = { maxEntries?: number; maxCharacters?: number };
 type Cached = { value: string; info: GraphemeInfo };
+type CharacterKind = { pictographic: boolean; regional: boolean; extend: boolean; consonant: boolean; linker: boolean; conjunctExtend: boolean };
 
-/** 長い連結文字列をハッシュせず、保持する文字数と件数を制限する。 */
+/** 長さが増える連結結果をハッシュせず、保持する文字数と件数を制限する。 */
 export class GraphemeCache {
 	private readonly recent: Cached[] = [];
+	private readonly lengths = new Map<number, Cached | Map<string, Cached>>();
+	private readonly kinds = new Map<string, CharacterKind>();
+	private readonly joins = new Map<string, boolean>();
+	private stringComparisons = 0;
 	private characters = 0;
 	private scanned = 0;
 	private segmented = 0;
@@ -25,40 +30,122 @@ export class GraphemeCache {
 		this.maxCharacters = limits.maxCharacters ?? 1_048_576;
 	}
 
-	get stats(): { cacheEntries: number; cacheCharacters: number; scannedCharacters: number; segmentedStrings: number } {
-		return { cacheEntries: this.recent.length, cacheCharacters: this.characters, scannedCharacters: this.scanned, segmentedStrings: this.segmented };
+	get stats(): { cacheEntries: number; cacheCharacters: number; scannedCharacters: number; segmentedStrings: number; stringComparisons: number } {
+		return { cacheEntries: this.recent.length, cacheCharacters: this.characters, scannedCharacters: this.scanned, segmentedStrings: this.segmented, stringComparisons: this.stringComparisons };
 	}
 
-	clear(): void { this.recent.length = 0; this.characters = 0; }
+	clear(): void { this.recent.length = 0; this.lengths.clear(); this.characters = 0; }
 
 	private find(value: string): GraphemeInfo | undefined {
-		// 長さの違う rope 同士を内容比較しない。現在の値は最初の要素で見つかる。
-		for (let i = 0; i < this.recent.length; i++) {
-			const entry = this.recent[i]!;
-			if (entry.value.length !== value.length || entry.value !== value) continue;
-			// 読み続ける長文は、短い連結結果が増えても保持する。
-			if (i !== 0) { this.recent.splice(i, 1); this.recent.unshift(entry); }
-			return entry.info;
+		let bucket = this.lengths.get(value.length);
+		if (!bucket) return undefined;
+		let entry: Cached | undefined;
+		if (bucket instanceof Map) entry = bucket.get(value);
+		else {
+			this.stringComparisons++;
+			if (bucket.value === value) entry = bucket;
+			else {
+				// 同じ長さで内容が違う値だけをハッシュし、共通接頭辞の再比較を防ぐ。
+				bucket = new Map([[bucket.value, bucket]]);
+				this.lengths.set(value.length, bucket);
+			}
 		}
-		return undefined;
+		if (!entry) return undefined;
+		const index = this.recent.indexOf(entry);
+		if (index !== 0) { this.recent.splice(index, 1); this.recent.unshift(entry); }
+		return entry.info;
+	}
+
+	private removeOldest(): void {
+		const entry = this.recent.pop()!;
+		this.characters -= entry.value.length;
+		const bucket = this.lengths.get(entry.value.length)!;
+		if (bucket instanceof Map) {
+			bucket.delete(entry.value);
+			if (bucket.size === 0) this.lengths.delete(entry.value.length);
+		} else this.lengths.delete(entry.value.length);
 	}
 
 	private remember(value: string, info: GraphemeInfo): GraphemeInfo {
 		if (this.maxEntries === 0) return info;
+		const existing = this.find(value);
+		if (existing) return Object.assign(existing, info);
 		// 上限を超える単体も直近の一件だけは保持し、length と添字で全文を再走査しない。
-		if (value.length > this.maxCharacters) {
-			this.recent.length = 0;
-			this.characters = 0;
-			this.recent.push({ value, info });
-			this.characters = value.length;
-			return info;
-		}
-		while (this.recent.length >= this.maxEntries || this.characters + value.length > this.maxCharacters) {
-			this.characters -= this.recent.pop()!.value.length;
-		}
-		this.recent.unshift({ value, info });
+		if (value.length > this.maxCharacters) this.clear();
+		else while (this.recent.length >= this.maxEntries || this.characters + value.length > this.maxCharacters) this.removeOldest();
+		const entry = { value, info };
+		const bucket = this.lengths.get(value.length);
+		if (bucket instanceof Map) bucket.set(value, entry);
+		else if (bucket) this.lengths.set(value.length, new Map([[bucket.value, bucket], [value, entry]]));
+		else this.lengths.set(value.length, entry);
+		this.recent.unshift(entry);
 		this.characters += value.length;
 		return info;
+	}
+
+	private oneGrapheme(value: string): boolean {
+		const iterator = this.segmenter.segment(value)[Symbol.iterator]();
+		iterator.next();
+		return iterator.next().done === true;
+	}
+
+	private kind(character: string): CharacterKind {
+		const cached = this.kinds.get(character);
+		if (cached) return cached;
+		// 短い固定文脈で分類し、ホストの Unicode バージョンに境界規則を合わせる。
+		const kind = {
+			pictographic: /\p{Extended_Pictographic}/u.test(character),
+			regional: /\p{Regional_Indicator}/u.test(character),
+			extend: this.oneGrapheme('👨' + character + '\u200d👨'),
+			consonant: this.oneGrapheme(character + '्क'),
+			linker: this.oneGrapheme('क' + character + 'क'),
+			conjunctExtend: this.oneGrapheme('क्' + character + 'क'),
+		};
+		if (this.kinds.size >= 256) this.kinds.delete(this.kinds.keys().next().value!);
+		this.kinds.set(character, kind);
+		return kind;
+	}
+
+	private pairJoins(left: string, right: string): boolean {
+		const pair = left + right;
+		const cached = this.joins.get(pair);
+		if (cached !== undefined) return cached;
+		const joined = this.oneGrapheme(pair);
+		if (this.joins.size >= 1024) this.joins.delete(this.joins.keys().next().value!);
+		this.joins.set(pair, joined);
+		return joined;
+	}
+
+	private *split(value: string, pending = 0): Generator<void, string[]> {
+		const parts: string[] = [];
+		let start = 0;
+		let previous = '';
+		let regional = 0;
+		let pictographic = false;
+		let joinedPictographic = false;
+		let conjunct = 0;
+		this.segmented++;
+		for (let index = 0; index < value.length;) {
+			const character = String.fromCodePoint(value.codePointAt(index)!);
+			const kind = this.kind(character);
+			// 非局所の規則は RI の偶奇、絵文字の ZWJ、インド系結合の三つだけを保持する。
+			const joined = previous === '' || (kind.regional && regional > 0 ? regional % 2 === 1
+				: this.pairJoins(previous, character) || (joinedPictographic && kind.pictographic) || (conjunct === 2 && kind.consonant));
+			if (!joined) { parts.push(value.slice(start, index)); start = index; }
+			regional = kind.regional ? regional + 1 : 0;
+			joinedPictographic = character === '\u200d' && pictographic;
+			pictographic = kind.pictographic || (kind.extend && pictographic);
+			conjunct = kind.consonant ? 1 : kind.linker && conjunct > 0 ? 2 : kind.conjunctExtend ? conjunct : 0;
+			previous = character;
+			index += character.length;
+			// 一つの書記素が長くても、64 コード単位以内で中断地点を通る。
+			for (let unit = 0; unit < character.length; unit++) {
+				this.onStep(); this.scanned++; pending++;
+				if (pending === 64) { pending = 0; yield; }
+			}
+		}
+		if (value.length > 0) parts.push(value.slice(start));
+		return parts;
 	}
 
 	*prepare(value: string): Generator<void, GraphemeInfo> {
@@ -78,12 +165,7 @@ export class GraphemeCache {
 		}
 		let parts: string[] | null = null;
 		if (!ascii) {
-			parts = [];
-			this.segmented++;
-			for (const part of this.segmenter.segment(value)) {
-				this.onStep(); pending++; parts.push(part.segment);
-				if (pending === 64) { pending = 0; yield; }
-			}
+			parts = yield* this.split(value, pending);
 		}
 		return this.remember(value, {
 			length: parts ? parts.length : value.length - pairs, parts, ascii,
@@ -108,19 +190,18 @@ export class GraphemeCache {
 		yield;
 		const parts: string[] = [];
 		if (info.ascii) {
-			for (let i = 0; i < value.length; i++) {
-				this.onStep(); this.scanned++;
-				if (value.charCodeAt(i) === 13 && value.charCodeAt(i + 1) === 10) {
-					parts.push('\r\n'); i++;
-				} else parts.push(value[i]!);
-				if (parts.length % 64 === 0) yield;
+			let pending = 0;
+			for (let i = 0; i < value.length;) {
+				const size = value.charCodeAt(i) === 13 && value.charCodeAt(i + 1) === 10 ? 2 : 1;
+				parts.push(value.slice(i, i + size)); i += size;
+				for (let unit = 0; unit < size; unit++) {
+					this.onStep(); this.scanned++; pending++;
+					if (pending === 64) { pending = 0; yield; }
+				}
 			}
 		} else {
-			this.segmented++;
-			for (const part of this.segmenter.segment(value)) {
-				this.onStep(); parts.push(part.segment);
-				if (parts.length % 64 === 0) yield;
-			}
+			info.parts = yield* this.split(value);
+			return info;
 		}
 		info.parts = parts;
 		return info;
@@ -164,9 +245,8 @@ export class GraphemeCache {
 				|| (/[\ud800-\udbff]$/.test(a.last) && /^[\udc00-\udfff]/.test(b.first))) return result;
 			const parts: string[] = [];
 			this.segmented++;
-			for (const part of this.segmenter.segment(boundary)) {
-				this.onStep(); parts.push(part.segment);
-			}
+			for (let unit = 0; unit < boundary.length; unit++) this.onStep();
+			for (const part of this.segmenter.segment(boundary)) parts.push(part.segment);
 			this.remember(result, {
 				length: a.length + b.length - 2 + parts.length,
 				parts: null, ascii: false, startsLF: a.startsLF, endsCR: b.endsCR,

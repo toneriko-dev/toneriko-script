@@ -105,17 +105,17 @@ describe('v2 の公開プロパティ境界の回帰', () => {
 	});
 });
 
-test('ホスト Error の then getter は Promise 判定で読まず、明示的な読みを拒否する', async () => {
+test('ホスト Error の非列挙 then getter は Promise 判定でも明示的な読みでも呼ばない', async () => {
 	let calls = 0;
 	const error = new Error('host');
 	Object.defineProperty(error, 'then', { get: () => { calls++; return null; } });
 	const output: unknown[] = [];
-	await expect(new Interpreter({ getError: () => error, out: (x: unknown) => { output.push(x); } }).exec(parse('out(getError().message); out(getError().then);').program)).rejects.toMatchObject({ code: 'ACCESSOR_PROPERTY' });
+	await new Interpreter({ getError: () => error, out: (x: unknown) => { output.push(x); } }).exec(parse('out(getError().message); out(getError().then);').program);
 	expect(calls).toBe(0);
-	expect(output).toEqual(['host']);
+	expect(output).toEqual(['host', null]);
 });
 
-test.each(['throw e;', 'fail();'])('エラーの報告では name の getter を読み元の値を付ける: %s', async source => {
+test.each(['throw e;', 'fail();'])('エラーの報告でも name の getter を呼ばず元の値を付ける: %s', async source => {
 	let calls = 0;
 	const error = new Error('host');
 	Object.defineProperty(error, 'name', { get: () => { calls++; return 'Error'; } });
@@ -123,8 +123,8 @@ test.each(['throw e;', 'fail();'])('エラーの報告では name の getter を
 		const globals = source === 'throw e;' ? { e: error } : { fail: () => { throw error; } };
 		const interpreter = new Interpreter(globals);
 		await interpreter.exec(parse(source).program);
-	})()).rejects.toMatchObject({ code: 'UNCAUGHT_EXCEPTION', name: 'Error', message: 'host', thrownValue: error });
-	expect(calls).toBe(1);
+	})()).rejects.toMatchObject({ code: 'UNCAUGHT_EXCEPTION', thrownValue: error });
+	expect(calls).toBe(0);
 });
 
 test.each([

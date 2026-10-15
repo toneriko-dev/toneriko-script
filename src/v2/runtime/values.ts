@@ -43,47 +43,45 @@ function opaqueFunction(value: unknown): boolean {
 	return typeof value === 'function' || isScriptFunction(value) || isBuiltinMethod(value);
 }
 
-const domExceptionName = typeof DOMException === 'undefined' ? undefined : Object.getOwnPropertyDescriptor(DOMException.prototype, 'name')?.get;
+const domExceptionPrototype = typeof DOMException === 'undefined' ? undefined : DOMException.prototype;
+const domExceptionName = domExceptionPrototype && Object.getOwnPropertyDescriptor(domExceptionPrototype, 'name')?.get;
+const hiddenErrorKeys = new Set(['stack', 'sourceURL', 'line', 'column', 'originalLine', 'originalColumn', 'fileName', 'lineNumber', 'columnNumber']);
 
-/** 別 realm のエラーも扱い、利用者が定義した toStringTag の getter は実行しない。 */
-export function errorValue(value: unknown, pos: AST.Pos = { line: 1, column: 1 }): value is object {
+/** 情報を隠す判定は広く取り、利用者の toStringTag の getter は呼ばない。 */
+export function errorValue(value: unknown, _pos: AST.Pos = { line: 1, column: 1 }): value is object {
 	if (isScriptErrorValue(value)) return true;
 	if (typeof value !== 'object' || value === null) return false;
-	if (!(Symbol.toStringTag in value)) return Object.prototype.toString.call(value) === '[object Error]';
-	if (value instanceof Error) return true;
-	// DOMException の組み込み getter に内部の型を確かめさせ、利用者の getter は呼ばない。
-	if (domExceptionName) {
-		try { Reflect.apply(domExceptionName, value, []); return true; } catch { /* DOMException 以外は通常の判別を続ける。 */ }
-	}
-	let prototype: object | null = Object.getPrototypeOf(value);
-	while (prototype) {
-		const constructor = Object.getOwnPropertyDescriptor(prototype, 'constructor');
-		if (constructor && 'value' in constructor && typeof constructor.value === 'function') {
-			const source = Function.prototype.toString.call(constructor.value);
-			if (/^function\s+(?:Error|TypeError|RangeError|ReferenceError|SyntaxError|EvalError|URIError|AggregateError)\s*\(\s*\)\s*\{\s*\[native code\]\s*\}$/.test(source)) return true;
-		}
-		prototype = Object.getPrototypeOf(prototype);
-	}
-	// タグで標準の判別が隠されたエラーらしい値は、内部情報を辞書として公開しない。
-	if (Object.hasOwn(value, 'stack') || Object.hasOwn(value, 'message')) throw runtimeError('UNSUPPORTED_VALUE', pos, {}, 'TypeError');
-	return false;
-}
-
-/** getter の許可には、原型の一致だけでなく Error のタグか DOMException の内部型を使う。 */
-function errorGetterAllowed(value: object): boolean {
 	if (domExceptionName) {
 		try { Reflect.apply(domExceptionName, value, []); return true; } catch { /* 通常の Error 判定を続ける。 */ }
 	}
-	let prototype: object | null = value;
-	while (prototype) {
-		const tag = Object.getOwnPropertyDescriptor(prototype, Symbol.toStringTag);
-		if (tag) {
-			if (!('value' in tag)) return false;
-			break;
+	let object: object | null = value;
+	let tag: PropertyDescriptor | undefined;
+	while (object) {
+		if (object === Error.prototype) return true;
+		tag ??= Object.getOwnPropertyDescriptor(object, Symbol.toStringTag);
+		const constructor = Object.getOwnPropertyDescriptor(object, 'constructor');
+		if (constructor && 'value' in constructor && typeof constructor.value === 'function') {
+			const source = Function.prototype.toString.call(constructor.value);
+			if (/^function\s+(?:Error|TypeError|RangeError|ReferenceError|SyntaxError|EvalError|URIError|AggregateError|DOMException)\s*\(\s*\)\s*\{\s*\[native code\]\s*\}$/.test(source)) return true;
 		}
-		prototype = Object.getPrototypeOf(prototype);
+		object = Object.getPrototypeOf(object);
+	}
+	if (tag) {
+		if ('value' in tag && (tag.value === 'Error' || tag.value === 'DOMException')) return true;
+		// 原型とタグの両方を隠されたエラーらしい値も、内部情報を辞書として公開しない。
+		if (Object.hasOwn(value, 'stack') || Object.hasOwn(value, 'message')) throw runtimeError('UNSUPPORTED_VALUE', _pos, {}, 'TypeError');
+		return false;
 	}
 	return Object.prototype.toString.call(value) === '[object Error]';
+}
+
+function hiddenErrorKey(value: object, key: string): boolean {
+	return isScriptErrorValue(value) ? key === 'stack' : hiddenErrorKeys.has(key);
+}
+
+/** エラーの標準情報以外は、列挙される自分のデータだけを公開する。 */
+function visibleErrorOwn(value: object, key: string, descriptor: PropertyDescriptor): boolean {
+	return isScriptErrorValue(value) || key === 'name' || key === 'message' || key === 'cause' || (descriptor.enumerable === true && 'value' in descriptor);
 }
 
 function registeredMethod(type: 'array' | 'string', key: string, pos: AST.Pos): BuiltinMethod | null {
@@ -93,14 +91,16 @@ function registeredMethod(type: 'array' | 'string', key: string, pos: AST.Pos): 
 	return null;
 }
 
-/** name と message だけはエラーの原型上の既定値も参照する。 */
-function errorDescriptor(value: object, key: string): PropertyDescriptor | undefined {
-	let object: object | null = value;
-	while (object) {
-		const descriptor = Object.getOwnPropertyDescriptor(object, key);
-		if (descriptor) return descriptor;
-		if (key !== 'name' && key !== 'message') return undefined;
-		object = Object.getPrototypeOf(object);
+/** getter の許可は値のタグではなく、この realm の組み込み原型の同一性で決める。 */
+function inheritedErrorDescriptor(value: object, key: string): { owner: object; descriptor: PropertyDescriptor } | undefined {
+	let owner: object | null = Object.getPrototypeOf(value);
+	while (owner) {
+		const descriptor = Object.getOwnPropertyDescriptor(owner, key);
+		if (descriptor) {
+			if (key === 'name' || key === 'message' || (key === 'code' && owner === domExceptionPrototype)) return { owner, descriptor };
+			return undefined;
+		}
+		owner = Object.getPrototypeOf(owner);
 	}
 	return undefined;
 }
@@ -160,17 +160,23 @@ export class PropertyAccess {
 		}
 		if (opaqueFunction(value)) throw runtimeError('UNSUPPORTED_VALUE', pos, { key }, 'TypeError');
 		const error = errorValue(value, pos);
-		if (error && key === 'stack') return null;
+		if (error && hiddenErrorKey(value, key)) return null;
 		const own = Object.getOwnPropertyDescriptor(Object(value), key);
-		if (own && 'value' in own) return this.normalize(own.value, pos);
-		if (error && (key === 'name' || key === 'message')) {
-			if (isScriptErrorValue(value) && !own) return key === 'name' ? scriptErrorName(value) : '';
-			const descriptor = own ?? errorDescriptor(value, key);
-			if (descriptor && !('value' in descriptor) && !errorGetterAllowed(value)) throw runtimeError('ACCESSOR_PROPERTY', pos, { key }, 'TypeError');
-			const result = descriptor && ('value' in descriptor ? descriptor.value : descriptor.get?.call(value));
-			return typeof result === 'string' ? result : null;
+		if (own) {
+			if (error && !visibleErrorOwn(value, key, own)) return null;
+			if ('value' in own) return this.normalize(own.value, pos);
+			throw runtimeError('ACCESSOR_PROPERTY', pos, { key }, 'TypeError');
 		}
-		if (own) throw runtimeError('ACCESSOR_PROPERTY', pos, { key }, 'TypeError');
+		if (error) {
+			if (isScriptErrorValue(value) && (key === 'name' || key === 'message')) return key === 'name' ? scriptErrorName(value) : '';
+			const inherited = inheritedErrorDescriptor(value, key);
+			if (inherited) {
+				const { owner, descriptor } = inherited;
+				if ('value' in descriptor) return this.normalize(descriptor.value, pos);
+				if (owner !== domExceptionPrototype) throw runtimeError('ACCESSOR_PROPERTY', pos, { key }, 'TypeError');
+				return this.normalize(descriptor.get?.call(value), pos);
+			}
+		}
 		return null;
 	}
 
@@ -178,7 +184,7 @@ export class PropertyAccess {
 		const key = this.key(property, pos);
 		if (value === null || value === undefined) throw runtimeError('NULL_PROPERTY_ACCESS', pos, { key }, 'TypeError');
 		if (opaqueFunction(value)) throw runtimeError('UNSUPPORTED_VALUE', pos, { key }, 'TypeError');
-		if (typeof value !== 'object' || (errorValue(value, pos) && key === 'stack')) {
+		if (typeof value !== 'object' || (errorValue(value, pos) && hiddenErrorKey(value, key))) {
 			throw runtimeError('READONLY_PROPERTY', pos, { key }, 'TypeError');
 		}
 		const normalized = this.normalize(next, pos);
@@ -194,6 +200,18 @@ export class PropertyAccess {
 		const descriptor = Object.getOwnPropertyDescriptor(value, key);
 		if (descriptor && !('value' in descriptor)) throw runtimeError('ACCESSOR_PROPERTY', pos, { key }, 'TypeError');
 		if (descriptor?.writable === false) throw runtimeError('READONLY_PROPERTY', pos, { key }, 'TypeError');
+		if (!descriptor) {
+			let prototype = Object.getPrototypeOf(value);
+			while (prototype) {
+				const inherited = Object.getOwnPropertyDescriptor(prototype, key);
+				if (inherited) {
+					if (!('value' in inherited)) throw runtimeError('ACCESSOR_PROPERTY', pos, { key }, 'TypeError');
+					if (!inherited.writable) throw runtimeError('READONLY_PROPERTY', pos, { key }, 'TypeError');
+					break;
+				}
+				prototype = Object.getPrototypeOf(prototype);
+			}
+		}
 		const result = Reflect.defineProperty(value, key, descriptor ? { value: normalized } : { value: normalized, writable: true, enumerable: true, configurable: true });
 		if (!result) throw runtimeError('READONLY_PROPERTY', pos, { key }, 'TypeError');
 		return normalized;
@@ -205,9 +223,10 @@ export class PropertyAccess {
 		if (opaqueFunction(value)) throw runtimeError('UNSUPPORTED_VALUE', pos, { key }, 'TypeError');
 		if (Array.isArray(value) && !Object.hasOwn(value, key)) return registeredMethod('array', key, pos) !== null;
 		if (errorValue(value, pos)) {
-			if (key === 'stack') return false;
+			if (hiddenErrorKey(value, key)) return false;
 			if (isScriptErrorValue(value) && (key === 'name' || key === 'message')) return true;
-			return errorDescriptor(value, key) !== undefined;
+			const own = Object.getOwnPropertyDescriptor(value, key);
+			return own ? visibleErrorOwn(value, key, own) : inheritedErrorDescriptor(value, key) !== undefined;
 		}
 		return Object.hasOwn(value, key);
 	}
@@ -216,7 +235,7 @@ export class PropertyAccess {
 		const key = this.key(property, pos);
 		if (value === null || value === undefined) throw runtimeError('NULL_PROPERTY_ACCESS', pos, { key }, 'TypeError');
 		if (opaqueFunction(value)) throw runtimeError('UNSUPPORTED_VALUE', pos, { key }, 'TypeError');
-		if (errorValue(value, pos) && key === 'stack') return true;
+		if (errorValue(value, pos) && hiddenErrorKey(value, key)) return true;
 		if (Array.isArray(value) && (indexOf(key) !== null || key === 'length')) throw runtimeError('ARRAY_DELETE', pos);
 		if (typeof value === 'string' && (indexOf(key) !== null || key === 'length')) throw runtimeError('READONLY_PROPERTY', pos, { key }, 'TypeError');
 		if (!Reflect.deleteProperty(Object(value), key)) throw runtimeError('READONLY_PROPERTY', pos, { key }, 'TypeError');
@@ -241,7 +260,7 @@ export class PropertyAccess {
 		const error = errorValue(value, pos);
 		for (const key of Object.keys(Object(value))) {
 			this.onStep();
-			if (error && key === 'stack') continue;
+			if (error && (hiddenErrorKey(value, key) || !visibleErrorOwn(value, key, Object.getOwnPropertyDescriptor(value, key)!))) continue;
 			this.key(key, pos);
 			yield [key, this.get(value, key, pos)];
 		}

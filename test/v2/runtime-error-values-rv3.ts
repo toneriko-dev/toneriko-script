@@ -59,7 +59,7 @@ test.each(['data', 'getter', 'absent'])('ホスト Error の stack を読む・�
 	expect(calls).toBe(0);
 });
 
-test('Error の name と message の原型 getter だけを許可する', async () => {
+test('Error の name と message の利用者の原型 getter を拒否する', async () => {
 	let calls = 0;
 	const prototype = Object.create(Error.prototype);
 	Object.defineProperties(prototype, {
@@ -69,14 +69,15 @@ test('Error の name と message の原型 getter だけを許可する', async 
 	});
 	const error = new Error();
 	Object.setPrototypeOf(error, prototype);
-	expect(await output('out(e.name);out(e.message);out(e.status);', { e: error })).toEqual(['CustomError', 'custom message', null]);
-	expect(calls).toBe(2);
+	await expect(output('out(e.name);', { e: error })).rejects.toMatchObject({ code: 'ACCESSOR_PROPERTY' });
+	await expect(output('out(e.message);', { e: error })).rejects.toMatchObject({ code: 'ACCESSOR_PROPERTY' });
+	expect(calls).toBe(0);
 });
 
-test('Error の原型の name と message が文字列でなければ null にする', async () => {
+test('Error の原型の name と message のデータ値を正規化して返す', async () => {
 	const error = new Error();
-	Object.setPrototypeOf(error, Object.create(Error.prototype, { name: { value: 7 }, message: { get: () => ({ secret: true }) } }));
-	expect(await output('out(e.name);out(e.message);', { e: error })).toEqual([null, null]);
+	Object.setPrototypeOf(error, Object.create(Error.prototype, { name: { value: 7 }, message: { value: { secret: true } } }));
+	expect(await output('out(e.name);out(e.message);', { e: error })).toEqual([7, { secret: true }]);
 });
 
 test('ホスト Error の own データ値は name と message もそのまま扱う', async () => {
@@ -152,15 +153,16 @@ test('実行時エラーの name が非文字列でも再送出した値を付�
 	}
 });
 
-test('Error の own の name と message の getter は文字列だけを返す', async () => {
+test('Error の own の name と message の getter は呼ばない', async () => {
 	const error = new Error();
 	let calls = 0;
 	Object.defineProperties(error, {
 		name: { get() { calls++; return 'OwnError'; } },
 		message: { get() { calls++; return 42; } },
 	});
-	expect(await output('out(e.name);out(e.message);', { e: error })).toEqual(['OwnError', null]);
-	expect(calls).toBe(2);
+	await expect(output('out(e.name);', { e: error })).rejects.toMatchObject({ code: 'ACCESSOR_PROPERTY' });
+	await expect(output('out(e.message);', { e: error })).rejects.toMatchObject({ code: 'ACCESSOR_PROPERTY' });
+	expect(calls).toBe(0);
 });
 
 test.each([false, true])('ホスト例外の非文字列 metadata でも元の値を付けて報告する: 別 realm=%s', async foreign => {

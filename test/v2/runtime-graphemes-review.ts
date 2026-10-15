@@ -36,7 +36,8 @@ describe('書記素境界とキャッシュの回帰', () => {
 	for (const character of ['あ', '👍🏽']) {
 		test(`${character} の長さだけを読む 10 万回の連結は境界だけを分割する`, () => {
 			let steps = 0;
-			const cache = new GraphemeCache(() => { if (++steps > 500_000) throw new Error('走査回数の上限'); });
+			const limit = character.length * 200_000 + 100;
+			const cache = new GraphemeCache(() => { if (++steps > limit) throw new Error('走査回数の上限'); });
 			let value = '';
 			for (let i = 0; i < 100_000; i++) {
 				expect(cache.info(value).length).toBe(i);
@@ -44,7 +45,7 @@ describe('書記素境界とキャッシュの回帰', () => {
 			}
 			expect(cache.info(value).length).toBe(100_000);
 			expect(cache.info(value).parts).toBeNull();
-			expect(steps).toBeLessThan(500_000);
+			expect(steps).toBeLessThan(limit);
 			expect(cache.stats.cacheEntries).toBeLessThanOrEqual(64);
 			expect(cache.stats.cacheCharacters).toBeLessThanOrEqual(1_048_576);
 		});

@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'vitest';
 import { Interpreter, RuntimeError, hostFunction } from '../../src/v2/interpreter.js';
 import { parse } from '../../src/v2/parser/index.js';
+import { check } from '../../src/v2/checker/index.js';
 import { formatDiagnostic } from '../../src/v2/diagnostics.js';
 import { TypePlan } from '../../src/v2/runtime/type-plan.js';
 import { isComposite, type TypeCheck } from '../../src/v2/runtime/type-checks.js';
@@ -94,6 +95,34 @@ const rejected: [string, string][] = [
 ];
 
 describe('実行時の型注釈', () => {
+	test.each([
+		['let [, ...[x,y]]:number[]=[1,2,"x"];', 'y'],
+		['let [a,...[x,...y]]:number[]=[1,2,"x"];', 'y[0]'],
+		['let [a,...[x]]:number[][]=[[1],2];', 'x'],
+		['let {0:a,1:b}:number[]=[1,"x"];', 'b'],
+		['let {0:a,...r}:number[]=[1,"x"];', 'r[1]'],
+	])('分割と入れ子restの診断名が実行前と一致する: %s', async (source, name) => {
+		const diagnostics = check(parse(source).program).filter(item => item.code === 'TYPE_ANNOTATION_MISMATCH');
+		expect(diagnostics[0]?.params.name).toBe(name);
+		await expect(execute(source)).rejects.toMatchObject({code:'TYPE_ANNOTATION_MISMATCH',params:{name}});
+	});
+
+	test('既存の型テストコーパスで実行前と実行時の診断名を比較する', async () => {
+		let compared = 0;
+		for (const [, source] of [...accepted, ...rejected]) {
+			const diagnostics = check(parse(source).program).filter(item => item.code === 'TYPE_ANNOTATION_MISMATCH');
+			// 推論しない検査器が静的に検知しない入力は比較対象にしない。
+			if (diagnostics.length === 0) continue;
+			let failure: unknown;
+			try { await execute(source); } catch (error) { failure = error; }
+			expect(failure, source).toBeInstanceOf(RuntimeError);
+			const runtime = failure as RuntimeError;
+			expect(runtime.code, source).toBe('TYPE_ANNOTATION_MISMATCH');
+			expect(diagnostics.map(item => item.params.name), source).toContain(runtime.params.name);
+			compared++;
+		}
+		expect(compared).toBe(28);
+	});
 	for (const [name, source, expected] of accepted) test(name, async () => expect((await execute(source)).output).toEqual(expected));
 	for (const [name, source] of rejected) test(name, async () => await expect(execute(source)).rejects.toMatchObject({ code: 'TYPE_ANNOTATION_MISMATCH' }));
 
@@ -381,7 +410,7 @@ f();`)).rejects.toMatchObject({code:'TYPE_ANNOTATION_MISMATCH',pos:{line:3,colum
 		['array rest 100000要素', 'let [...r]:number[]=h;', 100000, 200007],
 		['rest引数 100000要素', 'function f(...r:number[]){} f(...h);', 100000, 300011],
 		['array rest 200000要素は既定上限内', 'let [...r]:number[]=h;', 200000, 400007],
-	])('同じ深さのrestを二重に検査しない: %s', async (_name, source, size, steps) => {
+	])('restコピーと型検査のステップ上限を保つ: %s', async (_name, source, size, steps) => {
 		const interpreter = new Interpreter({ h:Array(size).fill(1) });
 		await interpreter.exec(parse(source).program);
 		expect(interpreter.stepCount).toBe(steps);
@@ -394,7 +423,7 @@ f();`)).rejects.toMatchObject({code:'TYPE_ANNOTATION_MISMATCH',pos:{line:3,colum
 		expect(interpreter.getGlobal('r')).toHaveLength(100);
 	});
 
-	test('副作用のない入れ子分割後もrestを二重に検査しない', async () => {
+	test('入れ子分割後のrestコピーと型検査のステップ上限を保つ', async () => {
 		const interpreter = new Interpreter({ h:Array.from({length:100},()=>[1]) });
 		await interpreter.exec(parse('let [[x],...r]:number[][]=h;').program);
 		expect(interpreter.stepCount).toBe(214);

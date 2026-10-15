@@ -8,8 +8,8 @@ import { Environment, boundNames, type Binding } from './runtime/environment.js'
 import { ExecutionStopped, RuntimeError, runtimeError, scriptErrorDiagnostic, createScriptError } from './runtime/errors.js';
 import { PropertyAccess, SCRIPT_FUNCTION, isScriptFunction, valueTypeof, errorValue, scriptObject } from './runtime/values.js';
 import type { Value, ScriptFunction } from './runtime/values.js';
-import { TypePlan, projectType, restType, bindingMayHaveEffects, type PatternCheck } from './runtime/type-plan.js';
-import { checkValue, checkScalar, isComposite, type TypeCheck } from './runtime/type-checks.js';
+import { TypePlan, projectType, restType, type PatternCheck } from './runtime/type-plan.js';
+import { checkValue, checkScalar, checkCopiedElement, isComposite, type TypeCheck } from './runtime/type-checks.js';
 export { RuntimeError, ExecutionStopped } from './runtime/errors.js';
 export type { Value } from './runtime/values.js';
 
@@ -45,25 +45,39 @@ function patternLabel(pattern: A.Pattern | A.MemberExpression): string {
 
 /** 親の直下検査で失敗した要素も、分割先が分かればその束縛名で示す。 */
 function patternDiagnosticName(pattern: A.Pattern | A.MemberExpression, label: string, failure: string): string {
-	if (pattern.type === 'ArrayPattern') {
-		const suffix = failure.startsWith(label) ? failure.slice(label.length) : '';
-		const index = /^\[[0-9]+\]$/.test(suffix) ? Number(suffix.slice(1, -1)) : -1;
-		for (let i = 0; i < pattern.elements.length; i++) {
-			const part = pattern.elements[i];
-			if (part?.type === 'RestElement' && index >= i) return `${patternLabel(part)}[${index - i}]`;
-			if (part && failure === `${label}[${i}]`) return patternLabel(part);
+	const suffix = failure.startsWith(label) ? failure.slice(label.length) : '';
+	let key: string | number | undefined = /^\[[0-9]+\]$/.test(suffix) ? Number(suffix.slice(1, -1)) : suffix.startsWith('.') ? suffix.slice(1) : undefined;
+	let name = label;
+	while (true) {
+		if (pattern.type === 'AssignmentPattern' || pattern.type === 'RestElement') {
+			pattern = pattern.type === 'AssignmentPattern' ? pattern.left : pattern.argument;
+			continue;
 		}
-	} else if (pattern.type === 'ObjectPattern') {
-		for (const property of pattern.properties) {
-			if (property.type === 'RestElement' || property.computed && property.key.type !== 'Literal') continue;
-			const key = property.key.type === 'Identifier' ? property.key.name : String((property.key as A.Literal).value);
-			if (failure === `${label}.${key}`) return patternLabel(property.value as A.Pattern);
+		name = patternLabel(pattern);
+		if (pattern.type === 'Identifier' || key === undefined) break;
+		let next: A.Pattern | A.MemberExpression | undefined | null;
+		if (pattern.type === 'ArrayPattern' && typeof key === 'number') {
+			const restIndex = pattern.elements.findIndex(item => item?.type === 'RestElement');
+			if (restIndex >= 0 && key >= restIndex) {
+				pattern = (pattern.elements[restIndex] as A.RestElement).argument;
+				key -= restIndex;
+				continue;
+			}
+			next = pattern.elements[key];
+		} else if (pattern.type === 'ObjectPattern') {
+			const property = pattern.properties.find(item => item.type === 'Property' && (!item.computed || item.key.type === 'Literal') &&
+				(item.key.type === 'Identifier' ? item.key.name : String((item.key as A.Literal).value)) === String(key));
+			if (property?.type === 'Property') next = property.value as A.Pattern;
+			else {
+				const rest = pattern.properties.find(item => item.type === 'RestElement');
+				if (rest?.type === 'RestElement') { pattern = rest.argument; continue; }
+			}
 		}
-		const rest = pattern.properties.find(property => property.type === 'RestElement');
-		const dynamic = pattern.properties.some(property => property.type !== 'RestElement' && property.computed && property.key.type !== 'Literal');
-		if (rest && !dynamic && failure.startsWith(`${label}.`)) return patternLabel(rest) + failure.slice(label.length);
+		if (!next) break;
+		pattern = next;
+		key = undefined;
 	}
-	return failure;
+	return name + (key === undefined ? '' : typeof key === 'number' ? `[${key}]` : `.${key}`);
 }
 
 /** 別の実行器と共有する AST から注釈を外し、深い構文木も反復で複製する。 */
@@ -454,7 +468,7 @@ export class Interpreter {
 		return fn;
 	}
 
-	private *bindTyped(pattern: A.Pattern | A.MemberExpression, value: Value, env: Environment, execution: Execution, initialize: boolean, reference?: Reference | null): Frame {
+	private *bindTyped(pattern: A.Pattern | A.MemberExpression, value: Value, env: Environment, execution: Execution, initialize: boolean, reference?: Reference | null, checkedValue?: TypeCheck): Frame {
 		if (initialize) this.registerPattern(pattern, env);
 		const plan = this.runtimePatterns.get(env)?.get(pattern) ?? this.typePlan.patterns.get(pattern);
 		const pos = pattern.loc.start;
@@ -475,8 +489,8 @@ export class Interpreter {
 			this.tick(execution, pos);
 			const binding = initialize ? env.bindings.get(pattern.name) : env.resolve(pattern.name);
 			const check = (binding as TypedBinding | undefined)?.[BINDING_TYPE];
-			// 親と同じ深さで検査済みの rest だけ、初期化時の重複検査を省く。
-			if (check && (!initialize || !plan?.restCovered)) {
+			// 同じ実値を検査済みの場合だけ省略し、別のコピーへ保証を移さない。
+			if (check && (!initialize || !checkedValue || plan?.explicit)) {
 				if (isComposite(check)) yield this.checkType(check, value, pattern.name, execution, pos);
 				else { this.tick(execution, pos); checkScalar(check, value, pattern.name, pos); }
 			}
@@ -486,6 +500,45 @@ export class Interpreter {
 		if (plan?.explicit) {
 			const label = patternLabel(pattern);
 			yield this.checkType(plan.check, value, label, execution, pos, name => patternDiagnosticName(pattern, label, name));
+		}
+		if (pattern.type === 'RestElement') {
+			this.tick(execution, pos);
+			return yield this.bindTyped(pattern.argument, value, env, execution, initialize, reference, plan?.explicit ? plan.check : checkedValue);
+		}
+		if (pattern.type === 'ArrayPattern' && plan && pattern.elements.some(part => part?.type === 'RestElement')) {
+			this.tick(execution, pos);
+			yield this.prepared(value, execution, pos);
+			const items = execution.properties.iterableIterator(value, pos);
+			const sourceCheck = checkedValue ?? plan.check;
+			const copiedCheck = sourceCheck.kind === 'array' && sourceCheck.element.kind !== 'union' && sourceCheck.element.kind !== 'projection' ? sourceCheck : undefined;
+			const label = patternLabel(pattern);
+			const diagnosticName = (name: string) => patternDiagnosticName(pattern, label, name);
+			let exhausted = false;
+			let index = 0;
+			for (const part of pattern.elements) {
+				const target: Reference | null = part ? yield this.bindingReference(part, env, execution) : null;
+				let item: Value = null;
+				if (part?.type === 'RestElement') {
+					const rest: Value[] = scriptObject([]);
+					while (!exhausted) {
+						const next = items.next(); exhausted = !!next.done;
+						if (!next.done) {
+							if (copiedCheck) checkCopiedElement(copiedCheck.element, next.value, label, index, pos, diagnosticName);
+							rest.push(next.value); index++;
+						}
+						if (execution.clock >= 64) yield this.checkpoint();
+					}
+					yield this.bindTyped(part, rest, env, execution, initialize, target, copiedCheck);
+				} else {
+					if (!exhausted) {
+						const next = items.next(); exhausted = !!next.done;
+						if (!next.done) { item = next.value; index++; }
+					}
+					if (part) yield this.bind(part, item, env, execution, initialize, target);
+				}
+				if (execution.clock >= 64) yield this.checkpoint();
+			}
+			return null;
 		}
 		if (pattern.type === 'ObjectPattern' && plan) {
 			this.tick(execution, pos);
@@ -498,7 +551,7 @@ export class Interpreter {
 					const target: Reference | null = yield this.bindingReference(property, env, execution);
 					const rest = scriptObject(Object.create(null));
 					const check = dynamic ? undefined : restType(plan.check, excluded);
-					if (initialize && check) this.registerPattern(property.argument, env, this.typePlan.project(property.argument, check, !!plan.explicit && !bindingMayHaveEffects(pattern)));
+					if (initialize && check) this.registerPattern(property.argument, env, this.typePlan.project(property.argument, check));
 					for (const [key, item] of execution.properties.entriesIterator(value, pos)) {
 						if (!excluded.has(key)) rest[key] = item;
 						if (execution.clock >= 64) yield this.checkpoint();

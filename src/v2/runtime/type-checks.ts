@@ -159,6 +159,11 @@ export function checkScalar(check: TypeCheck, value: Value, name: string, pos: A
 	fail({ name, check, value }, pos);
 }
 
+/** コピーの取得直後に外形を確かめ、途中で譲らず実際に束縛する値を守る。 */
+export function checkCopiedElement(check: TypeCheck, value: Value, name: string, index: number, pos: A.Pos, diagnosticName: (name: string) => string): void {
+	if (!matchesOuter(check, value)) fail({ name: diagnosticName(`${name}[${index}]`), check, value }, pos);
+}
+
 /** 合併の枝にも同じ予算を使い、要素の検査では入れ子の外形までに留める。 */
 function* matchesShallow(check: TypeCheck, value: Value, tick: () => boolean): Generator<void, boolean> {
 	check = yield* resolveType(check, tick);

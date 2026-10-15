@@ -290,6 +290,7 @@ class Parser {
 				hasDefault = true;
 				test = null;
 			}
+			if (test && this.undefinedText(test)) this.fail('TYPEOF_UNDEFINED_COMPARISON', test);
 			this.expect(':');
 			const consequent: A.Statement[] = [];
 			while (!this.at('case') && !this.at('default') && !this.at('}')) consequent.push(this.statement());
@@ -497,9 +498,8 @@ class Parser {
 			if (left.type === 'UpdateExpression') this.fail('UPDATE_IN_EXPRESSION', left);
 			if (operator === '**' && (left.type === 'UnaryExpression' || left.type === 'AwaitExpression') && !this.parenthesized.has(left)) this.fail('UNARY_POWER', op);
 			const right = this.expression(operator === '**' ? priority : priority + 1, false, boundary, allowIn, false, allowReturnType);
-			if (operator === '===' || operator === '!==') {
-				const undefinedComparison = (a: A.Expression, b: A.Expression): boolean => a.type === 'UnaryExpression' && a.operator === 'typeof' && b.type === 'Literal' && b.value === 'undefined';
-				if (undefinedComparison(left, right) || undefinedComparison(right, left)) this.fail('TYPEOF_UNDEFINED_COMPARISON', op);
+			if (operator === '===' || operator === '!==' || operator === '==' || operator === '!=') {
+				if (this.undefinedText(left) || this.undefinedText(right)) this.fail('TYPEOF_UNDEFINED_COMPARISON', op);
 			}
 			if (operator === '==' || operator === '!=') {
 				if (!(left.type === 'Literal' && left.value === null) && !(right.type === 'Literal' && right.value === null)) this.fail('LOOSE_EQUALITY', op);
@@ -531,12 +531,16 @@ class Parser {
 		if (!cover) this.checkExpression(left, true);
 		return left;
 	}
+	private undefinedText(node: A.Expression): boolean {
+		return (node.type === 'Literal' && node.value === 'undefined') || (node.type === 'TemplateLiteral' && node.expressions.length === 0 && node.quasis[0]?.value.cooked === 'undefined');
+	}
 
 	private unary(mutation: boolean, boundary: boolean, allowArrow: boolean, allowReturnType = true): A.Expression {
 		const t = this.peek();
 		if (['!', '-', '+', 'typeof', 'delete', 'await'].includes(t.raw)) {
 			this.take();
 			const argument = this.unary(false, boundary, false, allowReturnType);
+			if (t.raw === 'delete' && argument.type === 'Identifier') this.fail('STRICT_DELETE_IDENTIFIER', argument);
 			if (argument.type === 'UpdateExpression') this.fail('UPDATE_IN_EXPRESSION', argument);
 			if (t.raw === 'await') return this.node(t, { type: 'AwaitExpression', argument });
 			return this.node(t, { type: 'UnaryExpression', operator: t.raw as A.UnaryExpression['operator'], prefix: true, argument });

@@ -1,7 +1,7 @@
 import type * as A from './ast.js';
 import { defaultYieldToHost, macrotaskTick } from '../interpreter/host-yield.js';
 import { Environment, boundNames } from './runtime/environment.js';
-import { ExecutionStopped, RuntimeError, runtimeError } from './runtime/errors.js';
+import { ExecutionStopped, RuntimeError, runtimeError, scriptErrorDiagnostic, isScriptErrorValue } from './runtime/errors.js';
 import { PropertyAccess, SCRIPT_FUNCTION, isScriptFunction, isBuiltinMethod, valueTypeof, errorValue } from './runtime/values.js';
 import type { Value, ScriptFunction } from './runtime/values.js';
 export { RuntimeError, ExecutionStopped } from './runtime/errors.js';
@@ -9,8 +9,10 @@ export type { Value } from './runtime/values.js';
 
 const origin: A.Pos = { line: 1, column: 1 };
 const shortCircuit = Symbol('optional chain');
+const errorConstructor = () => { throw new Error('Use Interpreter.call'); };
+const promiseThen = Promise.prototype.then;
 class ScriptThrown {
-	constructor(readonly value: Value, readonly pos: A.Pos) {}
+	constructor(readonly value: Value, readonly pos: A.Pos, readonly diagnostic?: RuntimeError) {}
 }
 type Completion = { kind: 'return' | 'break' | 'continue'; value: Value; label: string | null };
 type Reference = { kind: 'binding'; name: string; env: Environment } | { kind: 'property'; object: Value; key: Value };
@@ -65,7 +67,10 @@ export class Interpreter {
 		if (!Number.isSafeInteger(this.maxCallDepth) || this.maxCallDepth < 1) throw new RangeError('Invalid call depth limit');
 		if (!(this.yieldInterval >= 0) || !(this.maxBusyTime > 0) || (options.maxSteps !== undefined && (!Number.isSafeInteger(options.maxSteps) || options.maxSteps < 0))) throw new RangeError('Invalid execution limit');
 		this.yieldToHost = options.yieldToHost ?? defaultYieldToHost;
-		const host = new Environment();
+		const builtins = new Environment();
+		builtins.declare('Error', false);
+		builtins.write('Error', errorConstructor, origin, true);
+		const host = new Environment(builtins);
 		const properties = new PropertyAccess();
 		for (const [name, value] of Object.entries(globals)) {
 			host.declare(name, false);
@@ -176,8 +181,8 @@ export class Interpreter {
 			}
 			if (throwing) {
 				if (value instanceof ScriptThrown && !internal) {
-					const isError = errorValue(value.value);
-					const error = runtimeError('UNCAUGHT_EXCEPTION', value.pos, {}, isError ? this.text(execution.properties.get(value.value, 'name', value.pos), value.pos) : undefined);
+					const isError = errorValue(value.value, value.pos);
+					const error = runtimeError(value.diagnostic?.code ?? 'UNCAUGHT_EXCEPTION', value.diagnostic?.pos ?? value.pos, value.diagnostic?.params ?? {}, isError ? this.text(execution.properties.get(value.value, 'name', value.pos), value.pos) : undefined);
 					if (isError) error.message = this.text(execution.properties.get(value.value, 'message', value.pos), value.pos);
 					Object.assign(error, { thrownValue: value.value, cause: value.value });
 					throw error;
@@ -193,6 +198,11 @@ export class Interpreter {
 	}
 
 	private prepare(body: A.Statement[], env: Environment, execution: Execution): void {
+		for (const statement of body) {
+			const node = statement.type === 'ExportMetaDeclaration' ? statement.declaration : statement;
+			const names = node.type === 'VariableDeclaration' ? node.declarations.flatMap(declaration => boundNames(declaration.id)) : node.type === 'FunctionDeclaration' ? [node.id.name] : [];
+			for (const name of names) if (env.bindings.has(name)) throw runtimeError('DUPLICATE_DECLARATION', node.loc.start, { name }, 'SyntaxError');
+		}
 		for (const statement of body) {
 			const node = statement.type === 'ExportMetaDeclaration' ? statement.declaration : statement;
 			if (node.type === 'VariableDeclaration') {
@@ -357,8 +367,41 @@ export class Interpreter {
 		}
 		return args;
 	}
+	/** then プロパティは読まず、組み込みの then が持つ Promise の内部判定を使います。 */
+	private promiseResult(value: unknown): Promise<{ value: unknown }> | null {
+		if (value === null || (typeof value !== 'object' && typeof value !== 'function')) return null;
+		let resolve!: (result: { value: unknown }) => void;
+		let reject!: (reason: unknown) => void;
+		const result = new Promise<{ value: unknown }>((yes, no) => { resolve = yes; reject = no; });
+		try { Reflect.apply(promiseThen, value, [(next: unknown) => resolve({ value: next }), reject]); }
+		catch (error) {
+			if (error instanceof TypeError) {
+				// Promise の原型を持つ値では、constructor や species の例外を握りつぶさない。
+				let prototype = Object.getPrototypeOf(value);
+				while (prototype) {
+					const constructor = Object.getOwnPropertyDescriptor(prototype, 'constructor');
+					if (constructor && 'value' in constructor && typeof constructor.value === 'function' && /^function\s+Promise\s*\(\s*\)\s*\{\s*\[native code\]\s*\}$/.test(Function.prototype.toString.call(constructor.value))) throw error;
+					prototype = Object.getPrototypeOf(prototype);
+				}
+				return null;
+			}
+			throw error;
+		}
+		return result;
+	}
+
+	private createError(args: Value[], execution: Execution, pos: A.Pos): Value {
+		const error = new Error(args.length ? this.text(args[0]!, pos) : '');
+		const options = args[1];
+		if (options !== null && (typeof options === 'object' || typeof options === 'function') && execution.properties.has(options, 'cause', pos)) {
+			Object.defineProperty(error, 'cause', { value: execution.properties.get(options, 'cause', pos), configurable: true, writable: true });
+		}
+		return execution.properties.normalize(error, pos);
+	}
+
 	private *invoke(fn: Value, args: Value[], receiver: Value, execution: Execution, pos: A.Pos): Frame {
 		this.tick(execution, pos);
+		if (fn === errorConstructor) return this.createError(args, execution, pos);
 		if (isBuiltinMethod(fn)) {
 			if (fn.receiverType === 'array' && fn.name === 'push' && Array.isArray(receiver)) {
 				yield this.prepared(receiver, execution, pos);
@@ -402,13 +445,14 @@ export class Interpreter {
 			};
 			let result = hostBodies.has(fn) ? hostBodies.get(fn)!(args, context) : Reflect.apply(fn, receiver, args);
 			this.checkTime(pos);
-			if (result !== null && !errorValue(result) && (typeof result === 'object' || typeof result === 'function') && typeof result.then === 'function') result = yield { wait: result, pos };
-			execution.properties.invalidateHostArrays();
+			const pending = this.promiseResult(result);
+			if (pending) result = (yield { wait: pending, pos }).value;
 			yield this.prepared(result, execution, pos);
 			return execution.properties.normalize(result, pos);
 		} catch (error) {
 			if (error instanceof ExecutionStopped || error instanceof RuntimeError || error instanceof ScriptThrown) throw error;
-			if (errorValue(error)) {
+			if (errorValue(error, pos)) {
+				if (isScriptErrorValue(error)) throw new ScriptThrown(error, pos, scriptErrorDiagnostic(error));
 				const host = error as Error;
 				const wrapped = runtimeError('HOST_ERROR', pos, {}, this.text(execution.properties.get(host, 'name', pos), pos));
 				wrapped.message = this.text(execution.properties.get(host, 'message', pos), pos);
@@ -672,7 +716,7 @@ export class Interpreter {
 			}
 			case 'ThrowStatement': {
 				const value = yield this.evaluate(node.argument, env, execution);
-				throw value instanceof RuntimeError ? value : new ScriptThrown(value, pos);
+				throw value instanceof RuntimeError ? value : new ScriptThrown(value, pos, scriptErrorDiagnostic(value));
 			}
 			case 'TryStatement': {
 				let result: Completion | null = null;
@@ -770,17 +814,10 @@ export class Interpreter {
 				return yield this.invoke(fn, args, ref?.kind === 'property' ? ref.object : null, execution, pos);
 			}
 			case 'NewExpression': {
-				const shadowed = !!env.resolve(node.callee.name);
-				if (shadowed) env.read(node.callee.name, pos);
+				const constructor = env.read(node.callee.name, pos);
 				const args: Value[] = yield this.arguments(node.arguments, env, execution);
-				if (shadowed) throw runtimeError('NOT_CALLABLE', pos, {}, 'TypeError');
-				const error = args.length ? new Error(this.text(args[0]!, pos)) : new Error();
-				Object.defineProperty(error, 'name', { value: 'Error', configurable: true, writable: true });
-				const options = args[1];
-				if (options !== null && (typeof options === 'object' || typeof options === 'function') && properties.has(options, 'cause', pos)) {
-					Object.defineProperty(error, 'cause', { value: properties.get(options, 'cause', pos), configurable: true, writable: true });
-				}
-				return error;
+				if (constructor !== errorConstructor) throw runtimeError('NOT_CALLABLE', pos, {}, 'TypeError');
+				return this.createError(args, execution, pos);
 			}
 			case 'UnaryExpression': {
 				if (node.operator === 'typeof' && node.argument.type === 'Identifier' && !env.resolve(node.argument.name)) return 'undefined';

@@ -1,5 +1,5 @@
 import type * as AST from '../ast.js';
-import { RuntimeError, runtimeError } from './errors.js';
+import { RuntimeError, runtimeError, copyScriptError, isScriptErrorValue } from './errors.js';
 import { GraphemeCache } from './strings.js';
 
 export type Value = null | boolean | number | string | object;
@@ -39,18 +39,38 @@ function indexOf(key: string): number | null {
 	return Number.isInteger(index) && index >= 0 && index < 0xffffffff && String(index) === key ? index : null;
 }
 
-function checkFunctionProperty(key: string, pos: AST.Pos): void {
-	if (key === 'name' || key === 'length' || key === 'prototype') throw runtimeError('UNSUPPORTED_VALUE', pos, { key }, 'TypeError');
-}
-
 function opaqueFunction(value: unknown): boolean {
 	return typeof value === 'function' || isScriptFunction(value) || isBuiltinMethod(value);
 }
 
-export const errorValue = (Error as ErrorConstructor & { isError(value: unknown): value is Error }).isError;
+/** 別 realm のエラーも扱い、利用者が定義した toStringTag の getter は実行しない。 */
+export function errorValue(value: unknown, pos: AST.Pos = { line: 1, column: 1 }): value is Error {
+	if (value instanceof Error) return true;
+	if (typeof value !== 'object' || value === null) return false;
+	if (!(Symbol.toStringTag in value)) return Object.prototype.toString.call(value) === '[object Error]';
+	let prototype: object | null = Object.getPrototypeOf(value);
+	while (prototype) {
+		const constructor = Object.getOwnPropertyDescriptor(prototype, 'constructor');
+		if (constructor && 'value' in constructor && typeof constructor.value === 'function') {
+			const source = Function.prototype.toString.call(constructor.value);
+			if (/^function\s+(?:Error|TypeError|RangeError|ReferenceError|SyntaxError|EvalError|URIError|AggregateError)\s*\(\s*\)\s*\{\s*\[native code\]\s*\}$/.test(source)) return true;
+		}
+		prototype = Object.getPrototypeOf(prototype);
+	}
+	// タグで標準の判別が隠されたエラーらしい値は、内部情報を辞書として公開しない。
+	if (Object.hasOwn(value, 'stack') || Object.hasOwn(value, 'message')) throw runtimeError('UNSUPPORTED_VALUE', pos, {}, 'TypeError');
+	return false;
+}
+
+function registeredMethod(type: 'array' | 'string', key: string, pos: AST.Pos): BuiltinMethod | null {
+	const method = methods[type][key];
+	if (method) return method;
+	if (Object.hasOwn(type === 'array' ? Array.prototype : String.prototype, key)) throw runtimeError('METHOD_NOT_AVAILABLE', pos, { key });
+	return null;
+}
 
 function publicErrorKey(value: Error, key: string): boolean {
-	return key === 'name' || key === 'message' || key === 'cause' || (value instanceof RuntimeError && (key === 'code' || key === 'pos'));
+	return key === 'name' || key === 'message' || key === 'cause' || ((value instanceof RuntimeError || isScriptErrorValue(value)) && (key === 'code' || key === 'pos'));
 }
 
 /** エラーの標準名と文だけは標準の原型にあるデータも扱い、getter は実行しない。 */
@@ -68,41 +88,28 @@ function errorDescriptor(value: Error, key: string): PropertyDescriptor | undefi
 /** プロパティ操作は原型を参照せず、書記素のキャッシュを実行単位で共有する。 */
 export class PropertyAccess {
 	private readonly strings: GraphemeCache;
-	private arrays = new WeakSet<object>();
+	private errors = new WeakMap<Error, Error>();
 
 	constructor(private readonly onStep: () => void = () => {}) { this.strings = new GraphemeCache(onStep); }
 
-	clear(): void { this.strings.clear(); }
-
-	/** ホストから制御が戻るときは、共有配列の密度を次の観測時に調べ直す。 */
-	invalidateHostArrays(): void { this.arrays = new WeakSet<object>(); }
+	clear(): void { this.strings.clear(); this.errors = new WeakMap(); }
 
 	normalize(value: unknown, pos: AST.Pos): Value {
 		if (value === undefined) return null;
 		if (typeof value === 'symbol' || typeof value === 'bigint') throw runtimeError('UNSUPPORTED_VALUE', pos, {}, 'TypeError');
-		if (Array.isArray(value)) this.checkArray(value, pos);
-		return value as Value;
-	}
-
-	private checkArray(value: unknown[], pos: AST.Pos): void {
-		if (this.arrays.has(value)) return;
-		for (const _pause of this.prepareArray(value, pos)) { /* 同期 API は中断地点まで含めて処理する。 */ }
-	}
-
-	private *prepareArray(value: unknown[], pos: AST.Pos): Generator<void, void> {
-		if (this.arrays.has(value)) return;
-		let indices = 0;
-		for (const key of Reflect.ownKeys(value)) {
-			if (key === 'length') continue;
-			this.onStep();
-			if (typeof key !== 'string' || indexOf(key) === null) throw runtimeError('INVALID_ARRAY_PROPERTY', pos, { key: String(key) });
-			const descriptor = Object.getOwnPropertyDescriptor(value, key);
-			if (!descriptor) throw runtimeError('SPARSE_ARRAY', pos);
-			if (!('value' in descriptor)) throw runtimeError('ACCESSOR_PROPERTY', pos, {}, 'TypeError');
-			if (++indices % 64 === 0) yield;
+		if (errorValue(value, pos) && !isScriptErrorValue(value)) {
+			const cached = this.errors.get(value);
+			if (cached) return cached;
+			const copied = copyScriptError(value, key => {
+				const descriptor = errorDescriptor(value, key);
+				if (!descriptor) return undefined;
+				if (!('value' in descriptor)) throw runtimeError('ACCESSOR_PROPERTY', pos, { key }, 'TypeError');
+				return descriptor.value;
+			});
+			this.errors.set(value, copied);
+			return copied;
 		}
-		if (indices !== value.length) throw runtimeError('SPARSE_ARRAY', pos);
-		this.arrays.add(value);
+		return value as Value;
 	}
 
 	key(value: unknown, pos: AST.Pos): string {
@@ -119,7 +126,7 @@ export class PropertyAccess {
 		if (typeof value === 'string') {
 			if (parts) yield* this.strings.prepareParts(value);
 			else yield* this.strings.prepare(value);
-		} else if (Array.isArray(value)) yield* this.prepareArray(value, pos);
+		}
 	}
 
 	concat(left: string, right: string): string { return this.strings.concat(left, right); }
@@ -133,21 +140,18 @@ export class PropertyAccess {
 			if (key === 'length') return info.length;
 			const index = indexOf(key);
 			if (index !== null) return this.strings.at(value, index) ?? null;
-			return methods.string[key] ?? null;
+			return registeredMethod('string', key, pos);
 		}
 		if (Array.isArray(value)) {
-			this.checkArray(value, pos);
 			const index = indexOf(key);
-			if (index === null && (typeof property === 'number' || String(Number(key)) === key)) throw runtimeError('ARRAY_INDEX_OUT_OF_RANGE', pos, {}, 'RangeError');
+			const own = Object.hasOwn(value, key);
+			if (!own && index === null && (typeof property === 'number' || String(Number(key)) === key)) throw runtimeError('ARRAY_INDEX_OUT_OF_RANGE', pos, {}, 'RangeError');
 			if (index !== null && index >= value.length) throw runtimeError('ARRAY_INDEX_OUT_OF_RANGE', pos, { index }, 'RangeError');
-			if (index !== null && !Object.hasOwn(value, key)) throw runtimeError('SPARSE_ARRAY', pos);
-			if (key !== 'length' && index === null) return methods.array[key] ?? null;
+			if (index !== null && !own) throw runtimeError('SPARSE_ARRAY', pos);
+			if (!own && key !== 'length' && index === null) return registeredMethod('array', key, pos);
 		}
-		if (opaqueFunction(value)) {
-			checkFunctionProperty(key, pos);
-			return null;
-		}
-		const error = errorValue(value);
+		if (opaqueFunction(value)) throw runtimeError('UNSUPPORTED_VALUE', pos, { key }, 'TypeError');
+		const error = errorValue(value, pos);
 		if (error && !publicErrorKey(value, key)) return null;
 		const descriptor = error ? errorDescriptor(value, key) : Object.getOwnPropertyDescriptor(Object(value), key);
 		if (!descriptor) return null;
@@ -158,19 +162,18 @@ export class PropertyAccess {
 	set(value: unknown, property: unknown, next: unknown, pos: AST.Pos): Value {
 		const key = this.key(property, pos);
 		if (value === null || value === undefined) throw runtimeError('NULL_PROPERTY_ACCESS', pos, { key }, 'TypeError');
-		if (typeof value !== 'object' || opaqueFunction(value) || (errorValue(value) && !publicErrorKey(value, key))) {
+		if (opaqueFunction(value)) throw runtimeError('UNSUPPORTED_VALUE', pos, { key }, 'TypeError');
+		if (typeof value !== 'object' || (errorValue(value, pos) && !publicErrorKey(value, key))) {
 			throw runtimeError('READONLY_PROPERTY', pos, { key }, 'TypeError');
 		}
 		const normalized = this.normalize(next, pos);
 		if (Array.isArray(value)) {
-			this.checkArray(value, pos);
 			if (key === 'length') {
 				if (typeof normalized !== 'number' || !Number.isInteger(normalized) || normalized < 0 || normalized > 0xffffffff) throw runtimeError('INVALID_ARRAY_LENGTH', pos, {}, 'RangeError');
 				if (normalized > value.length) throw runtimeError('ARRAY_LENGTH_GROWTH', pos);
 			} else {
 				const index = indexOf(key);
-				if (index === null) throw runtimeError('INVALID_ARRAY_PROPERTY', pos, { key });
-				if (index > value.length) throw runtimeError('ARRAY_GAP', pos, { index });
+				if (index !== null && index > value.length) throw runtimeError('ARRAY_GAP', pos, { index });
 			}
 		}
 		const descriptor = Object.getOwnPropertyDescriptor(value, key);
@@ -184,24 +187,17 @@ export class PropertyAccess {
 	has(value: unknown, property: unknown, pos: AST.Pos): boolean {
 		const key = this.key(property, pos);
 		if (value === null || (typeof value !== 'object' && typeof value !== 'function')) throw runtimeError('INVALID_RECEIVER', pos, {}, 'TypeError');
-		if (opaqueFunction(value)) {
-			checkFunctionProperty(key, pos);
-			return false;
-		}
-		if (Array.isArray(value)) this.checkArray(value, pos);
-		if (errorValue(value)) return publicErrorKey(value, key) && errorDescriptor(value, key) !== undefined;
+		if (opaqueFunction(value)) throw runtimeError('UNSUPPORTED_VALUE', pos, { key }, 'TypeError');
+		if (Array.isArray(value) && !Object.hasOwn(value, key)) return registeredMethod('array', key, pos) !== null;
+		if (errorValue(value, pos)) return publicErrorKey(value, key) && errorDescriptor(value, key) !== undefined;
 		return Object.hasOwn(value, key);
 	}
 
 	delete(value: unknown, property: unknown, pos: AST.Pos): boolean {
 		const key = this.key(property, pos);
 		if (value === null || value === undefined) throw runtimeError('NULL_PROPERTY_ACCESS', pos, { key }, 'TypeError');
-		if (opaqueFunction(value)) {
-			checkFunctionProperty(key, pos);
-			return true;
-		}
-		if (errorValue(value) && !publicErrorKey(value, key)) return true;
-		if (Array.isArray(value)) this.checkArray(value, pos);
+		if (opaqueFunction(value)) throw runtimeError('UNSUPPORTED_VALUE', pos, { key }, 'TypeError');
+		if (errorValue(value, pos) && !publicErrorKey(value, key)) return true;
 		if (Array.isArray(value) && (indexOf(key) !== null || key === 'length')) throw runtimeError('ARRAY_DELETE', pos);
 		if (typeof value === 'string' && (indexOf(key) !== null || key === 'length')) throw runtimeError('READONLY_PROPERTY', pos, { key }, 'TypeError');
 		if (!Reflect.deleteProperty(Object(value), key)) throw runtimeError('READONLY_PROPERTY', pos, { key }, 'TypeError');
@@ -222,9 +218,8 @@ export class PropertyAccess {
 			}
 			return;
 		}
-		if (opaqueFunction(value)) return;
-		if (Array.isArray(value)) this.checkArray(value, pos);
-		const error = errorValue(value);
+		if (opaqueFunction(value)) throw runtimeError('UNSUPPORTED_VALUE', pos, {}, 'TypeError');
+		const error = errorValue(value, pos);
 		for (const key of Object.keys(Object(value))) {
 			this.onStep();
 			if (error && !publicErrorKey(value, key)) continue;
@@ -247,7 +242,6 @@ export class PropertyAccess {
 			return;
 		}
 		if (!Array.isArray(value)) throw runtimeError('NOT_ITERABLE', pos, {}, 'TypeError');
-		this.checkArray(value, pos);
 		for (let i = 0; i < value.length; i++) {
 			this.onStep();
 			yield this.get(value, i, pos);
@@ -257,7 +251,6 @@ export class PropertyAccess {
 	callMethod(method: BuiltinMethod, receiver: unknown, args: Value[], pos: AST.Pos): Value {
 		if (method === arrayPush) {
 			if (!Array.isArray(receiver)) throw runtimeError('INVALID_RECEIVER', pos, {}, 'TypeError');
-			this.checkArray(receiver, pos);
 			for (const value of args) {
 				this.onStep();
 				this.set(receiver, receiver.length, value, pos);

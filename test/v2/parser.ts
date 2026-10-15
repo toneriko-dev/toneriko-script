@@ -232,6 +232,8 @@ const rejected = [
 	['ARROW_OBJECT_BODY', 'x => { k: v }'],
 	['DUPLICATE_DECLARATION', 'let x; let x;'],
 	['TYPEOF_UNDEFINED_COMPARISON', 'typeof x === "undefined"'],
+	['STRICT_DELETE_IDENTIFIER', 'delete x'],
+	['STRICT_NON_SIMPLE_PARAMETERS', 'function f(x = 1) { "use strict"; }'],
 ] as const;
 
 function diagnostic(source: string, code: string): void {
@@ -590,7 +592,7 @@ describe('インタプリタに渡す前の診断', () => {
 			}
 		}
 	}
-	for (const source of ['typeof null === "object"', 'typeof x === "number"', 'x == null', 'x != null', '"undefined" === x']) {
+	for (const source of ['typeof null === "object"', 'typeof x === "number"', 'x == null', 'x != null']) {
 		test(`型と欠如値の有効な比較: ${source}`, () => parse(source));
 	}
 

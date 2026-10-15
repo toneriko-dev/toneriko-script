@@ -65,11 +65,11 @@ describe('v2 の公開プロパティ境界の回帰', () => {
 	test('ホスト関数の任意の own property を全経路で隠す', () => {
 		const properties = new PropertyAccess();
 		const fn = Object.assign(function host() {}, { secret: 42 });
-		expect(properties.get(fn, 'secret', pos)).toBeNull();
-		expect(properties.has(fn, 'secret', pos)).toBe(false);
-		expect(properties.entries(fn, pos)).toEqual([]);
-		expect(() => properties.set(fn, 'secret', 7, pos)).toThrow(expect.objectContaining({ code: 'READONLY_PROPERTY' }));
-		expect(properties.delete(fn, 'secret', pos)).toBe(true);
+		expect(() => properties.get(fn, 'secret', pos)).toThrow(expect.objectContaining({ code: 'UNSUPPORTED_VALUE' }));
+		expect(() => properties.has(fn, 'secret', pos)).toThrow(expect.objectContaining({ code: 'UNSUPPORTED_VALUE' }));
+		expect(() => properties.entries(fn, pos)).toThrow(expect.objectContaining({ code: 'UNSUPPORTED_VALUE' }));
+		expect(() => properties.set(fn, 'secret', 7, pos)).toThrow(expect.objectContaining({ code: 'UNSUPPORTED_VALUE' }));
+		expect(() => properties.delete(fn, 'secret', pos)).toThrow(expect.objectContaining({ code: 'UNSUPPORTED_VALUE' }));
 		expect(fn.secret).toBe(42);
 		for (const key of ['name', 'length', 'prototype']) {
 			expect(() => properties.get(fn, key, pos)).toThrow(expect.objectContaining({ code: 'UNSUPPORTED_VALUE' }));
@@ -79,27 +79,21 @@ describe('v2 の公開プロパティ境界の回帰', () => {
 
 	test.each([
 		['foo', true], ['hidden', false], ['push', true], [Symbol('hidden'), false],
-	] as const)('配列の余分な own property %s を拒否する', (key, enumerable) => {
+	] as const)('配列の追加 own property %s があっても既存の要素を読む', (key, enumerable) => {
 		const array = [1, 2];
 		Object.defineProperty(array, key, { value: 9, enumerable, configurable: true });
-		for (const operation of [
-			(properties: PropertyAccess) => properties.normalize(array, pos),
-			(properties: PropertyAccess) => properties.get(array, 'length', pos),
-			(properties: PropertyAccess) => properties.set(array, 0, 3, pos),
-			(properties: PropertyAccess) => properties.has(array, 'length', pos),
-			(properties: PropertyAccess) => properties.delete(array, 'missing', pos),
-			(properties: PropertyAccess) => properties.entries(array, pos),
-			(properties: PropertyAccess) => properties.iterable(array, pos),
-		]) expect(() => operation(new PropertyAccess())).toThrow(expect.objectContaining({ code: 'INVALID_ARRAY_PROPERTY' }));
+		const properties = new PropertyAccess();
+		expect(properties.normalize(array, pos)).toBe(array);
+		expect(properties.get(array, 0, pos)).toBe(1);
+		if (typeof key === 'string') expect(properties.get(array, key, pos)).toBe(9);
 	});
 
-	test('ホストが追加した配列プロパティを再観測で拒否する', () => {
+	test('ホストが追加した配列プロパティを再観測で読める', () => {
 		const properties = new PropertyAccess();
 		const array = [1];
 		properties.normalize(array, pos);
 		Object.defineProperty(array, 'hidden', { value: 3 });
-		properties.invalidateHostArrays();
-		expect(() => properties.get(array, 0, pos)).toThrow(expect.objectContaining({ code: 'INVALID_ARRAY_PROPERTY' }));
+		expect(properties.get(array, 'hidden', pos)).toBe(3);
 	});
 });
 
@@ -117,8 +111,11 @@ test.each(['throw e;', 'fail();'])('エラーの包装でもgetterを実行し�
 	let calls = 0;
 	const error = new Error('host');
 	Object.defineProperty(error, 'name', { get: () => { calls++; return 'Error'; } });
-	const interpreter = new Interpreter({ e: error, fail: () => { throw error; } });
-	await expect(interpreter.exec(parse(source).program)).rejects.toMatchObject({ code: 'ACCESSOR_PROPERTY' });
+	await expect((async () => {
+		const globals = source === 'throw e;' ? { e: error } : { fail: () => { throw error; } };
+		const interpreter = new Interpreter(globals);
+		await interpreter.exec(parse(source).program);
+	})()).rejects.toMatchObject({ code: 'ACCESSOR_PROPERTY' });
 	expect(calls).toBe(0);
 });
 
@@ -140,9 +137,11 @@ test('スクリプトからホスト関数のprototypeを変更できない', as
 	expect(Object.hasOwn(Host.prototype, 'x')).toBe(false);
 });
 
-test('ホストが返す独自プロパティ付き配列を観測時に拒否する', async () => {
+test('ホストが返す配列の独自 push を優先する', async () => {
 	const array: unknown[] = [];
 	Object.assign(array, { push: () => 123, tag: 7 });
-	await expect(new Interpreter({ getArray: () => array }).exec(parse('const a=getArray(); a.push(1);').program)).rejects.toMatchObject({ code: 'INVALID_ARRAY_PROPERTY' });
+	const output: unknown[] = [];
+	await new Interpreter({ getArray: () => array, out: (value: unknown) => { output.push(value); } }).exec(parse('const a=getArray(); out(a.push(1)); out(a.tag);').program);
+	expect(output).toEqual([123, 7]);
 	expect(array.length).toBe(0);
 });

@@ -195,8 +195,8 @@ describe('v2 のホスト境界', () => {
 		expect(count).toBe(0);
 	});
 
-	test('ホストの疎配列を拒否する', async () => {
-		await expect(execute('out(a);', { a: [, 2] })).rejects.toMatchObject({ code: 'SPARSE_ARRAY' });
+	test('ホストの疎配列は穴を読んだ時点で拒否する', async () => {
+		await expect(execute('out(a[0]);', { a: [, 2] })).rejects.toMatchObject({ code: 'SPARSE_ARRAY' });
 	});
 
 	test('ホストの非 Error な reject も値のまま catch する', async () => {

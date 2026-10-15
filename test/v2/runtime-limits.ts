@@ -48,7 +48,7 @@ test('負数や整数でない数の配列添字も範囲外にする', async ()
 	}
 });
 
-for (const source of ['const { length: n } = s;', 'const [...rest] = a;', 'const b=[]; b.push(...a);', 'try { fail(); } catch(e) { const x=e.length; }']) {
+for (const source of ['const { length: n } = s;', 'const [...rest] = a;', 'const b=[]; b.push(...a);', 'try { fail(); } catch(e) { const x=[...e]; }']) {
 	test(`大量の要素処理でも一定間隔で譲る: ${source}`, async () => {
 		let clock = 0;
 		let previous = 0;

@@ -13,8 +13,24 @@ function names(pattern: A.Pattern | A.MemberExpression): A.Identifier[] {
 }
 
 function add(bindings: Set<string>, id: A.Identifier): void {
+	checkBinding(id);
 	if (bindings.has(id.name)) throw syntaxError('DUPLICATE_DECLARATION', id.loc.start, { name: id.name });
 	bindings.add(id.name);
+}
+
+function checkBinding(id: A.Identifier): void {
+	if (id.name === 'eval' || id.name === 'arguments') throw syntaxError(id.name === 'eval' ? 'EVAL' : 'ARGUMENTS', id.loc.start);
+}
+
+function checkDirective(node: A.FunctionDeclaration | A.ArrowFunctionExpression): void {
+	if (node.body.type !== 'BlockStatement' || node.params.every(param => param.type === 'Identifier')) return;
+	for (const statement of node.body.body) {
+		if (statement.type !== 'ExpressionStatement' || statement.expression.type !== 'Literal' || typeof statement.expression.value !== 'string') break;
+		const expression = statement.expression;
+		// 括弧付きの文字列は Directive Prologue に含めない。
+		if (statement.loc.start.line !== expression.loc.start.line || statement.loc.start.column !== expression.loc.start.column) break;
+		if (expression.raw === '"use strict"' || expression.raw === "'use strict'") throw syntaxError('STRICT_NON_SIMPLE_PARAMETERS', expression.loc.start);
+	}
 }
 
 function scope(body: A.Statement[], parameters: A.Pattern[] = [], functionBody = false): void {
@@ -26,6 +42,7 @@ function scope(body: A.Statement[], parameters: A.Pattern[] = [], functionBody =
 		if (declaration.type === 'VariableDeclaration') {
 			for (const item of declaration.declarations) for (const id of names(item.id)) add(lexical, id);
 		} else if (declaration.type === 'FunctionDeclaration') {
+			checkBinding(declaration.id);
 			if (functionBody) functions.push(declaration.id);
 			else add(lexical, declaration.id);
 		}
@@ -45,6 +62,7 @@ export function checkEarlyErrors(program: A.Program): void {
 			case 'SwitchStatement': scope(node.cases.flatMap(item => item.consequent)); break;
 			case 'FunctionDeclaration':
 			case 'ArrowFunctionExpression': {
+				checkDirective(node);
 				scope(node.body.type === 'BlockStatement' ? node.body.body : [], node.params, true);
 				for (const param of node.params) visit(param);
 				// 本体を通常のブロックとして再検査すると、許される関数宣言の重複も拒否してしまいます。

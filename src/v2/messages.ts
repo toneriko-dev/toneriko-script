@@ -12,6 +12,7 @@ export const runtimeMessages = {
 	CONST_ASSIGNMENT: entry("{name} は再代入できません。", "値を変える変数は let で宣言します。", "Cannot reassign {name}.", "Use let for a mutable binding."),
 	IMPLICIT_COERCION: entry("この演算では暗黙の型変換を使えません。", "数どうし、または文字列どうしで演算します。", "Implicit coercion is not supported for this operation.", "Use operands of the appropriate matching types."),
 	INVALID_STRING_CONVERSION: entry("この値は文字列に連結できません。", "JSON.stringify(x) または x ?? \"\" を使います。", "This value cannot be concatenated with a string.", "Use JSON.stringify(x) or x ?? \"\"."),
+	METHOD_NOT_AVAILABLE: entry("このメソッドはまだ使えません。", "対応するメソッドかホストの関数を使います。", "This method is not available yet.", "Use a supported method or a host function."),
 	NOT_CALLABLE: entry("この値は関数ではありません。", "呼び出す値を確認します。", "This value is not callable.", "Check the value being called."),
 	PROTOTYPE_METHOD_CALL: entry("原型のメソッドは使えません。", "k in obj か Object.hasOwn(obj, k) を使います。", "Prototype methods are not available.", "Use k in obj or Object.hasOwn(obj, k)."),
 	CALL_DEPTH_EXCEEDED: entry("関数呼び出しの深さが上限 {limit} を超えました。", "再帰の深さを減らします。", "The call depth limit of {limit} was exceeded.", "Reduce the recursion depth."),
@@ -37,9 +38,11 @@ export const runtimeMessages = {
 } as const;
 
 export const messages = {
+	STRICT_DELETE_IDENTIFIER: entry("strict mode では識別子を delete できません。", "オブジェクトのプロパティを delete します。", "An identifier cannot be deleted in strict mode.", "Delete an object property instead."),
+	STRICT_NON_SIMPLE_PARAMETERS: entry("既定値・分割代入・残り引数がある関数に \"use strict\" は書けません。", "この言語は常に strict mode なので、この指示文を省きます。", "A function with non-simple parameters cannot contain a use strict directive.", "Omit the directive; scripts already use strict mode."),
 	ARROW_OBJECT_BODY: entry("アロー関数の本体をオブジェクトとして返すには括弧が必要です。", "オブジェクトを返すなら x => ({ … }) と書きます。", "An object return needs parentheses.", "Use x => ({ … }) to return an object."),
 	DUPLICATE_DECLARATION: entry("同じ範囲で {name} が二重に宣言されています。", "名前を変えるか、別のブロックで宣言します。", "Duplicate declaration of {name}.", "Rename the binding or declare it in another block."),
-	TYPEOF_UNDEFINED_COMPARISON: entry("typeof の結果を \"undefined\" と比較できません。", "値が無いことは x == null、否定は x != null で比べます。", "Comparing typeof with \"undefined\" is not supported.", "Use x == null or x != null to test for missing values."),
+	TYPEOF_UNDEFINED_COMPARISON: entry("\"undefined\" との比較は使えません。", "値が無いことは x == null、否定は x != null で比べます。", "Comparison with \"undefined\" is not supported.", "Use x == null or x != null to test for missing values."),
 	...runtimeMessages,
 	UNEXPECTED_TOKEN: entry('予期しない構文です。', '前後の構文を確認します。', 'Unexpected syntax.', 'Check the surrounding syntax.'),
 	INVALID_NUMBER: entry('数の書き方が不正です。', 'JavaScript の数の書き方にします。', 'Invalid numeric literal.', 'Use JavaScript numeric literal syntax.'),

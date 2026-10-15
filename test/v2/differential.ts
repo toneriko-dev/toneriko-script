@@ -415,11 +415,23 @@ describe('v2 parser: TypeScript パーサーとの差分', () => {
 		let compared = 0;
 		const numRuns = 400;
 		fc.assert(fc.property(fc.array(generatedStatement, { minLength: 1, maxLength: 5 }), statements => {
-			// 各文の固定名の宣言が、文を組み合わせただけで重複しないようにします。
-			compare(statements.map(statement => `{ ${statement} }`).join('\n'));
+			// 文間の改行を残し、同じ範囲の宣言名だけを一意にする。
+			compare(statements.map((statement, index) => statement
+				.replace(/^const value\b/u, `const value_${index}`)
+				.replace(/^function f\(/u, `function f_${index}(`)).join('\n'));
 			compared++;
 		}), { numRuns, seed: 2042026 });
 		assert.ok(compared >= numRuns, `${compared} / ${numRuns}`);
+	});
+	test('変異検出: 改行の後の括弧を呼び出しとして解析する', () => {
+		let compared = 0;
+		fc.assert(fc.property(generatedExpression(2), generatedExpression(2), (callee, argument) => {
+			// 式を囲む括弧の内側では、改行後の括弧も同じ呼び出しに続く。
+			const source = `const value_0 = ((${callee})\n(${argument}));\nconst value_1 = 1\nf(value_1)`;
+			assert.doesNotThrow(() => compare(source));
+			compared++;
+		}), { numRuns: 200, seed: 2042040 });
+		assert.equal(compared, 200);
 	});
 	for (const [name, arbitrary, seeds] of [
 		['型注釈と束縛と関数', generatedBindingProgram, [2042027, 2042028]],

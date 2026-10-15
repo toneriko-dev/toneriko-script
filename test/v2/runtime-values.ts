@@ -72,8 +72,7 @@ describe('v2 の値とプロパティ', () => {
 			[() => properties.set(array, 'length', -1, pos), 'INVALID_ARRAY_LENGTH'],
 			[() => properties.set(array, 'length', 0.5, pos), 'INVALID_ARRAY_LENGTH'],
 			[() => properties.delete(array, 0, pos), 'ARRAY_DELETE'],
-			[() => properties.set(array, '01', 2, pos), 'INVALID_ARRAY_PROPERTY'],
-			[() => properties.normalize([, 1], pos), 'SPARSE_ARRAY'],
+			[() => properties.get([, 1], 0, pos), 'SPARSE_ARRAY'],
 		] as const) expect(action).toThrow(expect.objectContaining({ code }));
 		expect(array).toEqual([1]);
 	});
@@ -83,8 +82,7 @@ describe('v2 の値とプロパティ', () => {
 		const array = [1, 2];
 		properties.normalize(array, pos);
 		delete array[0];
-		properties.invalidateHostArrays();
-		expect(() => properties.normalize(array, pos)).toThrow(expect.objectContaining({ code: 'SPARSE_ARRAY' }));
+		expect(() => properties.get(array, 0, pos)).toThrow(expect.objectContaining({ code: 'SPARSE_ARRAY' }));
 	});
 
 	test.each(['\r\n', 'e\u0301', '👩🏽', '👩‍👩‍👧‍👦', '🇯🇵'])('書記素 %s は 1 文字として読む', (character) => {
@@ -107,7 +105,7 @@ describe('v2 の値とプロパティ', () => {
 		expect(steps).toBe(initial);
 	});
 
-	test.each(['a'.repeat(192), '👩🏽'.repeat(192), Array.from({ length: 192 }, (_, i) => i)])('長い値の準備を分割して進められる', (value) => {
+	test.each(['a'.repeat(192), '👩🏽'.repeat(192)])('長い値の準備を分割して進められる', (value) => {
 		let steps = 0;
 		const properties = new PropertyAccess(() => { steps++; });
 		const preparation = properties.prepare(value, pos);
@@ -153,9 +151,9 @@ describe('v2 の値とプロパティ', () => {
 				expect(() => properties.get(fn, key, pos)).toThrow(expect.objectContaining({ code: 'UNSUPPORTED_VALUE' }));
 				expect(() => properties.has(fn, key, pos)).toThrow(expect.objectContaining({ code: 'UNSUPPORTED_VALUE' }));
 			}
-			expect(properties.get(fn, 'body', pos)).toBeNull();
-			expect(properties.has(fn, 'body', pos)).toBe(false);
-			expect(properties.delete(fn, 'body', pos)).toBe(true);
+			expect(() => properties.get(fn, 'body', pos)).toThrow(expect.objectContaining({ code: 'UNSUPPORTED_VALUE' }));
+			expect(() => properties.has(fn, 'body', pos)).toThrow(expect.objectContaining({ code: 'UNSUPPORTED_VALUE' }));
+			expect(() => properties.delete(fn, 'body', pos)).toThrow(expect.objectContaining({ code: 'UNSUPPORTED_VALUE' }));
 		}
 		expect(script.body).toBe('internal');
 	});

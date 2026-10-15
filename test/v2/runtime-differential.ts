@@ -125,3 +125,169 @@ test('変異検出: 即時 Promise で時間をリセットしない', async () 
 	});
 	await assert.rejects(interpreter.exec(parse('for (let i = 0; i < 1000; i++) wait();').program), { code: 'BUSY_TIME_EXCEEDED' });
 });
+
+const structuralProfiles = ['ラベル付き入れ子ループ', '中央 default と fallthrough', 'finally の制御移動', 'ループの閉包', '複合代入', 'nullish と optional chain', '既定値と rest 分割代入', '関数の巻き上げ'] as const;
+type StructuralContext = { loops: string[]; inFunction: boolean };
+
+// 選択列から文と式を再帰的に組み立て、制御構造そのものを変化させます。
+function structuralProgram(choices: readonly number[], profile: number): string {
+	let offset = 0;
+	let identifier = 0;
+	const choose = (count: number): number => choices[offset++ % choices.length]! % count;
+	const pick = <T,>(items: readonly T[]): T => items[choose(items.length)]!;
+	const fresh = (prefix: string): string => `${prefix}${identifier++}`;
+	const variables = ['a', 'b', 'c'];
+	const number = (depth: number): string => {
+		if (depth === 0 || choose(4) === 0) return pick([String(choose(17) - 4), ...variables, 'arr[0]', 'arr.length', 'o.x', '(o.y ?? 2)']);
+		switch (choose(6)) {
+			case 0: return `(${number(depth - 1)} ${pick(['+', '-', '*', '%'])} ${number(depth - 1)})`;
+			case 1: return `(${boolean(depth - 1)} ? ${number(depth - 1)} : ${number(depth - 1)})`;
+			case 2: return `(${number(depth - 1)} ${pick(['&&', '||'])} ${number(depth - 1)})`;
+			case 3: return `g(${number(depth - 1)})`;
+			case 4: return `f1(${number(depth - 1)})`;
+			default: return `(-(${number(depth - 1)}))`;
+		}
+	};
+	const boolean = (depth: number): string => depth === 0 || choose(3) === 0
+		? `(${number(0)} ${pick(['<', '<=', '>', '>=', '===', '!=='])} ${number(0)})`
+		: choose(3) === 0 ? `!(${boolean(depth - 1)})` : `(${boolean(depth - 1)} ${pick(['&&', '||'])} ${boolean(depth - 1)})`;
+	const lhs = (): string => pick([...variables, 'o.x', 'o["x"]', 'arr[0]']);
+	const abrupt = (ctx: StructuralContext): string => {
+		const candidates = [`throw ${number(1)};`];
+		if (ctx.inFunction) candidates.push(`return ${number(1)};`);
+		if (ctx.loops.length) candidates.push(`break ${pick(ctx.loops)};`, `continue ${pick(ctx.loops)};`);
+		return pick(candidates);
+	};
+	const simple = (ctx: StructuralContext): string => {
+		switch (choose(7)) {
+			case 0: return `${lhs()} ${pick(['=', '+=', '-=', '*=', '%='])} ${number(3)};`;
+			case 1: return `out(${number(2)});`;
+			case 2: return `trace.push(${number(1)});`;
+			case 3: return `o.y ??= ${number(2)};`;
+			case 4: return `if (${boolean(1)}) { ${abrupt(ctx)} }`;
+			case 5: return `fs.push(() => ${number(1)});`;
+			default: return `${pick(variables)}++;`;
+		}
+	};
+	const block = (depth: number, ctx: StructuralContext): string => `{ ${statements(depth, ctx)} }`;
+	const statements = (depth: number, ctx: StructuralContext): string => Array.from({ length: 1 + choose(2) }, () => statement(depth, ctx)).join(' ');
+	const loop = (depth: number, ctx: StructuralContext, nested = false): string => {
+		const label = fresh('L');
+		const index = fresh('i');
+		const next = { ...ctx, loops: [...ctx.loops, label] };
+		const body = nested ? loop(depth - 1, next) : statements(Math.max(0, depth - 1), next);
+		const closure = `fs.push(() => ${index});`;
+		const limit = 1 + choose(3);
+		switch (choose(4)) {
+			case 0: return `${label}: for (let ${index} = 0; ${index} < ${limit}; ${index}++) { ${closure} ${body} }`;
+			case 1: return `${label}: for (const ${index} of [${number(0)}, ${number(0)}]) { ${closure} ${body} }`;
+			case 2: return `{ let ${index} = 0; ${label}: while (${index} < ${limit}) { ${index}++; ${closure} ${body} } }`;
+			default: return `{ let ${index} = 0; ${label}: do { ${index}++; ${closure} ${body} } while (${index} < ${limit}); }`;
+		}
+	};
+	const switchStatement = (depth: number, ctx: StructuralContext): string => `switch (${number(1)} % 3) {
+		case 0: ${statements(depth - 1, ctx)} ${choose(2) ? 'break;' : ''}
+		default: ${statements(depth - 1, ctx)}
+		case 1: ${statements(depth - 1, ctx)} ${choose(2) ? 'break;' : ''}
+		case 2: ${statements(depth - 1, ctx)}
+	}`;
+	const tryStatement = (depth: number, ctx: StructuralContext): string => {
+		const caught = fresh('caught');
+		return `try { ${statements(depth - 1, ctx)} ${choose(2) ? abrupt(ctx) : ''} }
+			${choose(2) ? `catch (${caught}) { out(${caught}); ${statements(depth - 1, ctx)} }` : ''}
+			finally { ${statements(depth - 1, ctx)} ${choose(2) ? abrupt(ctx) : ''} }`;
+	};
+	const patterns = (): string => {
+		const x = fresh('x'), y = fresh('y'), tail = fresh('tail'), rest = fresh('rest');
+		return `{ const [${x} = ${number(1)}, ...${tail}] = ${choose(2) ? '[]' : `[${number(1)}, ${number(1)}]`};
+			const {x: ${y} = ${number(1)}, ...${rest}} = ${choose(2) ? 'o' : '{z: 3}'};
+			out(${x}); out(${tail}); out(${y}); out(${rest}); }`;
+	};
+	const nullish = (): string => {
+		const value = fresh('optional');
+		return `{ let ${value} = ${choose(2) ? 'null' : '{x: 1}'}; o.y ??= ${number(2)};
+			out(${value}?.[mark("x")] ?? ${number(1)}); out(${value}?.x ?? ${number(1)}); }`;
+	};
+	const hoisted = (depth: number, ctx: StructuralContext): string => {
+		const fn = fresh('hoisted'), param = fresh('p'), rest = fresh('args');
+		return `{ out(${fn}(${number(1)})); function ${fn}(${param} = ${number(1)}, ...${rest}) {
+			${statements(depth - 1, { loops: [], inFunction: true })} return ${param} + ${rest}.length;
+		} ${choose(2) ? statement(depth - 1, ctx) : ''} }`;
+	};
+	const statement = (depth: number, ctx: StructuralContext): string => {
+		if (depth <= 0) return simple(ctx);
+		switch (choose(10)) {
+			case 0: return simple(ctx);
+			case 1: return `if (${boolean(2)}) ${block(depth - 1, ctx)} else ${block(depth - 1, ctx)}`;
+			case 2: return loop(depth, ctx);
+			case 3: return switchStatement(depth, ctx);
+			case 4: return tryStatement(depth, ctx);
+			case 5: return patterns();
+			case 6: return nullish();
+			case 7: return hoisted(depth, ctx);
+			case 8: { const label = fresh('block'); return `${label}: { ${statements(depth - 1, ctx)} if (${boolean(1)}) break ${label}; ${statements(depth - 1, ctx)} }`; }
+			default: return block(depth - 1, ctx);
+		}
+	};
+	const context = { loops: [], inFunction: true };
+	const required = (() => {
+		switch (profile) {
+			case 0: return loop(3, context, true);
+			case 1: return switchStatement(3, context);
+			case 2: return tryStatement(3, context);
+			case 3: return loop(3, context);
+			case 4: return `${lhs()} ${pick(['+=', '-=', '*=', '%='])} ${number(3)}; ${statement(3, context)}`;
+			case 5: return `${nullish()} ${statement(3, context)}`;
+			case 6: return `${patterns()} ${statement(3, context)}`;
+			default: return hoisted(3, context);
+		}
+	})();
+	return `let a = 1; let b = 2; let c = 3; const arr = [5, 6]; const o = {x: 1}; const trace = []; const fs = [];
+		function g(n) { return n % 7; }
+		function f1(p, q = p + 1) { return q; }
+		function mark(key) { trace.push(9); return key; }
+		function scenario() { reach(); ${required} ${statements(2, context)} return 0; }
+		try { out(scenario()); } catch (caught) { out(caught); }
+		out([a, b, c, o.x, o.y ?? 0, arr[0], trace.length]); out(trace); for (const fn of fs) out(fn());`;
+}
+
+const structuralChoices = fc.array(fc.integer({ min: 0, max: 65535 }), { minLength: 256, maxLength: 512 });
+test('構造を組み合わせた Node 差分: 8 群・本体到達と成功比較 3200 件', async () => {
+	const started = performance.now();
+	let reached = 0;
+	let compared = 0;
+	for (const [profile, name] of structuralProfiles.entries()) {
+		const cases = seeds.slice(0, 4).flatMap(seed => fc.sample(structuralChoices, { seed: seed + profile, numRuns: 100 })
+			.map((choices, index) => ({ seed: seed + profile, index, source: structuralProgram(choices, profile) })));
+		const child = spawnSync(nodeExecutable, ['--max-old-space-size=768', '--experimental-vm-modules', fileURLToPath(new URL('../../scripts/v2-reference.mjs', import.meta.url))], {
+			input: JSON.stringify(cases.map(item => item.source)), encoding: 'utf8', timeout: 30_000, maxBuffer: 32 * 1024 * 1024,
+		});
+		assert.equal(child.status, 0, `${name}: ${child.error ?? child.stderr}`);
+		const references = JSON.parse(child.stdout) as Result[];
+		assert.equal(references.length, 400);
+		let groupReached = 0;
+		let groupCompared = 0;
+		for (const [index, item] of cases.entries()) {
+			const context = `${name} seed=${item.seed} sample=${item.index}\n${item.source}`;
+			const reference = references[index]!;
+			assert.equal(reference.error, null, context);
+			assert.equal(reference.reached, 1, context);
+			const output: unknown[] = [];
+			let hits = 0;
+			const interpreter = new Interpreter({ out: (value: unknown) => { output.push(snapshot(value)); }, reach: () => { hits++; } }, { maxSteps: 1_000_000 });
+			try { await interpreter.exec(parse(item.source).program); }
+			catch (error) { assert.fail(`${context}\n${String(error)}`); }
+			assert.equal(hits, 1, context);
+			groupReached++;
+			assert.deepEqual(output, reference.output, context);
+			groupCompared++;
+		}
+		assert.equal(groupReached, 400, name);
+		assert.equal(groupCompared, 400, name);
+		reached += groupReached;
+		compared += groupCompared;
+	}
+	assert.ok(reached >= 3200, `構造の本体到達 ${reached}`);
+	assert.ok(compared >= 3200, `構造の成功比較 ${compared}`);
+	console.info(`v2 構造差分: 到達=${reached} 成功比較=${compared} 秒=${((performance.now() - started) / 1000).toFixed(2)}`);
+}, 60_000);

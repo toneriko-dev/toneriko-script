@@ -4,10 +4,12 @@ import { standardGlobals } from './stdlib/index.js';
 import { isStdFunction, STANDARD_FUNCTION, validateArguments, type StdContext } from './stdlib/core.js';
 import type * as A from './ast.js';
 import { defaultYieldToHost, macrotaskTick } from '../interpreter/host-yield.js';
-import { Environment, boundNames } from './runtime/environment.js';
+import { Environment, boundNames, type Binding } from './runtime/environment.js';
 import { ExecutionStopped, RuntimeError, runtimeError, scriptErrorDiagnostic, createScriptError } from './runtime/errors.js';
 import { PropertyAccess, SCRIPT_FUNCTION, isScriptFunction, valueTypeof, errorValue, scriptObject } from './runtime/values.js';
 import type { Value, ScriptFunction } from './runtime/values.js';
+import { TypePlan, projectType, restType, type PatternCheck } from './runtime/type-plan.js';
+import { checkValue, checkScalar, isComposite, type TypeCheck } from './runtime/type-checks.js';
 export { RuntimeError, ExecutionStopped } from './runtime/errors.js';
 export type { Value } from './runtime/values.js';
 
@@ -17,7 +19,47 @@ const promiseThen = Promise.prototype.then;
 class ScriptThrown {
 	constructor(readonly value: Value, readonly pos: A.Pos, readonly diagnostic?: RuntimeError) {}
 }
-type Completion = { kind: 'return' | 'break' | 'continue'; value: Value; label: string | null };
+const BINDING_TYPE = Symbol('binding type');
+type TypedBinding = Binding & { [BINDING_TYPE]?: TypeCheck };
+type SimpleParameter = { pattern: A.Identifier; check: TypeCheck | undefined };
+
+/** 型付きの周回は既知の束縛項目だけを写し、同じ複製関数を引き継ぐ。 */
+function typedIteration(this: Environment): Environment {
+	const next = new Environment(this.parent);
+	for (const [name, source] of this.bindings) {
+		const binding: TypedBinding = { initialized: source.initialized, mutable: source.mutable, value: source.value };
+		const check = (source as TypedBinding)[BINDING_TYPE];
+		if (check) binding[BINDING_TYPE] = check;
+		next.bindings.set(name, binding);
+	}
+	next.iteration = typedIteration;
+	return next;
+}
+/** 別の実行器と共有する AST から注釈を外し、深い構文木も反復で複製する。 */
+function detachAnnotations<T extends object>(root: T): T {
+	const result = (Array.isArray(root) ? [] : {}) as T;
+	const copies = new WeakMap<object, object>([[root, result]]);
+	const pending: [object, object][] = [[root, result]];
+	while (pending.length) {
+		const [source, target] = pending.pop()!;
+		for (const key of Object.keys(source)) {
+			if (key === 'typeAnnotation' || key === 'returnType') continue;
+			const value = (source as Record<string, unknown>)[key];
+			let copied = value;
+			if (value !== null && typeof value === 'object') {
+				copied = copies.get(value);
+				if (!copied) {
+					copied = Array.isArray(value) ? [] : {};
+					copies.set(value, copied as object);
+					pending.push([value, copied as object]);
+				}
+			}
+			(target as Record<string, unknown>)[key] = copied;
+		}
+	}
+	return result;
+}
+type Completion = { kind: 'return' | 'break' | 'continue'; value: Value; label: string | null; pos?: A.Pos };
 type Reference = { kind: 'binding'; name: string; env: Environment } | { kind: 'property'; object: Value; key: Value };
 type Ready = { ready: any };
 type Frame = Generator<Frame | Waiting | Ready, any, any>;
@@ -45,8 +87,8 @@ export type InterpreterOptions = ServiceOptions & {
 export class Interpreter {
 	public stepCount = 0;
 	public evaluationFrameCount = 0;
-	private readonly synchronousNodes = new WeakMap<A.Statement | A.Expression, Synchronous | null>();
-	private readonly synchronousCallbacks = new WeakMap<ScriptFunction, ((args: Value[], execution: Execution, pos: A.Pos) => Value) | null>();
+	private synchronousNodes = new WeakMap<A.Statement | A.Expression, Synchronous | null>();
+	private synchronousCallbacks = new WeakMap<ScriptFunction, ((args: Value[], execution: Execution, pos: A.Pos) => Value) | null>();
 	private readonly maxCallDepth: number;
 	private readonly global: Environment;
 	private readonly services: RuntimeServices;
@@ -63,6 +105,15 @@ export class Interpreter {
 	private idleTickPending = false;
 	private idle = true;
 	private active = 0;
+	private readonly typePlan = new TypePlan();
+	private readonly runtimePatterns = new WeakMap<Environment, WeakMap<A.Pattern | A.MemberExpression, PatternCheck>>();
+	private readonly functionReturns = new WeakMap<ScriptFunction, TypeCheck>();
+	private readonly simpleParameters = new WeakMap<ScriptFunction, SimpleParameter[] | null>();
+	private readonly detachedFunctions = new WeakMap<ScriptFunction, ScriptFunction>();
+	private checkedBinding: Binding | null = null;
+	private typeExecution: Execution | null = null;
+	private typesEnabled = false;
+	private preparedWithoutTypes = false;
 
 	constructor(globals: Record<string, unknown> = {}, private readonly options: InterpreterOptions = {}) {
 		this.services = new RuntimeServices(options, this.controller.signal, (fn, args, pos) => {
@@ -91,6 +142,7 @@ export class Interpreter {
 	}
 
 	async exec(program: A.Program): Promise<void> {
+		this.prepareProgram(program);
 		const execution = this.execution();
 		await this.run(this.sequence(program.body, this.global, execution, true), execution);
 	}
@@ -242,6 +294,404 @@ export class Interpreter {
 			message = '';
 		}
 		return new ScriptThrown(createScriptError(name, message), execution.pos);
+	}
+
+	/** 初回だけ構文木を走査し、注釈なしの実行経路には型判定を追加しない。 */
+	prepareProgram(program: A.Program): void {
+		if (!this.typePlan.prepare(program)) return;
+		if (!this.typePlan.hasTypes) { this.preparedWithoutTypes = true; return; }
+		this.synchronousNodes = new WeakMap();
+		this.synchronousCallbacks = new WeakMap();
+		if (this.typesEnabled) return;
+		this.typesEnabled = true;
+		if (this.preparedWithoutTypes) this.tick = this.tickTyped;
+		this.prepare = this.prepareTyped;
+		this.functionValue = this.functionValueTyped;
+		this.bind = this.bindTyped;
+		this.invoke = this.invokeTyped;
+		this.callback = this.callbackTyped;
+		this.synchronous = this.synchronousTyped;
+		this.evaluateSuspending = this.evaluateTyped;
+	}
+
+	private tickTyped(execution: Execution, pos: A.Pos): void {
+		this.typeExecution = execution;
+		execution.pos = pos;
+		if (this.stopped) throw this.stopped;
+		execution.steps++;
+		this.stepCount++;
+		if (this.options.maxSteps !== undefined && execution.steps > this.options.maxSteps) throw this.stop('STEP_LIMIT_EXCEEDED', pos);
+		if (++execution.clock % 64 === 0) this.checkTime(pos);
+	}
+
+	private *checkType(check: TypeCheck, value: Value, name: string, execution: Execution, pos: A.Pos): Frame {
+		for (const _ of checkValue(check, value, name, execution.properties, pos, () => this.tick(execution, pos))) yield this.checkpoint();
+		return null;
+	}
+
+	private installType(env: Environment, name: string, check: TypeCheck): void {
+		const binding = env.bindings.get(name) as TypedBinding | undefined;
+		if (!binding) return;
+		if (binding[BINDING_TYPE]) { binding[BINDING_TYPE] = check; return; }
+		// 列挙可能な印だけを型付き束縛へ付け、周回時の通常のコピーで型も引き継ぐ。
+		binding[BINDING_TYPE] = check;
+		let value = binding.value;
+		// 切替前から保持されている同期評価も、型付きの束縛への書込みだけは検査する。
+		env.iteration = typedIteration;
+		if (env === this.global && this.preparedWithoutTypes) Object.defineProperty(binding, 'value', {
+			enumerable: true, configurable: true,
+			get: () => value,
+			set: (next: Value) => {
+				if (this.checkedBinding !== binding) {
+					const execution = this.typeExecution!;
+					for (const _ of checkValue(binding[BINDING_TYPE]!, next, name, execution.properties, execution.pos, () => this.tick(execution, execution.pos))) { /* 既存の同期区間でも停止予算は共有する。 */ }
+				}
+				value = next;
+			},
+		});
+	}
+
+	private registerPattern(pattern: A.Pattern | A.MemberExpression, env: Environment, projection?: WeakMap<A.Pattern | A.MemberExpression, PatternCheck>): void {
+		const pending = [pattern];
+		while (pending.length) {
+			const part = pending.pop()!;
+			if (projection) {
+				const projected = projection.get(part);
+				if (projected) {
+					let plans = this.runtimePatterns.get(env);
+					if (!plans) { plans = new WeakMap(); this.runtimePatterns.set(env, plans); }
+					plans.set(part, projected);
+				}
+			}
+			if (part.type === 'Identifier') {
+				const plan = this.runtimePatterns.get(env)?.get(part) ?? this.typePlan.patterns.get(part);
+				if (plan) this.installType(env, part.name, plan.check);
+			} else if (part.type === 'AssignmentPattern') pending.push(part.left);
+			else if (part.type === 'RestElement') pending.push(part.argument);
+			else if (part.type === 'ArrayPattern') { for (const item of part.elements) if (item) pending.push(item); }
+			else if (part.type === 'ObjectPattern') { for (const property of part.properties) pending.push(property.type === 'RestElement' ? property.argument : property.value as A.Pattern); }
+		}
+	}
+
+	private writeChecked(env: Environment, name: string, value: Value, pos: A.Pos, initialize = false): void {
+		const binding = initialize ? env.bindings.get(name) : env.resolve(name);
+		const previous = this.checkedBinding;
+		this.checkedBinding = binding ?? null;
+		try { env.write(name, value, pos, initialize); }
+		finally { this.checkedBinding = previous; }
+	}
+
+	private checkBindingScalar(env: Environment, name: string, value: Value, execution: Execution, pos: A.Pos): Binding | undefined {
+		const binding = env.resolve(name);
+		const check = (binding as TypedBinding | undefined)?.[BINDING_TYPE];
+		if (check) {
+			if (isComposite(check)) {
+				// 別の exec が型を導入しても、保持済みの同期区間から検査を抜けない。
+				for (const _ of checkValue(check, value, name, execution.properties, pos, () => this.tick(execution, pos))) { /* 同期区間の停止予算を共有する。 */ }
+			} else { this.tick(execution, pos); checkScalar(check, value, name, pos); }
+		}
+		return binding;
+	}
+
+	private writeScalar(env: Environment, name: string, value: Value, execution: Execution, pos: A.Pos): void {
+		const binding = this.checkBindingScalar(env, name, value, execution, pos);
+		// 型検査後のエラー順序を Environment.write と揃え、束縛の再探索を避ける。
+		if (!binding) throw runtimeError('UNBOUND_IDENTIFIER', pos, { name }, 'ReferenceError');
+		if (!binding.initialized) throw runtimeError('TDZ_ACCESS', pos, { name }, 'ReferenceError');
+		if (!binding.mutable) throw runtimeError('CONST_ASSIGNMENT', pos, { name }, 'TypeError');
+		const previous = this.checkedBinding;
+		this.checkedBinding = binding;
+		try { binding.value = value; binding.initialized = true; }
+		finally { this.checkedBinding = previous; }
+	}
+
+	private prepareTyped(body: A.Statement[], env: Environment, execution: Execution): void {
+		Interpreter.prototype.prepare.call(this, body, env, execution);
+		for (const statement of body) {
+			const node = statement.type === 'ExportMetaDeclaration' ? statement.declaration : statement;
+			if (node.type === 'VariableDeclaration') for (const declaration of node.declarations) this.registerPattern(declaration.id, env);
+		}
+	}
+
+	private functionValueTyped(node: A.FunctionDeclaration | A.ArrowFunctionExpression, environment: Environment): ScriptFunction {
+		const fn = Interpreter.prototype.functionValue.call(this, node, environment);
+		const check = this.typePlan.returns.get(node);
+		if (check) this.functionReturns.set(fn, check);
+		this.simpleParameters.set(fn, node.params.every(pattern => pattern.type === 'Identifier')
+			? node.params.map(pattern => ({ pattern: pattern as A.Identifier, check: this.typePlan.patterns.get(pattern)?.check })) : null);
+		return fn;
+	}
+
+	private *bindTyped(pattern: A.Pattern | A.MemberExpression, value: Value, env: Environment, execution: Execution, initialize: boolean, reference?: Reference | null): Frame {
+		if (initialize) this.registerPattern(pattern, env);
+		const plan = this.runtimePatterns.get(env)?.get(pattern) ?? this.typePlan.patterns.get(pattern);
+		const pos = pattern.loc.start;
+		if (pattern.type === 'AssignmentPattern') {
+			this.tick(execution, pos);
+			reference = reference === undefined ? yield this.bindingReference(pattern, env, execution) : reference;
+			const assigned = value === null ? yield this.evaluate(pattern.right, env, execution) : value;
+			const projected = this.runtimePatterns.get(env)?.get(pattern.left) ?? this.typePlan.patterns.get(pattern.left);
+			if (value === null && projected && !projected.explicit) yield this.checkType(projected.check, assigned, pattern.left.type === 'Identifier' ? pattern.left.name : 'value', execution, pos);
+			if (reference) this.write(reference, assigned, execution, pos);
+			else yield this.bind(pattern.left, assigned, env, execution, initialize);
+			return null;
+		}
+		if (pattern.type === 'Identifier') {
+			this.tick(execution, pos);
+			const binding = initialize ? env.bindings.get(pattern.name) : env.resolve(pattern.name);
+			const check = (binding as TypedBinding | undefined)?.[BINDING_TYPE];
+			if (check && (!initialize || plan?.explicit)) {
+				if (isComposite(check)) yield this.checkType(check, value, pattern.name, execution, pos);
+				else { this.tick(execution, pos); checkScalar(check, value, pattern.name, pos); }
+			}
+			this.writeChecked(env, pattern.name, value, pos, initialize);
+			return null;
+		}
+		if (plan?.explicit) yield this.checkType(plan.check, value, 'value', execution, pos);
+		if (pattern.type === 'ObjectPattern' && plan) {
+			this.tick(execution, pos);
+			if (value === null) throw runtimeError('NULL_PROPERTY_ACCESS', pos, {}, 'TypeError');
+			yield this.prepared(value, execution, pos);
+			const excluded = new Set<string>();
+			for (const property of pattern.properties) {
+				if (property.type === 'RestElement') {
+					const target: Reference | null = yield this.bindingReference(property, env, execution);
+					const rest = scriptObject(Object.create(null));
+					const check = restType(plan.check, excluded);
+					if (initialize && check) this.registerPattern(property.argument, env, this.typePlan.project(property.argument, check));
+					for (const [key, item] of execution.properties.entriesIterator(value, pos)) {
+						if (!excluded.has(key)) rest[key] = item;
+						if (execution.clock >= 64) yield this.checkpoint();
+					}
+					yield this.bind(property.argument, rest, env, execution, initialize, target);
+				} else {
+					const key = property.computed ? yield this.evaluate(property.key as A.Expression, env, execution) : property.key.type === 'Identifier' ? property.key.name : (property.key as A.Literal).value;
+					const validated = execution.properties.key(key, property.loc.start);
+					excluded.add(validated);
+					const check = projectType(plan.check, validated);
+					if (initialize && check) this.registerPattern(property.value as A.Pattern, env, this.typePlan.project(property.value as A.Pattern, check));
+					const target: Reference | null = yield this.bindingReference(property.value as A.Pattern, env, execution);
+					yield this.bind(property.value as A.Pattern, execution.properties.get(value, validated, property.loc.start), env, execution, initialize, target);
+				}
+			}
+			return null;
+		}
+		return yield Interpreter.prototype.bind.call(this, pattern, value, env, execution, initialize, reference);
+	}
+
+	private detachedFunction(fn: ScriptFunction): ScriptFunction {
+		const cached = this.detachedFunctions.get(fn);
+		if (cached) return cached;
+		const nodes = detachAnnotations({ params: fn.params, body: fn.body });
+		const detached: ScriptFunction = { ...fn, ...nodes };
+		this.detachedFunctions.set(fn, detached);
+		this.detachedFunctions.set(detached, detached);
+		return detached;
+	}
+
+	private *invokeTyped(fn: Value, args: Value[], receiver: Value, execution: Execution, pos: A.Pos): Frame {
+		if (!isScriptFunction(fn)) return yield Interpreter.prototype.invoke.call(this, fn, args, receiver, execution, pos);
+		this.tick(execution, pos);
+		if (execution.callDepth >= this.maxCallDepth) throw runtimeError('CALL_DEPTH_EXCEEDED', pos, { limit: this.maxCallDepth }, 'RangeError');
+		execution.callDepth++;
+		try {
+			const simple = this.simpleParameters.get(fn);
+			const target = simple === undefined ? this.detachedFunction(fn) : fn;
+			const parameters = new Environment(target.environment as Environment);
+			if (simple) {
+				for (const { pattern, check } of simple) {
+					this.tick(execution, pattern.loc.start);
+					parameters.declare(pattern.name, true);
+					if (check) (parameters.bindings.get(pattern.name) as TypedBinding)[BINDING_TYPE] = check;
+				}
+				for (let i = 0; i < simple.length; i++) {
+					const { pattern, check } = simple[i]!;
+					const value = args[i] ?? null;
+					this.tick(execution, pattern.loc.start);
+					if (check) {
+						if (isComposite(check)) yield this.checkType(check, value, pattern.name, execution, pattern.loc.start);
+						else { this.tick(execution, pattern.loc.start); checkScalar(check, value, pattern.name, pattern.loc.start); }
+					}
+					parameters.write(pattern.name, value, pattern.loc.start, true);
+				}
+			} else {
+				for (const pattern of target.params) for (const name of boundNames(pattern)) { this.tick(execution, pattern.loc.start); parameters.declare(name, true); }
+				for (let i = 0; i < target.params.length; i++) {
+					const pattern = target.params[i]!;
+					yield this.bind(pattern, pattern.type === 'RestElement' ? scriptObject(args.slice(i)) : args[i] ?? null, parameters, execution, true);
+				}
+			}
+			let value: Value;
+			let returnedAt: A.Pos;
+			if (target.body.type !== 'BlockStatement') { value = yield this.evaluate(target.body, parameters, execution); returnedAt = target.body.loc.start; }
+			else {
+				const result: Completion | null = yield this.sequence(target.body.body, new Environment(parameters), execution);
+				value = result?.kind === 'return' ? result.value : null;
+				returnedAt = result?.pos ?? target.body.loc.end;
+			}
+			const check = this.functionReturns.get(target);
+			if (check) {
+				if (isComposite(check)) yield this.checkType(check, value, `${target.name ?? '<anonymous>'}()`, execution, returnedAt);
+				else { this.tick(execution, returnedAt); checkScalar(check, value, `${target.name ?? '<anonymous>'}()`, returnedAt); }
+			}
+			return value;
+		} finally { execution.callDepth--; }
+	}
+
+	private callbackTyped(fn: Value, args: Value[], receiver: Value, execution: Execution, pos: A.Pos): Frame | Ready {
+		if (!isScriptFunction(fn)) return Interpreter.prototype.callback.call(this, fn, args, receiver, execution, pos);
+		const returned = this.functionReturns.get(fn);
+		if (!returned && !this.simpleParameters.has(fn)) return Interpreter.prototype.callback.call(this, this.detachedFunction(fn), args, receiver, execution, pos);
+		const annotated = returned || fn.params.some(pattern => this.typePlan.patterns.has(pattern) || pattern.type === 'AssignmentPattern' && this.typePlan.patterns.has(pattern.left));
+		if (!annotated) return Interpreter.prototype.callback.call(this, fn, args, receiver, execution, pos);
+		if (!this.synchronousCallbacks.has(fn)) {
+			const checks = fn.params.map(pattern => this.typePlan.patterns.get(pattern)?.check);
+			const expression = fn.body.type !== 'BlockStatement' ? this.synchronous(fn.body) : null;
+			const statements = fn.body.type === 'BlockStatement' ? fn.body.body.map(node => this.synchronous(node)) : null;
+			const valid = fn.params.every(pattern => pattern.type === 'Identifier') && checks.every(check => !check || !isComposite(check)) && (!returned || !isComposite(returned)) && (expression !== null || statements !== null && statements.every(Boolean) && fn.body.type === 'BlockStatement' && fn.body.body.every(node => node.type !== 'VariableDeclaration' && node.type !== 'FunctionDeclaration'));
+			const cost = 1 + fn.params.length * 2 + checks.filter(Boolean).length + Number(!!returned) + (expression?.cost ?? statements?.reduce((sum, part) => sum + (part?.cost ?? 33), 0) ?? 33);
+			this.synchronousCallbacks.set(fn, valid && cost <= 32 ? (values, current, at) => {
+				this.tick(current, at);
+				if (current.callDepth >= this.maxCallDepth) throw runtimeError('CALL_DEPTH_EXCEEDED', at, { limit: this.maxCallDepth }, 'RangeError');
+				current.callDepth++;
+				try {
+					const parameters = new Environment(fn.environment as Environment);
+					for (const param of fn.params) { this.tick(current, param.loc.start); parameters.declare((param as A.Identifier).name, true); this.registerPattern(param, parameters); }
+					for (let i = 0; i < fn.params.length; i++) {
+						const param = fn.params[i] as A.Identifier;
+						const value = values[i] ?? null;
+						this.tick(current, param.loc.start);
+						if (checks[i]) { this.tick(current, param.loc.start); checkScalar(checks[i]!, value, param.name, param.loc.start); }
+						this.writeChecked(parameters, param.name, value, param.loc.start, true);
+					}
+					let value: Value = null;
+					let returnedAt = fn.body.loc.end;
+					if (expression) { value = expression.evaluate(parameters, current); returnedAt = fn.body.loc.start; }
+					else {
+						const body = new Environment(parameters);
+						for (const statement of statements!) {
+							const result = statement!.evaluate(body, current) as Completion | null;
+							if (result) { value = result.kind === 'return' ? result.value : null; returnedAt = result.pos ?? returnedAt; break; }
+						}
+					}
+					if (returned) { this.tick(current, returnedAt); checkScalar(returned, value, `${fn.name ?? '<anonymous>'}()`, returnedAt); }
+					return value;
+				} finally { current.callDepth--; }
+			} : null);
+		}
+		const synchronous = this.synchronousCallbacks.get(fn);
+		return synchronous ? { ready: synchronous(args, execution, pos) } : this.invoke(fn, args, receiver, execution, pos);
+	}
+
+	private synchronousTyped(node: A.Statement | A.Expression, depth = 0): Synchronous | null {
+		if (depth >= 32) return null;
+		if (this.synchronousNodes.has(node)) return this.synchronousNodes.get(node)!;
+		const pos = node.loc.start;
+		let cost = 1;
+		let body: Synchronous['evaluate'] | null = null;
+		if (node.type === 'ReturnStatement') {
+			const argument = node.argument ? this.synchronous(node.argument, depth + 1) : { cost: 0, evaluate: () => null };
+			if (!argument) { this.synchronousNodes.set(node, null); return null; }
+			cost += argument.cost;
+			body = (env, execution) => ({ kind: 'return', value: argument.evaluate(env, execution), label: null, pos: node.argument?.loc.start ?? pos } satisfies Completion);
+		} else if (node.type === 'VariableDeclaration') {
+			if (node.declarations.some(declaration => declaration.id.type !== 'Identifier' || this.typePlan.compositeNames.has(declaration.id.name))) { this.synchronousNodes.set(node, null); return null; }
+			const declarations = node.declarations.map(declaration => ({ id: declaration.id as A.Identifier, init: declaration.init, value: declaration.init ? this.synchronous(declaration.init, depth + 1) : { cost: 0, evaluate: () => null } }));
+			if (declarations.some(declaration => !declaration.value)) { this.synchronousNodes.set(node, null); return null; }
+			cost += declarations.reduce((sum, declaration) => sum + 2 + declaration.value!.cost, 0);
+			body = (env, execution) => {
+				for (const declaration of declarations) {
+					const value = declaration.value!.evaluate(env, execution);
+					this.tick(execution, declaration.id.loc.start);
+					if (declaration.init) this.checkBindingScalar(env, declaration.id.name, value, execution, declaration.id.loc.start);
+					this.writeChecked(env, declaration.id.name, value, declaration.id.loc.start, true);
+				}
+				return null;
+			};
+		} else if (node.type === 'AssignmentExpression' && node.left.type === 'Identifier') {
+			const target = node.left;
+			if (this.typePlan.compositeNames.has(target.name)) { this.synchronousNodes.set(node, null); return null; }
+			const right = this.synchronous(node.right, depth + 1);
+			if (!right) { this.synchronousNodes.set(node, null); return null; }
+			cost += 2 + right.cost;
+			body = (env, execution) => {
+				this.tick(execution, target.loc.start);
+				const previous = node.operator === '=' ? null : env.read(target.name, pos);
+				if (node.operator === '??=' && previous !== null) return previous;
+				const value = right.evaluate(env, execution);
+				const assigned = node.operator === '=' || node.operator === '??=' ? value : this.binary(node.operator.slice(0, -1) as A.BinaryExpression['operator'], previous, value, execution, pos);
+				this.writeScalar(env, target.name, assigned, execution, pos);
+				return assigned;
+			};
+		} else if (node.type === 'UpdateExpression' && node.argument.type === 'Identifier') {
+			const target = node.argument;
+			if (this.typePlan.compositeNames.has(target.name)) { this.synchronousNodes.set(node, null); return null; }
+			cost += 2;
+			body = (env, execution) => {
+				this.tick(execution, target.loc.start);
+				const value = env.read(target.name, pos);
+				if (typeof value !== 'number') throw runtimeError('IMPLICIT_COERCION', pos, {}, 'TypeError');
+				const next = value + (node.operator === '++' ? 1 : -1);
+				this.writeScalar(env, target.name, next, execution, pos);
+				return node.prefix ? next : value;
+			};
+		} else return Interpreter.prototype.synchronous.call(this, node, depth);
+		const result = cost <= 32 ? { cost, evaluate: (env: Environment, execution: Execution) => { this.tick(execution, pos); return body!(env, execution); } } : null;
+		this.synchronousNodes.set(node, result);
+		return result;
+	}
+
+	private *evaluateTyped(node: A.Statement | A.Expression, env: Environment, execution: Execution, labels: string[] = []): Frame {
+		const pos = node.loc.start;
+		if (node.type === 'ReturnStatement') {
+			this.tick(execution, pos);
+			return { kind: 'return', value: node.argument ? yield this.evaluate(node.argument, env, execution) : null, label: null, pos: node.argument?.loc.start ?? pos } satisfies Completion;
+		}
+		if (node.type === 'VariableDeclaration') {
+			this.tick(execution, pos);
+			for (const declaration of node.declarations) {
+				if (!declaration.init && declaration.id.type === 'Identifier') {
+					this.tick(execution, declaration.id.loc.start);
+					this.writeChecked(env, declaration.id.name, null, declaration.id.loc.start, true);
+				} else yield this.bind(declaration.id, declaration.init ? yield this.evaluate(declaration.init, env, execution) : null, env, execution, true);
+			}
+			return null;
+		}
+		if (node.type === 'UpdateExpression') {
+			this.tick(execution, pos);
+			const ref: Reference = yield this.reference(node.argument, env, execution);
+			const value = this.read(ref, execution, pos);
+			if (typeof value !== 'number') throw runtimeError('IMPLICIT_COERCION', pos, {}, 'TypeError');
+			const next = value + (node.operator === '++' ? 1 : -1);
+			if (ref.kind === 'binding') {
+				const check = (ref.env.resolve(ref.name) as TypedBinding | undefined)?.[BINDING_TYPE];
+				if (check) {
+					if (isComposite(check)) yield this.checkType(check, next, ref.name, execution, pos);
+					else { this.tick(execution, pos); checkScalar(check, next, ref.name, pos); }
+				}
+				this.writeChecked(ref.env, ref.name, next, pos);
+			} else this.write(ref, next, execution, pos);
+			return node.prefix ? next : value;
+		}
+		if (node.type === 'AssignmentExpression' && (node.left.type === 'Identifier' || node.left.type === 'MemberExpression')) {
+			this.tick(execution, pos);
+			const ref: Reference = yield this.reference(node.left, env, execution);
+			const previous = node.operator === '=' ? null : this.read(ref, execution, pos);
+			if (node.operator === '??=' && previous !== null) return previous;
+			const right = yield this.evaluate(node.right, env, execution);
+			const value = node.operator === '=' || node.operator === '??=' ? right : this.binary(node.operator.slice(0, -1) as A.BinaryExpression['operator'], previous, right, execution, pos);
+			if (ref.kind === 'binding') {
+				const binding = ref.env.resolve(ref.name);
+				const check = (binding as TypedBinding | undefined)?.[BINDING_TYPE];
+				if (check) {
+					if (isComposite(check)) yield this.checkType(check, value, ref.name, execution, pos);
+					else { this.tick(execution, pos); checkScalar(check, value, ref.name, pos); }
+				}
+				this.writeChecked(ref.env, ref.name, value, pos);
+			} else this.write(ref, value, execution, pos);
+			return value;
+		}
+		return yield Interpreter.prototype.evaluateSuspending.call(this, node, env, execution, labels);
 	}
 
 	private prepare(body: A.Statement[], env: Environment, execution: Execution): void {

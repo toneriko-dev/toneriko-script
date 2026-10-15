@@ -19,3 +19,11 @@ test('標準一覧とホスト定義は同じ公開型を使う', () => {
 	expect(entries.at(-1)).toEqual(JSON.parse(JSON.stringify(host)));
 	expect(entries.some(entry => 'kind' in entry && entry.kind === 'constant')).toBe(true);
 });
+
+
+test('実行時の型不一致も位置付きの日英文を持つ', async () => {
+	const { runtimeError } = await import('../../src/v2/runtime/errors.js');
+	const error = runtimeError('TYPE_ANNOTATION_MISMATCH', { line: 3, column: 5 }, { name: 'x', expected: 'number', actual: 'string', value: '\"text\"' }, 'TypeError');
+	expect(error.message).toContain('(3 行目、5 列目)');
+	expect(formatDiagnostic(error, 'en')).toContain('(line 3, column 5)');
+});

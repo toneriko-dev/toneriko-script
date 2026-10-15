@@ -7,7 +7,7 @@ export class RuntimeError extends Error {
 	constructor(readonly code: DiagnosticCode, readonly pos: Pos, readonly params: Record<string, string | number> = {}, name = 'TonerikoScriptRuntimeError') {
 		const text = messages[code].ja;
 		const replace = (s: string) => s.replace(/\{(\w+)\}/g, (_, key: string) => String(params[key] ?? key));
-		super(replace(text.message));
+		super(replace(text.message) + (code === 'TYPE_ANNOTATION_MISMATCH' ? ` (${pos.line} 行目、${pos.column} 列目)` : ''));
 		this.pos = { line: pos.line, column: pos.column };
 		this.name = name;
 		this.hint = replace(text.hint);

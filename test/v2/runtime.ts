@@ -64,7 +64,7 @@ const examples: [string, string, unknown[]][] = [
 	['辞書に原型はなく利用者の文字列で上書き可能', 'let o = {}; out([o.constructor, o.toString, "constructor" in o]); o.constructor = 4; o.toString = 5; out([o.constructor, o.toString, "constructor" in o]);', [[null, null, false], [4, 5, true]]],
 	['添字とメソッドの書記素', 'let s = "a\\r\\né👩🏽"; out([s.length, s[1], s[2], s.at(-1)]);', [[4, '\r\n', 'é', '👩🏽']]],
 	['配列の追加と切り詰め', 'let a = [1]; a[a.length] = 2; a.push(3); a.length = 1; out(a);', [[1]]],
-	['型注釈は実行時に検査しない', 'let a: number = "text"; function f(x: number): number { return x; } out([a, f(true)]);', [['text', true]]],
+	['型注釈に一致する値はそのまま実行する', 'let a: number = 3; function f(x: number): number { return x; } out([a, f(4)]);', [[3, 4]]],
 	['未宣言の typeof は文字列 undefined', 'out(typeof missing);', ['undefined']],
 	['値のない return と本体末尾', 'function f() { return; } function g() {} out([f(), g()]);', [[null, null]]],
 	['関数本体から既定引数で作った閉包の環境を隠す', 'let x = 2; function f(g = () => x) { let x = 9; return g(); } out(f());', [2]],

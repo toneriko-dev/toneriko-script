@@ -2,6 +2,7 @@ import type * as A from '../ast.js';
 import { syntaxError, TonerikoScriptSyntaxError, type Diagnostic, type DiagnosticCode } from '../diagnostics.js';
 import { Scanner, type Token } from './scanner.js';
 import { checkEarlyErrors } from './early-errors.js';
+import { recordTypeAnnotations } from '../type-metadata.js';
 
 // 括弧・配列・関数など、再帰下降で入れ子を読む構文だけを数えます。
 // 左結合の連鎖や else if の並びは反復で読み、この深さには含めません。
@@ -58,6 +59,7 @@ class Parser {
 	private parserDepth = 0;
 	private previous: Token | undefined;
 	private lexicalError: unknown;
+	private typeAnnotationCount = 0;
 	private functionDepth = 0;
 	private loopDepth = 0;
 	private switchDepth = 0;
@@ -70,8 +72,8 @@ class Parser {
 	private readonly failedTypeArguments = new Set<number>();
 	private readonly parenthesisEnds = new Map<number, number | null>();
 	private readonly arrowLookaheads = new Map<number, boolean>();
-	private readonly parameterLists = new Map<number, { params: A.Pattern[]; end: number } | { error: unknown }>();
-	private readonly arrows = new Map<number, { expression: A.ArrowFunctionExpression; end: number }>();
+	private readonly parameterLists = new Map<number, { params: A.Pattern[]; end: number; annotations: number } | { error: unknown }>();
+	private readonly arrows = new Map<number, { expression: A.ArrowFunctionExpression; end: number; annotations: number }>();
 
 	constructor(source: string) { this.scanner = new Scanner(source); }
 
@@ -141,6 +143,7 @@ class Parser {
 		const body: A.Statement[] = [];
 		while (this.peek().kind !== 'eof') body.push(this.statement(true));
 		const program: A.Program = { type: 'Program', sourceType: 'module', body, loc: { start: { line: 1, column: 1 }, end: this.peek().loc.end } };
+		recordTypeAnnotations(program, this.typeAnnotationCount > 0);
 		return program;
 	}
 
@@ -497,8 +500,10 @@ class Parser {
 				if ('error' in cached) throw cached.error;
 				this.index = cached.end;
 				this.previous = this.tokens[this.index - 1];
+				this.typeAnnotationCount += cached.annotations;
 				return cached.params;
 			}
+			const annotations = this.typeAnnotationCount;
 			try {
 				this.expect('(');
 				const params: A.Pattern[] = [];
@@ -513,7 +518,7 @@ class Parser {
 					if (!this.eat(',')) break;
 				}
 				this.expect(')');
-				this.parameterLists.set(start, { params, end: this.index });
+				this.parameterLists.set(start, { params, end: this.index, annotations: this.typeAnnotationCount - annotations });
 				return params;
 			} catch (error) {
 				this.parameterLists.set(start, { error });
@@ -550,6 +555,7 @@ class Parser {
 		} finally { this.parserDepth--; }
 	}
 	private checkedTypeAnnotation(returnPosition = false): A.TypeAnnotation {
+		this.typeAnnotationCount++;
 		const annotation = this.typeAnnotation();
 		const pending: { node: A.TypeAnnotation; returns: boolean }[] = [{ node: annotation, returns: returnPosition }];
 		// 括弧と合併だけが戻り値位置を引き継ぎ、配列要素とプロパティは値の型です。
@@ -814,7 +820,7 @@ class Parser {
 			const after = end - this.index + 1;
 			if (this.lookahead(after)?.raw === '=>') return true;
 			if (this.lookahead(after)?.raw !== ':' || !this.returnTypeAhead(after + 1)) return false;
-			const saved = { index: this.index, previous: this.previous, functionDepth: this.functionDepth, loopDepth: this.loopDepth, switchDepth: this.switchDepth, labels: new Map(this.labels) };
+			const saved = { index: this.index, previous: this.previous, functionDepth: this.functionDepth, loopDepth: this.loopDepth, switchDepth: this.switchDepth, labels: new Map(this.labels), annotations: this.typeAnnotationCount };
 			try {
 				if (allowReturnType) {
 					this.index += offset;
@@ -831,6 +837,8 @@ class Parser {
 			} finally {
 				this.index = saved.index; this.previous = saved.previous;
 				this.functionDepth = saved.functionDepth; this.loopDepth = saved.loopDepth; this.switchDepth = saved.switchDepth; this.labels = saved.labels;
+				// 試し読みの注釈は、キャッシュが実際に採用されたときだけ数えます。
+				this.typeAnnotationCount = saved.annotations;
 			}
 		} finally { this.parserDepth--; }
 	}
@@ -860,9 +868,11 @@ class Parser {
 				if (cached) {
 					this.index = cached.end;
 					this.previous = this.tokens[this.index - 1];
+					this.typeAnnotationCount += cached.annotations;
 					return { ...cached.expression };
 				}
 				const start = this.peek();
+				const annotations = this.typeAnnotationCount;
 				if (async) this.take();
 				const params = this.at('(') ? this.parameters() : [this.identifier()];
 				const returnType = this.eat(':') ? this.checkedTypeAnnotation(true) : undefined;
@@ -876,7 +886,7 @@ class Parser {
 				const body = this.at('{') ? this.functionBody() : this.expression(0, false, boundary, allowIn, false, allowReturnType);
 				const expression = this.node(start, { type: 'ArrowFunctionExpression', params, body, async, generator: false, expression: body.type !== 'BlockStatement', ...(returnType ? { returnType } : {}) });
 				// 試し読みした本体は再解析せず、外側の括弧の印が漏れないよう根だけ複製します。
-				this.arrows.set(key, { expression, end: this.index });
+				this.arrows.set(key, { expression, end: this.index, annotations: this.typeAnnotationCount - annotations });
 				return { ...expression };
 			} finally { this.syntaxDepth--; }
 		} finally { this.parserDepth--; }

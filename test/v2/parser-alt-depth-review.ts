@@ -4,7 +4,7 @@ import { parse } from '../../src/v2/parser/index.js';
 import { Interpreter } from '../../src/v2/interpreter.js';
 
 function altTyped(depth: number): string {
-	return 'const f = ' + 'c ? d : (p = '.repeat(depth) + '1' + '): number => p'.repeat(depth);
+	return 'const f = ' + 'c ? d : (p = '.repeat(depth) + '1' + '): number | Function => p'.repeat(depth);
 }
 
 test('条件式の偽の枝に置いた型付きアローの既定値は256段まで読み評価できる', async () => {

@@ -16,7 +16,7 @@ const forms: [string, (depth: number) => string][] = [
 	['配列の分割代入', n => 'let ' + '['.repeat(n) + 'x' + ']'.repeat(n) + ' = data'],
 	['オブジェクトの分割代入', n => 'let ' + '{x:'.repeat(n) + 'x' + '}'.repeat(n) + ' = objectData'],
 	['括弧付きの型注釈', n => 'let x: ' + '('.repeat(n) + 'number' + ')'.repeat(n) + ' = 1'],
-	['オブジェクトの型注釈', n => 'let x: ' + '{x:'.repeat(n) + 'number' + '}'.repeat(n) + ' = null'],
+	['オブジェクトの型注釈', n => 'let x: ' + '{x:'.repeat(n) + 'number' + '}'.repeat(n) + ' = ' + '{x:'.repeat(n) + '0' + '}'.repeat(n)],
 	['テンプレート補間', n => '`x${'.repeat(n) + '1' + '}`'.repeat(n)],
 	['呼び出し引数', n => 'identity('.repeat(n) + '1' + ')'.repeat(n)],
 	['計算するプロパティ', n => 'lookup['.repeat(n) + '0' + ']'.repeat(n)],

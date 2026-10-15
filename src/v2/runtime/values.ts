@@ -1,3 +1,4 @@
+import { isArrayIterator, nextArrayIterator } from '../stdlib/arrays.js';
 import { standardMethod } from '../stdlib/index.js';
 import { isStdFunction } from '../stdlib/core.js';
 import type * as AST from '../ast.js';
@@ -300,6 +301,9 @@ export class PropertyAccess {
 	}
 
 	*iterableIterator(value: unknown, pos: AST.Pos): Generator<Value, void> {
+		if (isArrayIterator(value)) {
+			while (true) { this.onStep(); const item = nextArrayIterator(value, this, pos); if (item.done) return; yield item.value; }
+		}
 		if (typeof value === 'string') {
 			const info = this.stringInfo(value);
 			for (let i = 0; i < info.length; i++) {

@@ -720,12 +720,12 @@ export class Interpreter {
 				if (declaration) this.prepare([declaration], rightScope, execution);
 				const source: Value = yield this.evaluate(node.right, rightScope, execution);
 				yield this.prepared(source, execution, pos);
-				const items = Array.isArray(source) ? source : yield this.spread(source, execution, pos);
-				for (let i = 0; i < items.length; i++) {
+				const items = properties.iterableIterator(source, pos);
+				for (const item of items) {
 					this.tick(execution, pos);
 					const scope = declaration ? new Environment(env) : env;
 					if (declaration) this.prepare([declaration], scope, execution);
-					yield this.bind(declaration ? declaration.declarations[0]!.id : node.left as A.Pattern | A.MemberExpression, properties.get(items, i, pos), scope, execution, !!declaration);
+					yield this.bind(declaration ? declaration.declarations[0]!.id : node.left as A.Pattern | A.MemberExpression, item, scope, execution, !!declaration);
 					const result: Completion | null = yield this.evaluate(node.body, scope, execution);
 					if (result) {
 						if (result.kind === 'break' && (result.label === null || labels.includes(result.label))) break;

@@ -377,9 +377,12 @@ const golden = [
 		"digest": "2775d974357ccbce06d689dfce477b733026c9f2aa906889c2a569737b548ee2"
 	}
 ];
+// 近似計算と非十進の文字列化は実行環境に従うため、別エンジンとの完全一致を要求しない。
+const nativeMath = new Set(['acos', 'acosh', 'asin', 'asinh', 'atan', 'atanh', 'cbrt', 'cos', 'cosh', 'exp', 'expm1', 'log', 'log1p', 'log2', 'log10', 'sin', 'sinh', 'tan', 'tanh', 'atan2', 'pow', 'hypot'].map(name => `Math.${name}`));
 describe('標準の数と変換', () => {
 	for (const definition of numberDefinitions.filter(item => !['Math.random', 'Math.randomInt', 'Math.seededRandom', 'Math.clamp'].includes(item.name))) {
-		test(`${definition.name}: Node と 500 件比較し全件の到達を検査`, async () => {
+		const sameRuntime = nativeMath.has(definition.name) || definition.name === 'toString';
+		test(`${definition.name}: ${sameRuntime ? '同じ実行環境のネイティブ' : 'Node'} と 500 件比較し全件の到達を検査`, async () => {
 			const cases: { args: Value[]; receiver: Value }[] = [];
 			for (const seed of [11, 29, 73, 151, 257]) {
 				const generated = fc.sample(fc.tuple(fc.integer({ min: -10000, max: 10000 }), fc.integer({ min: 2, max: 36 })), { seed, numRuns: 100 });
@@ -395,9 +398,15 @@ describe('標準の数と変換', () => {
 				}
 			}
 			const expression = definition.receiver === 'number' ? `row.receiver.${definition.name}(...row.args)` : `${definition.name}(...row.args)`;
-			const node = spawnSync(nodeExecutable, ['--input-type=module', '--eval', `const rows=JSON.parse(process.argv[1]);const pack=${pack.toString()};process.stdout.write(JSON.stringify(rows.map(row=>pack(${expression}))));`, JSON.stringify(cases)], { encoding: 'utf8' });
-			expect(node.status, node.stderr).toBe(0);
-			const expected = JSON.parse(node.stdout);
+			let expected: unknown[];
+			if (sameRuntime) {
+				const native = new Function('row', `return ${expression};`);
+				expected = cases.map(row => pack(native(row)));
+			} else {
+				const node = spawnSync(nodeExecutable, ['--input-type=module', '--eval', `const rows=JSON.parse(process.argv[1]);const pack=${pack.toString()};process.stdout.write(JSON.stringify(rows.map(row=>pack(${expression}))));`, JSON.stringify(cases)], { encoding: 'utf8' });
+				expect(node.status, node.stderr).toBe(0);
+				expected = JSON.parse(node.stdout);
+			}
 			let reached = 0; let completed = 0; let compared = 0;
 			const actual: unknown[] = [];
 			const source = `for (const row of inputs) { reached(); out(${expression}); }`;

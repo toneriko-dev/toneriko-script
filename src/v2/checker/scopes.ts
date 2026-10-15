@@ -1,4 +1,5 @@
 import type * as A from '../ast.js';
+import { projectBranch, combineProjections, type ProjectionAdapter, type ProjectionOperation } from '../type-projection.js';
 
 export type Binding = { mutable: boolean; annotation?: A.TypeAnnotation; global?: boolean };
 export class Scope {
@@ -19,23 +20,37 @@ export function propertyName(node: A.Identifier | A.Literal | A.Expression): str
 	return node.type === 'Identifier' ? node.name : node.type === 'Literal' ? String(node.value) : undefined;
 }
 
-export function project(annotation: A.TypeAnnotation | undefined, key: string, array = false): A.TypeAnnotation | undefined {
-	if (!annotation) return undefined;
-	if (annotation.type === 'ParenthesizedTypeAnnotation') return project(annotation.typeAnnotation, key, array);
-	if (annotation.type === 'UnionTypeAnnotation') {
-		const types = annotation.types.map(type => project(type, key, array));
-		return types.every((type): type is A.TypeAnnotation => !!type) ? { ...annotation, types } : undefined;
-	}
-	if (annotation.type === 'ArrayTypeAnnotation') {
-		if (array || /^(0|[1-9][0-9]*)$/.test(key) && Number(key) < 4294967295) return annotation.elementType;
-		return { type: 'KeywordTypeAnnotation', name: key === 'length' ? 'number' : 'any', loc: annotation.loc };
-	}
-	if (!array && annotation.type === 'ObjectTypeAnnotation') {
-		const property = annotation.properties.find(item => propertyName(item.key) === key);
+const projectionAdapter: ProjectionAdapter<A.TypeAnnotation> = {
+	kind: type => type.type === 'ArrayTypeAnnotation' ? 'array' : type.type === 'ObjectTypeAnnotation' ? 'object' : type.type === 'KeywordTypeAnnotation' ? type.name : type.type === 'FunctionTypeAnnotation' ? 'function' : 'union',
+	element: type => (type as A.ArrayTypeAnnotation).elementType,
+	keyword: (name, source) => ({ type: 'KeywordTypeAnnotation', name, loc: source.loc }),
+	array: (elementType, source) => ({ type: 'ArrayTypeAnnotation', elementType, loc: source.loc }),
+	property: (type, key) => {
+		if (type.type !== 'ObjectTypeAnnotation') return undefined;
+		const property = type.properties.find(item => propertyName(item.key) === key);
 		if (!property) return undefined;
 		return property.optional ? { type: 'UnionTypeAnnotation', loc: property.loc, types: [property.typeAnnotation, { type: 'KeywordTypeAnnotation', name: 'null', loc: property.loc }] } : property.typeAnnotation;
+	},
+	objectRest: (type, excluded) => type.type === 'ObjectTypeAnnotation' ? { ...type, properties: type.properties.filter(property => !excluded.has(propertyName(property.key)!)) } : undefined,
+};
+
+function projectAnnotation(annotation: A.TypeAnnotation | undefined, operation: ProjectionOperation): A.TypeAnnotation | undefined {
+	if (!annotation) return undefined;
+	if (annotation.type === 'ParenthesizedTypeAnnotation') return projectAnnotation(annotation.typeAnnotation, operation);
+	if (annotation.type === 'UnionTypeAnnotation') {
+		return combineProjections(annotation.types.map(type => projectAnnotation(type, operation)), projectionAdapter, types => ({ ...annotation, types }));
 	}
-	return annotation.type === 'KeywordTypeAnnotation' && annotation.name === 'any' ? annotation : undefined;
+	return projectBranch(annotation, operation, projectionAdapter);
+}
+
+export function project(annotation: A.TypeAnnotation | undefined, key: string, array = false, rest = false): A.TypeAnnotation | undefined {
+	return projectAnnotation(annotation, array ? { kind: 'array', rest } : { kind: 'property', key });
+}
+
+export function objectRest(annotation: A.TypeAnnotation | undefined, pattern: A.ObjectPattern): A.TypeAnnotation | undefined {
+	if (!annotation || pattern.properties.some(item => item.type === 'Property' && item.computed && item.key.type !== 'Literal')) return undefined;
+	const excluded = new Set(pattern.properties.flatMap(item => item.type === 'RestElement' ? [] : [propertyName(item.key)!]));
+	return projectAnnotation(annotation, { kind: 'objectRest', excluded });
 }
 
 export function bindPattern(scope: Scope, pattern: A.Pattern | A.MemberExpression, mutable: boolean, inherited?: A.TypeAnnotation): void {
@@ -46,21 +61,16 @@ export function bindPattern(scope: Scope, pattern: A.Pattern | A.MemberExpressio
 		case 'AssignmentPattern': bindPattern(scope, pattern.left, mutable, annotation); break;
 		case 'RestElement': bindPattern(scope, pattern.argument, mutable, annotation); break;
 		case 'ArrayPattern':
-			for (const [index, item] of pattern.elements.entries()) if (item) bindPattern(scope, item, mutable, item.type === 'RestElement' ? annotation : project(annotation, String(index), true));
+			for (const [index, item] of pattern.elements.entries()) if (item) bindPattern(scope, item, mutable, project(annotation, String(index), true, item.type === 'RestElement'));
 			break;
 		case 'ObjectPattern': {
 			if (!annotation) {
 				for (const item of pattern.properties) bindPattern(scope, item.type === 'RestElement' ? item : item.value as A.Pattern, mutable);
 				break;
 			}
-			const dynamic = pattern.properties.some(item => item.type === 'Property' && item.computed && item.key.type !== 'Literal');
-			const used = new Set(pattern.properties.filter(item => item.type === 'Property' && (!item.computed || item.key.type === 'Literal')).map(item => propertyName((item as A.Property).key)));
 			for (const item of pattern.properties) {
-				if (item.type === 'RestElement') {
-					let rest = annotation;
-					while (rest?.type === 'ParenthesizedTypeAnnotation') rest = rest.typeAnnotation;
-					bindPattern(scope, item, mutable, !dynamic && rest?.type === 'ObjectTypeAnnotation' ? { ...rest, properties: rest.properties.filter(property => !used.has(propertyName(property.key))) } : undefined);
-				} else bindPattern(scope, item.value as A.Pattern, mutable, !item.computed || item.key.type === 'Literal' ? project(annotation, propertyName(item.key)!) : undefined);
+				if (item.type === 'RestElement') bindPattern(scope, item, mutable, objectRest(annotation, pattern));
+				else bindPattern(scope, item.value as A.Pattern, mutable, !item.computed || item.key.type === 'Literal' ? project(annotation, propertyName(item.key)!) : undefined);
 			}
 			break;
 		}

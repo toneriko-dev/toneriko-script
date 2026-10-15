@@ -36,6 +36,34 @@ describe('実行前の明示型検査', () => {
 	]) test(`非検出: ${source}`, () => assert.deepEqual(codes(source, { globals: ['unknown'] }), []));
 });
 
+describe('分割束縛の合併型射影', () => {
+	for (const source of [
+		'let {a:[x,...r]}:{a?:number[]}={a:[1,"x"]};',
+		'let [[x,...r]]:(number[]|null)[]=[[1,"x"]];',
+		'let {a:[...r]}:{a:number[]|string}={a:["x"]};r=1;',
+		'let [a,...r]:number[]|null=[1];r="x";',
+		'let [a,...r]:string="abc";r="x";',
+		'let [a,...r]:string="abc";r=[1];',
+		'function f({a:[x,...r]}:{a?:number[]}){x="bad";}',
+		'function f({a:[x="bad",...r]}:{a?:number[]}){}',
+		'function f([x="bad",...r]:number[]|null){}',
+		'function f([x,...r]:number[]|boolean|number|Function|{}){r="bad";}',
+		'function f({a:{x}}:{a:{x:number}|null}){x="bad";}',
+		'function f({a:{x,...r}}:{a:{x:number,y:string}|null}){r={y:1};}',
+	]) test(`到達可能な枝の型を検査: ${source}`, () => assert.ok(codes(source).includes('TYPE_ANNOTATION_MISMATCH')));
+	for (const source of [
+		'let {a:[x,...r]}:{a?:number[]}={a:[1,2]};r=[3];',
+		'let [[x,...r]]:(number[]|null)[]=[[1,2]];r=[3];',
+		'let {a:[...r]}:{a:number[]|string}={a:["x"]};r=[1];r=["ok"];',
+		'let [a,...r]:number[]|null=[1];r=[2];',
+		'let [a,...r]:string="abc";a="x";r=["x"];',
+		'function f([x,...r]:number[]|boolean){x=1;r=[2];}',
+		'function f([x,...r]:any|number[]){x="ok";r=1;}',
+		'function f([x,...r]:number|boolean){x="ok";r=1;}',
+		'function f({a:{x,...r}}:{a:{x:number,y:string}|null}){r={y:"ok"};}',
+	]) test(`射影の正しい値を受理: ${source}`, () => assert.deepEqual(codes(source), []));
+});
+
 describe('const と名前解決', () => {
 	for (const source of [
 		'const x = 1; x = 2;', 'const x = 1; x += 1;', 'const x = 1; x++;',

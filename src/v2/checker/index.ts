@@ -4,7 +4,7 @@ import { diagnostic, type Diagnostic, type DiagnosticCode } from '../diagnostics
 import { catalog } from '../stdlib/index.js';
 import { boundNames } from '../runtime/environment.js';
 import { fallsThrough } from './control-flow.js';
-import { Scope, bindPattern, declare, propertyName, project } from './scopes.js';
+import { Scope, bindPattern, declare, propertyName, objectRest, project } from './scopes.js';
 
 export type CheckOptions = { globals?: readonly string[]; hostCatalog?: readonly CatalogEntry[] };
 type Segment = string | number;
@@ -208,9 +208,9 @@ export function check(program: A.Program, options: CheckOptions = {}): Diagnosti
 				expression(pattern.right, scope); bindingExpressions(pattern.left, scope, annotation); break;
 			}
 			case 'RestElement': bindingExpressions(pattern.argument, scope, annotation); break;
-			case 'ArrayPattern': for (const [index, item] of pattern.elements.entries()) if (item) bindingExpressions(item, scope, item.type === 'RestElement' ? annotation : project(annotation, String(index), true)); break;
+			case 'ArrayPattern': for (const [index, item] of pattern.elements.entries()) if (item) bindingExpressions(item, scope, project(annotation, String(index), true, item.type === 'RestElement')); break;
 			case 'ObjectPattern': for (const item of pattern.properties) {
-				if (item.type === 'RestElement') bindingExpressions(item.argument, scope);
+				if (item.type === 'RestElement') bindingExpressions(item.argument, scope, objectRest(annotation, pattern));
 				else { if (item.computed) expression(item.key as A.Expression, scope); bindingExpressions(item.value as A.Pattern, scope, annotation && (!item.computed || item.key.type === 'Literal') ? project(annotation, propertyName(item.key)!) : undefined); }
 			} break;
 			case 'MemberExpression': expression(pattern, scope); break;

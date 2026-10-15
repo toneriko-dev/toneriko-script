@@ -121,7 +121,7 @@ describe('実行時の型注釈', () => {
 			expect(diagnostics.map(item => item.params.name), source).toContain(runtime.params.name);
 			compared++;
 		}
-		expect(compared).toBe(28);
+		expect(compared).toBe(29);
 	});
 	for (const [name, source, expected] of accepted) test(name, async () => expect((await execute(source)).output).toEqual(expected));
 	for (const [name, source] of rejected) test(name, async () => await expect(execute(source)).rejects.toMatchObject({ code: 'TYPE_ANNOTATION_MISMATCH' }));

@@ -1,6 +1,7 @@
 import type * as A from '../ast.js';
 import { runtimeError } from './errors.js';
 import { isScriptFunction, valueTypeof, type Value, type PropertyAccess } from './values.js';
+import { projectBranch, combineProjections, type ProjectionAdapter, type ProjectionOperation } from '../type-projection.js';
 import { isStdFunction } from '../stdlib/core.js';
 
 export type TypePropertyCheck = { key: string; optional: boolean; check: TypeCheck };
@@ -9,7 +10,7 @@ export type TypeCheck =
 	| { kind: 'array'; element: TypeCheck }
 	| { kind: 'object'; properties: TypePropertyCheck[]; byKey: ReadonlyMap<string, TypePropertyCheck> }
 	| { kind: 'union'; types: TypeCheck[] }
-	| { kind: 'projection'; source: TypeCheck; operation: { kind: 'key'; key: string | null; rest: boolean } | { kind: 'rest'; excluded: ReadonlySet<string> }; resolved?: TypeCheck };
+	| { kind: 'projection'; source: TypeCheck; operation: { kind: 'key'; key: string | null; rest: boolean } | { kind: 'rest'; excluded: ReadonlySet<string> }; resolved?: TypeCheck | null };
 
 export function objectCheck(properties: TypePropertyCheck[]): TypeCheck {
 	return { kind: 'object', properties, byKey: new Map(properties.map(property => [property.key, property])) };
@@ -38,44 +39,50 @@ export function compileType(annotation: A.TypeAnnotation): TypeCheck {
 	return compiled.get(annotation)!;
 }
 
+const projectionAdapter: ProjectionAdapter<TypeCheck> = {
+	kind: type => type.kind,
+	element: type => (type as Extract<TypeCheck, {kind:'array'}>).element,
+	keyword: kind => ({kind}),
+	array: element => ({kind:'array',element}),
+	property: (type, key) => {
+		if (type.kind !== 'object') return undefined;
+		const property = type.byKey.get(key);
+		return property ? property.optional ? {kind:'union',types:[property.check,{kind:'null'}]} : property.check : undefined;
+	},
+	objectRest: () => undefined,
+};
+
 /** 投影の展開は検査時に限り、広い合併型や rest の作業も実行予算に含める。 */
-function* resolveType(check: TypeCheck, tick: () => boolean): Generator<void, TypeCheck> {
+function* resolveType(check: TypeCheck, tick: () => boolean): Generator<void, TypeCheck | undefined> {
 	if (check.kind !== 'projection') return check;
-	if (check.resolved) return check.resolved;
+	if (check.resolved !== undefined) return check.resolved ?? undefined;
 	if (tick()) yield;
 	const source = yield* resolveType(check.source, tick);
-	const operation = check.operation;
-	let result: TypeCheck;
+	if (!source) { check.resolved = null; return undefined; }
+	const operation: ProjectionOperation = check.operation.kind === 'rest'
+		? {kind:'objectRest',excluded:check.operation.excluded}
+		: check.operation.key === null ? {kind:'array',rest:check.operation.rest} : {kind:'property',key:check.operation.key};
+	let result: TypeCheck | undefined;
 	if (source.kind === 'union') {
-		const types: TypeCheck[] = [];
-		for (let i = 0; i < source.types.length; i++) {
-			const pause = tick();
-			types.push({ kind: 'projection', source: source.types[i]!, operation });
-			if (pause) yield;
+		const types: (TypeCheck | undefined)[] = [];
+		for (const part of source.types) {
+			if (tick()) yield;
+			types.push(yield* resolveType({kind:'projection',source:part,operation:check.operation},tick));
 		}
-		result = { kind: 'union', types };
-	} else if (operation.kind === 'key') {
-		if (source.kind === 'array') {
-			if (operation.rest) result = source;
-			else if (operation.key === null || /^(0|[1-9][0-9]*)$/.test(operation.key) && Number(operation.key) < 4294967295) result = source.element;
-			else result = { kind: operation.key === 'length' ? 'number' : 'any' };
+		result = combineProjections(types, projectionAdapter, types => ({kind:'union',types}));
+	} else {
+		let rest: TypeCheck | undefined;
+		if (operation.kind === 'objectRest' && source.kind === 'object') {
+			const properties: TypePropertyCheck[] = [];
+			for (const property of source.properties) {
+				if (!operation.excluded.has(property.key)) properties.push(property);
+				if (tick()) yield;
+			}
+			rest = objectCheck(properties);
 		}
-		else if (source.kind === 'object' && operation.key !== null) {
-			const property = source.byKey.get(operation.key);
-			result = property ? property.optional ? { kind: 'union', types: [property.check, { kind: 'null' }] } : property.check : { kind: 'any' };
-		} else result = { kind: 'any' };
-	} else if (source.kind === 'object') {
-		const properties: TypePropertyCheck[] = [];
-		const byKey = new Map<string, TypePropertyCheck>();
-		for (let i = 0; i < source.properties.length; i++) {
-			const pause = tick();
-			const property = source.properties[i]!;
-			if (!operation.excluded.has(property.key)) { properties.push(property); byKey.set(property.key, property); }
-			if (pause) yield;
-		}
-		result = { kind: 'object', properties, byKey };
-	} else result = { kind: 'any' };
-	check.resolved = result;
+		result = projectBranch(source, operation, {...projectionAdapter,objectRest:()=>rest});
+	}
+	check.resolved = result ?? null;
 	return result;
 }
 
@@ -83,7 +90,7 @@ function resolvedType(check: TypeCheck): TypeCheck {
 	const iterator = resolveType(check, () => false);
 	let result = iterator.next();
 	while (!result.done) result = iterator.next();
-	return result.value;
+	return result.value ?? {kind:'any'};
 }
 
 export function typeName(check: TypeCheck): string {
@@ -164,9 +171,51 @@ export function checkCopiedElement(check: TypeCheck, value: Value, name: string,
 	if (!matchesOuter(check, value)) fail({ name: diagnosticName(`${name}[${index}]`), check, value }, pos);
 }
 
+export type ArrayCopyCheck = {
+	root: TypeCheck;
+	value: Value;
+	candidates: Extract<TypeCheck, {kind:'array'}>[];
+	step: () => boolean;
+};
+
+/** 明示した配列合併は、取得する全要素を満たす候補だけを残す。 */
+export function* prepareArrayCopyCheck(check: TypeCheck, value: Value, name: string, pos: A.Pos, tick: () => void): Generator<void, ArrayCopyCheck> {
+	let steps = 0;
+	const step = () => { tick(); return ++steps % 64 === 0; };
+	step();
+	const candidates: Extract<TypeCheck, {kind:'array'}>[] = [];
+	const pending = [check];
+	while (pending.length) {
+		const part = pending.pop()!;
+		if (part !== check && step()) yield;
+		if (part.kind === 'union') { for (let i=part.types.length-1;i>=0;i--) pending.push(part.types[i]!); }
+		else if (part.kind === 'array') candidates.push(part);
+		else if (part.kind === 'any') candidates.push({kind:'array',element:part});
+	}
+	if (!candidates.length) fail({name,check,value},pos);
+	return {root:check,value,candidates,step};
+}
+
+export function* checkArrayCopyItem(state: ArrayCopyCheck, value: Value, name: string, index: number, pos: A.Pos, diagnosticName: (name: string) => string): Generator<void, void> {
+	if (state.step()) yield;
+	const remaining: Extract<TypeCheck, {kind:'array'}>[] = [];
+	for (let i=0;i<state.candidates.length;i++) {
+		if (i>0 && state.step()) yield;
+		const candidate = state.candidates[i]!;
+		if (yield* matchesShallow(candidate.element,value,state.step)) remaining.push(candidate);
+	}
+	if (!remaining.length) {
+		if (state.root.kind === 'array') fail({name:diagnosticName(`${name}[${index}]`),check:state.root.element,value},pos);
+		fail({name,check:state.root,value:state.value},pos);
+	}
+	state.candidates = remaining;
+}
+
 /** 合併の枝にも同じ予算を使い、要素の検査では入れ子の外形までに留める。 */
 function* matchesShallow(check: TypeCheck, value: Value, tick: () => boolean): Generator<void, boolean> {
-	check = yield* resolveType(check, tick);
+	const resolved = yield* resolveType(check, tick);
+	if (!resolved) return true;
+	check = resolved;
 	if (check.kind !== 'union') return matchesOuter(check, value);
 	for (const part of check.types) {
 		const pause = tick();
@@ -179,7 +228,9 @@ function* matchesShallow(check: TypeCheck, value: Value, tick: () => boolean): G
 
 /** 入れ子の要素は外形だけを調べ、合併型の枝を選ぶときには深さを減らさない。 */
 function* mismatch(check: TypeCheck, value: Value, name: string, properties: PropertyAccess, pos: A.Pos, tick: () => boolean): Generator<void, Mismatch | null> {
-	check = yield* resolveType(check, tick);
+	const resolved = yield* resolveType(check, tick);
+	if (!resolved) return null;
+	check = resolved;
 	if (check.kind === 'union') {
 		for (const part of check.types) {
 			const pause = tick();
@@ -218,6 +269,11 @@ function* mismatch(check: TypeCheck, value: Value, name: string, properties: Pro
 export function* checkValue(check: TypeCheck, value: Value, name: string, properties: PropertyAccess, pos: A.Pos, tick: () => void, diagnosticName?: (name: string) => string): Generator<void, void> {
 	let steps = 0;
 	const step = () => { tick(); return ++steps % 64 === 0; };
+	if (check.kind === 'projection') {
+		const projected = yield* resolveType(check, step);
+		if (!projected || projected.kind === 'any') return;
+		check = projected;
+	}
 	step();
 	const failure = yield* mismatch(check, value, name, properties, pos, step);
 	if (failure) {

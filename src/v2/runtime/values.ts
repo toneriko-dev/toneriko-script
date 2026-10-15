@@ -79,11 +79,6 @@ function hiddenErrorKey(value: object, key: string): boolean {
 	return isScriptErrorValue(value) ? key === 'stack' : hiddenErrorKeys.has(key);
 }
 
-/** エラーの標準情報以外は、列挙される自分のデータだけを公開する。 */
-function visibleErrorOwn(value: object, key: string, descriptor: PropertyDescriptor): boolean {
-	return isScriptErrorValue(value) || key === 'name' || key === 'message' || key === 'cause' || (descriptor.enumerable === true && 'value' in descriptor);
-}
-
 function registeredMethod(type: 'array' | 'string', key: string, pos: AST.Pos): BuiltinMethod | null {
 	const method = methods[type][key];
 	if (method) return method;
@@ -163,7 +158,6 @@ export class PropertyAccess {
 		if (error && hiddenErrorKey(value, key)) return null;
 		const own = Object.getOwnPropertyDescriptor(Object(value), key);
 		if (own) {
-			if (error && !visibleErrorOwn(value, key, own)) return null;
 			if ('value' in own) return this.normalize(own.value, pos);
 			throw runtimeError('ACCESSOR_PROPERTY', pos, { key }, 'TypeError');
 		}
@@ -226,7 +220,7 @@ export class PropertyAccess {
 			if (hiddenErrorKey(value, key)) return false;
 			if (isScriptErrorValue(value) && (key === 'name' || key === 'message')) return true;
 			const own = Object.getOwnPropertyDescriptor(value, key);
-			return own ? visibleErrorOwn(value, key, own) : inheritedErrorDescriptor(value, key) !== undefined;
+			return own !== undefined || inheritedErrorDescriptor(value, key) !== undefined;
 		}
 		return Object.hasOwn(value, key);
 	}
@@ -260,7 +254,7 @@ export class PropertyAccess {
 		const error = errorValue(value, pos);
 		for (const key of Object.keys(Object(value))) {
 			this.onStep();
-			if (error && (hiddenErrorKey(value, key) || !visibleErrorOwn(value, key, Object.getOwnPropertyDescriptor(value, key)!))) continue;
+			if (error && hiddenErrorKey(value, key)) continue;
 			this.key(key, pos);
 			yield [key, this.get(value, key, pos)];
 		}

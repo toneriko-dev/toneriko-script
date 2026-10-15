@@ -163,6 +163,7 @@ const rejected = [
 	['AISCRIPT_META', '### { name: "x" }'],
 
 	['UNEXPECTED_TOKEN', 'const = 1;'],
+	['NESTING_TOO_DEEP', '['.repeat(300) + ']'.repeat(300)],
 	['INVALID_NUMBER', 'const x = 1__0;'],
 	['INVALID_ESCAPE', 'const x = "\\uZZZZ";'],
 	['UNTERMINATED_STRING', 'const x = "text'],
@@ -479,7 +480,7 @@ function countNodes(value: unknown, type: string): number {
 
 describe('v2 parser: 入れ子の試し読みの上限', () => {
 	for (const context of ['代入', 'case'] as const) {
-		for (const depth of [20, 200]) {
+		for (const depth of [20, 100]) {
 			test(`${context} の型付きアロー ${depth} 段`, () => {
 				const source = nested(depth, body => `a ? (p): number => ${body} : y`);
 				const wrap = (body: string) => context === '代入' ? `x = ${body}` : `switch (k) { case ${body}: }`;
@@ -493,7 +494,7 @@ describe('v2 parser: 入れ子の試し読みの上限', () => {
 			});
 		}
 	}
-	for (const depth of [20, 200]) {
+	for (const depth of [20, 100]) {
 		test(`既定値の試し読みで最深部の型が使えない ${depth} 段`, () => {
 			const inner = '(q: Unknown): number => q';
 			let source = inner;

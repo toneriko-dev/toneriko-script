@@ -3,6 +3,12 @@ import { syntaxError, TonerikoScriptSyntaxError, type Diagnostic, type Diagnosti
 import { Scanner, type Token } from './scanner.js';
 import { checkEarlyErrors } from './early-errors.js';
 
+// 構文解析の再帰と、同期評価がたどる構文木の高さを同じ上限で制限します。
+// 256 は Chromium 153・Firefox 155・WebKit 26.6 で、19 種の構文を受理上限まで
+// 解析し、同期評価する式もスタックを溢れさせずに実行できる深さです。
+// 再現手順は scripts/v2-browser-depth.mjs にあります。
+const MAX_SYNTAX_DEPTH = 256;
+
 const assignments = new Set(['=', '+=', '-=', '*=', '/=', '%=', '**=', '??=']);
 const bitwise = new Set(['&', '|', '^', '~', '<<', '>>', '>>>', '&=', '|=', '^=', '<<=', '>>=', '>>>=']);
 const precedence: Record<string, number> = {
@@ -28,6 +34,8 @@ class Parser {
 	private readonly scanner: Scanner;
 	private readonly tokens: Token[] = [];
 	private index = 0;
+	private syntaxDepth = 0;
+	private readonly nodeDepths = new WeakMap<object, number>();
 	private previous: Token | undefined;
 	private lexicalError: unknown;
 	private functionDepth = 0;
@@ -68,8 +76,32 @@ class Parser {
 		if (!this.at(value)) this.fail('UNEXPECTED_TOKEN', this.peek(), { expected: value, actual: this.peek().raw });
 		return this.take();
 	}
+	private nested<T>(read: () => T): T {
+		if (this.syntaxDepth >= MAX_SYNTAX_DEPTH) this.fail('NESTING_TOO_DEEP');
+		this.syntaxDepth++;
+		try { return read(); }
+		finally { this.syntaxDepth--; }
+	}
+	private nodeDepth(node: A.NodeBase & { type: string }): number {
+		const cached = this.nodeDepths.get(node);
+		if (cached !== undefined) return cached;
+		let depth = 1;
+		for (const value of Object.values(node)) {
+			const children = Array.isArray(value) ? value : [value];
+			for (const child of children) {
+				if (child && typeof child === 'object' && 'type' in child && 'loc' in child) {
+					depth = Math.max(depth, this.nodeDepth(child) + 1);
+				}
+			}
+		}
+		if (depth > MAX_SYNTAX_DEPTH) this.fail('NESTING_TOO_DEEP', node);
+		this.nodeDepths.set(node, depth);
+		return depth;
+	}
 	private node<const T extends { type: string }>(start: A.NodeBase, fields: T): T & A.NodeBase {
-		return { ...fields, loc: { start: start.loc.start, end: this.previous?.loc.end ?? start.loc.end } };
+		const node = { ...fields, loc: { start: start.loc.start, end: this.previous?.loc.end ?? start.loc.end } };
+		this.nodeDepth(node);
+		return node;
 	}
 	private identifier(property = false): A.Identifier {
 		const t = this.peek();
@@ -92,10 +124,15 @@ class Parser {
 	program(): A.Program {
 		const body: A.Statement[] = [];
 		while (this.peek().kind !== 'eof') body.push(this.statement(true));
-		return { type: 'Program', sourceType: 'module', body, loc: { start: { line: 1, column: 1 }, end: this.peek().loc.end } };
+		const program: A.Program = { type: 'Program', sourceType: 'module', body, loc: { start: { line: 1, column: 1 }, end: this.peek().loc.end } };
+		this.nodeDepth(program);
+		return program;
 	}
 
 	private statement(topLevel = false, single = false): A.Statement {
+		return this.nested(() => this.statementBody(topLevel, single));
+	}
+	private statementBody(topLevel = false, single = false): A.Statement {
 		const t = this.peek();
 		const word = String(t.value);
 		if (this.eat(';')) return this.node(t, { type: 'EmptyStatement' });
@@ -324,6 +361,9 @@ class Parser {
 	}
 
 	private binding(defaultValue: boolean, parameter = false, allowRest = false, annotation: 'allow' | 'forbid' | 'rest' = 'allow'): A.Pattern {
+		return this.nested(() => this.bindingBody(defaultValue, parameter, allowRest, annotation));
+	}
+	private bindingBody(defaultValue: boolean, parameter = false, allowRest = false, annotation: 'allow' | 'forbid' | 'rest' = 'allow'): A.Pattern {
 		const start = this.peek();
 		let pattern: A.Pattern;
 		if (this.eat('...')) {
@@ -371,7 +411,11 @@ class Parser {
 			pattern.optional = true;
 		}
 		if (annotation === 'forbid' && this.at(':')) this.fail('UNEXPECTED_TOKEN');
-		if (annotation === 'allow' && this.eat(':')) pattern.typeAnnotation = this.typeAnnotation();
+		if (annotation === 'allow' && this.eat(':')) {
+			pattern.typeAnnotation = this.typeAnnotation();
+			this.nodeDepths.delete(pattern);
+			this.nodeDepth(pattern);
+		}
 		pattern.loc.end = this.previous!.loc.end;
 		if (defaultValue && this.eat('=')) {
 			if (pattern.type === 'RestElement' || ('optional' in pattern && pattern.optional)) this.fail('UNEXPECTED_TOKEN', start);
@@ -431,6 +475,9 @@ class Parser {
 		return this.node(start, { type: 'FunctionDeclaration', id, params, body, async, generator: false, ...(returnType ? { returnType } : {}) });
 	}
 	private typeAnnotation(): A.TypeAnnotation {
+		return this.nested(() => this.typeAnnotationBody());
+	}
+	private typeAnnotationBody(): A.TypeAnnotation {
 		const start = this.peek();
 		const leadingUnion = this.eat('|');
 		const types = [this.typeAtom()];
@@ -481,6 +528,9 @@ class Parser {
 	}
 
 	private expression(min = 0, mutation = false, boundary = false, allowIn = true, cover = false, allowReturnType = true): A.Expression {
+		return this.nested(() => this.expressionBody(min, mutation, boundary, allowIn, cover, allowReturnType));
+	}
+	private expressionBody(min = 0, mutation = false, boundary = false, allowIn = true, cover = false, allowReturnType = true): A.Expression {
 		const start = this.peek();
 		let left = this.unary(mutation, boundary, min === 0, allowReturnType);
 		while (true) {
@@ -539,7 +589,7 @@ class Parser {
 		const t = this.peek();
 		if (['!', '-', '+', 'typeof', 'delete', 'await'].includes(t.raw)) {
 			this.take();
-			const argument = this.unary(false, boundary, false, allowReturnType);
+			const argument = this.nested(() => this.unary(false, boundary, false, allowReturnType));
 			if (t.raw === 'delete' && argument.type === 'Identifier') this.fail('STRICT_DELETE_IDENTIFIER', argument);
 			if (argument.type === 'UpdateExpression') this.fail('UPDATE_IN_EXPRESSION', argument);
 			if (t.raw === 'await') return this.node(t, { type: 'AwaitExpression', argument });
@@ -550,7 +600,7 @@ class Parser {
 		if (this.at('++') || this.at('--')) {
 			if (!mutation) this.fail('UPDATE_IN_EXPRESSION');
 			this.take();
-			const argument = this.assignmentTarget(this.unary(false, boundary, false, allowReturnType), false);
+			const argument = this.assignmentTarget(this.nested(() => this.unary(false, boundary, false, allowReturnType)), false);
 			if (argument.type !== 'Identifier' && argument.type !== 'MemberExpression') this.fail('INVALID_ASSIGNMENT_TARGET', argument);
 			return this.node(t, { type: 'UpdateExpression', operator: t.raw as '++' | '--', prefix: true, argument });
 		}

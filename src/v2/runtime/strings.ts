@@ -9,14 +9,11 @@ export type GraphemeInfo = {
 };
 export type GraphemeCacheLimits = { maxEntries?: number; maxCharacters?: number };
 type Cached = { value: string; info: GraphemeInfo };
-type CharacterKind = { pictographic: boolean; regional: boolean; extend: boolean; consonant: boolean; linker: boolean; conjunctExtend: boolean };
 
 /** 長さが増える連結結果をハッシュせず、保持する文字数と件数を制限する。 */
 export class GraphemeCache {
 	private readonly recent: Cached[] = [];
 	private readonly lengths = new Map<number, Cached | Map<string, Cached>>();
-	private readonly kinds = new Map<string, CharacterKind>();
-	private readonly joins = new Map<string, boolean>();
 	private stringComparisons = 0;
 	private characters = 0;
 	private scanned = 0;
@@ -83,68 +80,19 @@ export class GraphemeCache {
 		return info;
 	}
 
-	private oneGrapheme(value: string): boolean {
-		const iterator = this.segmenter.segment(value)[Symbol.iterator]();
-		iterator.next();
-		return iterator.next().done === true;
-	}
-
-	private kind(character: string): CharacterKind {
-		const cached = this.kinds.get(character);
-		if (cached) return cached;
-		// 短い固定文脈で分類し、ホストの Unicode バージョンに境界規則を合わせる。
-		const kind = {
-			pictographic: /\p{Extended_Pictographic}/u.test(character),
-			regional: /\p{Regional_Indicator}/u.test(character),
-			extend: this.oneGrapheme('👨' + character + '\u200d👨'),
-			consonant: this.oneGrapheme(character + '्क'),
-			linker: this.oneGrapheme('क' + character + 'क'),
-			conjunctExtend: this.oneGrapheme('क्' + character + 'क'),
-		};
-		if (this.kinds.size >= 256) this.kinds.delete(this.kinds.keys().next().value!);
-		this.kinds.set(character, kind);
-		return kind;
-	}
-
-	private pairJoins(left: string, right: string): boolean {
-		const pair = left + right;
-		const cached = this.joins.get(pair);
-		if (cached !== undefined) return cached;
-		const joined = this.oneGrapheme(pair);
-		if (this.joins.size >= 1024) this.joins.delete(this.joins.keys().next().value!);
-		this.joins.set(pair, joined);
-		return joined;
-	}
-
 	private *split(value: string, pending = 0): Generator<void, string[]> {
 		const parts: string[] = [];
-		let start = 0;
-		let previous = '';
-		let regional = 0;
-		let pictographic = false;
-		let joinedPictographic = false;
-		let conjunct = 0;
 		this.segmented++;
-		for (let index = 0; index < value.length;) {
-			const character = String.fromCodePoint(value.codePointAt(index)!);
-			const kind = this.kind(character);
-			// 非局所の規則は RI の偶奇、絵文字の ZWJ、インド系結合の三つだけを保持する。
-			const joined = previous === '' || (kind.regional && regional > 0 ? regional % 2 === 1
-				: this.pairJoins(previous, character) || (joinedPictographic && kind.pictographic) || (conjunct === 2 && kind.consonant));
-			if (!joined) { parts.push(value.slice(start, index)); start = index; }
-			regional = kind.regional ? regional + 1 : 0;
-			joinedPictographic = character === '\u200d' && pictographic;
-			pictographic = kind.pictographic || (kind.extend && pictographic);
-			conjunct = kind.consonant ? 1 : kind.linker && conjunct > 0 ? 2 : kind.conjunctExtend ? conjunct : 0;
-			previous = character;
-			index += character.length;
-			// 一つの書記素が長くても、64 コード単位以内で中断地点を通る。
-			for (let unit = 0; unit < character.length; unit++) {
+		// Intl の反復は遅延するが、単一の書記素の内部では中断できない。
+		// Bun 1.4.3 では a + 結合文字 2^25 個の初回分割に約 257 ms を要する。
+		// 受け取った直後に全コード単位を計上し、ステップ・時間の上限を確認する。
+		for (const part of this.segmenter.segment(value)) {
+			parts.push(part.segment);
+			for (let unit = 0; unit < part.segment.length; unit++) {
 				this.onStep(); this.scanned++; pending++;
 				if (pending === 64) { pending = 0; yield; }
 			}
 		}
-		if (value.length > 0) parts.push(value.slice(start));
 		return parts;
 	}
 
@@ -238,7 +186,7 @@ export class GraphemeCache {
 			});
 		} else if (a && b && a.last.length + b.first.length <= 32) {
 			// RI の偶奇、先頭の結合文字と ZWJ、サロゲート対は右の後続にも境界を動かす。
-			// この場合と巨大な単一書記素は、次の読み取りで中断可能な全文分割を行う。
+			// この場合と巨大な単一書記素は、次の読み取りで全文を分割し直す。
 			const boundary = a.last + b.first;
 			if (/\p{Regional_Indicator}/u.test(boundary)
 				|| (b.length > 1 && /^[\p{Grapheme_Extend}\p{Spacing_Mark}\p{Emoji_Modifier}\u200d]/u.test(b.first))

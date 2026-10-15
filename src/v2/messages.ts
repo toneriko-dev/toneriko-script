@@ -38,6 +38,7 @@ export const runtimeMessages = {
 } as const;
 
 export const messages = {
+	NESTING_TOO_DEEP: entry('入れ子が深すぎます。', '括弧や式、ブロックの入れ子を減らします。', 'Syntax nesting is too deep.', 'Reduce the nesting of parentheses, expressions, or blocks.'),
 	STRICT_DELETE_IDENTIFIER: entry("strict mode では識別子を delete できません。", "オブジェクトのプロパティを delete します。", "An identifier cannot be deleted in strict mode.", "Delete an object property instead."),
 	STRICT_NON_SIMPLE_PARAMETERS: entry("既定値・分割代入・残り引数がある関数に \"use strict\" は書けません。", "この言語は常に strict mode なので、この指示文を省きます。", "A function with non-simple parameters cannot contain a use strict directive.", "Omit the directive; scripts already use strict mode."),
 	ARROW_OBJECT_BODY: entry("アロー関数の本体をオブジェクトとして返すには括弧が必要です。", "オブジェクトを返すなら x => ({ … }) と書きます。", "An object return needs parentheses.", "Use x => ({ … }) to return an object."),

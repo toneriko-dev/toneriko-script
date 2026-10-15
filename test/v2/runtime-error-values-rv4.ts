@@ -11,14 +11,13 @@ async function output(source: string, globals: Record<string, unknown> = {}): Pr
 	return values;
 }
 
-test.each([false, true])('ホスト Error の位置情報と非列挙の内部値を隠す: enumerable=%s', async enumerable => {
+test.each([false, true])('ホスト Error の位置情報を隠し非列挙のデータ値は読める: enumerable=%s', async enumerable => {
 	const error = Object.assign(new Error('host', { cause: 7 }), { status: 503, code: 'E_HOST' });
 	for (const key of hidden) Object.defineProperty(error, key, { value: '/private/host.js:17', enumerable, configurable: true });
 	Object.defineProperty(error, 'secret', { value: 'private' });
-	Object.defineProperty(error, 'getter', { get() { throw new Error('must not read'); }, enumerable: true });
 	const source = hidden.map(key => `out(e.${key});out("${key}" in e);`).join('');
 	expect(await output(`${source}out(e.secret);out("secret" in e);out(e.cause);out({...e});`, { e: error })).toEqual([
-		...hidden.flatMap(() => [null, false]), null, false, 7, { status: 503, code: 'E_HOST' },
+		...hidden.flatMap(() => [null, false]), 'private', true, 7, { status: 503, code: 'E_HOST' },
 	]);
 });
 

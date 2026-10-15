@@ -398,7 +398,8 @@ describe('v2 parser: TypeScript パーサーとの差分', () => {
 	for (const [index, source] of examples.entries()) {
 		test(`手書きの構文 ${index + 1}`, () => compare(source));
 	}
-	for (const depth of [20, 200]) {
+	// 一段に複数の節を持つ式も、構文木の高さが256以内の入力で比較します。
+	for (const depth of [20, 100]) {
 		for (const context of ['代入', 'case', '既定値', 'async', '不採用'] as const) {
 			test(`試し読み ${context} ${depth} 段の構文木`, () => {
 				let source = 'z';

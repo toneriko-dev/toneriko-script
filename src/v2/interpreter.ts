@@ -167,13 +167,8 @@ export class Interpreter {
 				let result: IteratorResult<Frame | Waiting | Ready, any>;
 				try { result = throwing ? frames.at(-1)!.throw(value) : frames.at(-1)!.next(value); }
 				catch (error) {
-					if (error instanceof ExecutionStopped) throw error;
-					// ホスト例外は ScriptThrown に包まれており、内部の例外だけを作り直す。
-					if (!(error instanceof RuntimeError) && !(error instanceof ScriptThrown) && errorValue(error, execution.pos)) {
-						const name = execution.properties.get(error, 'name', execution.pos);
-						const message = execution.properties.get(error, 'message', execution.pos);
-						error = new ScriptThrown(createScriptError(typeof name === 'string' ? name : 'Error', typeof message === 'string' ? message : ''), execution.pos);
-					}
+					if (this.stopped) throw this.stopped;
+					error = this.internalException(error, execution);
 					frames.pop(); value = error; throwing = true; continue;
 				}
 				throwing = false;
@@ -213,6 +208,29 @@ export class Interpreter {
 			this.active--;
 			if (this.active === 0) execution.properties.clear?.();
 		}
+	}
+
+	/** 付加情報の getter や Proxy が失敗しても、例外の伝播を中断しない。 */
+	private internalException(error: unknown, execution: Execution): unknown {
+		let defaultName = 'Error';
+		let name = defaultName;
+		let message = '';
+		try {
+			// ホスト由来の例外と診断は、呼び出し元で種類が確定している。
+			if (error instanceof RuntimeError || error instanceof ScriptThrown) return error;
+			if (!errorValue(error, execution.pos)) return error;
+			for (const type of [EvalError, RangeError, ReferenceError, SyntaxError, TypeError, URIError, AggregateError]) {
+				if (error instanceof type) { defaultName = type.name; break; }
+			}
+			const candidateName = execution.properties.get(error, 'name', execution.pos);
+			const candidateMessage = execution.properties.get(error, 'message', execution.pos);
+			name = typeof candidateName === 'string' ? candidateName : defaultName;
+			message = typeof candidateMessage === 'string' ? candidateMessage : '';
+		} catch {
+			name = defaultName;
+			message = '';
+		}
+		return new ScriptThrown(createScriptError(name, message), execution.pos);
 	}
 
 	private prepare(body: A.Statement[], env: Environment, execution: Execution): void {
@@ -468,7 +486,9 @@ export class Interpreter {
 		try { result = hostBodies.has(fn) ? hostBodies.get(fn)!(args, context) : Reflect.apply(fn, receiver, args); }
 		catch (error) { hostException(error); }
 		this.checkTime(pos);
-		const pending = this.promiseResult(result);
+		let pending: Promise<{ value: unknown }> | null = null;
+		try { pending = this.promiseResult(result); }
+		catch (error) { hostException(error); }
 		if (pending) {
 			try { result = (yield { wait: pending, pos }).value; }
 			catch (error) { hostException(error); }

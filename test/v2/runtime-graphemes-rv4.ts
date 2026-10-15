@@ -7,12 +7,12 @@ const segmenter = new Intl.Segmenter(undefined, { granularity: 'grapheme' });
 const partsOf = (value: string): string[] => [...segmenter.segment(value)].map(part => part.segment);
 
 describe('巨大な書記素と同じ長さのキャッシュ', () => {
-	test('巨大な一書記素もコード単位で数え、短い文脈だけを Intl に渡す', () => {
+	test('巨大な一書記素もコード単位で数え、Intl を一度だけ走査する', () => {
 		const value = 'a' + '\u0301'.repeat(262_144);
 		const original = Intl.Segmenter.prototype.segment;
-		let longest = 0;
+		let calls = 0;
 		const spy = vi.spyOn(Intl.Segmenter.prototype, 'segment').mockImplementation(function (this: Intl.Segmenter, input: string) {
-			longest = Math.max(longest, input.length);
+			calls++;
 			return original.call(this, input);
 		});
 		try {
@@ -27,8 +27,20 @@ describe('巨大な書記素と同じ長さのキャッシュ', () => {
 			expect(steps - previous).toBeLessThanOrEqual(64);
 			expect(steps).toBeGreaterThanOrEqual(value.length);
 			expect(pauses).toBeGreaterThanOrEqual(Math.floor(value.length / 64));
-			expect(longest).toBeLessThanOrEqual(8);
+			expect(calls).toBe(1);
 			expect(cache.graphemes(value)).toEqual([value]);
+		} finally { spy.mockRestore(); }
+	});
+
+	test('未登録の漢字とかなが続いても Intl の呼び出しは全文につき一度だけ', () => {
+		const value = Array.from({ length: 2000 }, (_, i) => String.fromCharCode(0x4e00 + i) + String.fromCharCode(0x3041 + i % 80)).join('');
+		const spy = vi.spyOn(Intl.Segmenter.prototype, 'segment');
+		try {
+			let steps = 0;
+			const cache = new GraphemeCache(() => steps++);
+			expect(cache.info(value).length).toBeGreaterThan(2000);
+			expect(spy).toHaveBeenCalledTimes(1);
+			expect(steps).toBe(value.length + 1);
 		} finally { spy.mockRestore(); }
 	});
 
@@ -70,7 +82,7 @@ describe('巨大な書記素と同じ長さのキャッシュ', () => {
 		expect(cache.stats.scannedCharacters).toBe(scanned);
 	});
 
-	test('有限状態の分割が広い文字集合と小さいキャッシュで Intl と一致する', () => {
+	test('分割が広い文字集合と小さいキャッシュで Intl と一致する', () => {
 		const alphabet = ['a', '\r', '\n', '\u0001', 'क', '्', '़', 'ष', 'ा', 'ः', 'ᄀ', 'ᅡ', 'ᆨ', '가', '각',
 			'؀', 'ൎ', 'ำ', 'ຳ', 'ก', '©', '❤', '️', '🏽', '\u200d', '\u{e0067}', '\u{e007f}', '🏴', '🇯', '🇵',
 			'́', '\ud83d', '\ude00', '👍', '👨', '👩', 'é', 'א', 'م', 'ٰ', '\u200c', 'ক', '্', 'क्\u0301\u200d'];

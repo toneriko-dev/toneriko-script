@@ -105,14 +105,14 @@ describe('v2 の公開プロパティ境界の回帰', () => {
 	});
 });
 
-test('ホスト Error の非列挙 then getter は Promise 判定でも明示的な読みでも呼ばない', async () => {
+test('ホスト Error の then getter は Promise 判定で読まず明示的な読みを拒否する', async () => {
 	let calls = 0;
 	const error = new Error('host');
 	Object.defineProperty(error, 'then', { get: () => { calls++; return null; } });
 	const output: unknown[] = [];
-	await new Interpreter({ getError: () => error, out: (x: unknown) => { output.push(x); } }).exec(parse('out(getError().message); out(getError().then);').program);
+	await expect(new Interpreter({ getError: () => error, out: (x: unknown) => { output.push(x); } }).exec(parse('out(getError().message); out(getError().then);').program)).rejects.toMatchObject({ code: 'ACCESSOR_PROPERTY' });
 	expect(calls).toBe(0);
-	expect(output).toEqual(['host', null]);
+	expect(output).toEqual(['host']);
 });
 
 test.each(['throw e;', 'fail();'])('エラーの報告でも name の getter を呼ばず元の値を付ける: %s', async source => {

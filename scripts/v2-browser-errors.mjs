@@ -67,7 +67,7 @@ function decoratedBoom() {
 				const metadata = item.output[hiddenKeys.length];
 				const expectedName = item.name === 'host' ? 'SyntaxError' : item.name === 'runtime' ? 'TypeError' : 'Error';
 				if (metadata.name !== expectedName) failures.push({ case: item.name, metadata });
-				if (item.name === 'decoratedHost' && (metadata.code !== 'APP_ERROR' || metadata.status !== 409 || metadata.privateDetail !== null)) failures.push({ case: item.name, metadata });
+				if (item.name === 'decoratedHost' && (metadata.code !== 'APP_ERROR' || metadata.status !== 409 || metadata.privateDetail !== 'private')) failures.push({ case: item.name, metadata });
 			}
 			results.push({ browser: name, version: browser.version(), passed: failures.length === 0, cases: observed.cases.length,
 				hiddenKeysPerCase: hiddenKeys.length, operationsPerKey: ['read', 'in', 'spread'],

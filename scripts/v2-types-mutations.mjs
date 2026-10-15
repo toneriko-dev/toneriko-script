@@ -1,0 +1,107 @@
+import assert from 'node:assert/strict';
+import { readFileSync,writeFileSync,mkdtempSync } from 'node:fs';
+import { join } from 'node:path';
+import { spawnSync } from 'node:child_process';
+
+const runtime='src/v2/interpreter.ts', types='src/v2/runtime/type-checks.ts', plan='src/v2/runtime/type-plan.ts', checker='src/v2/checker/index.ts', parser='src/v2/parser/index.ts';
+const runtimeTest='test/v2/runtime-types.ts', checkerTest='test/v2/checker.ts', parserTest='test/v2/parser.ts';
+const mutations=[
+	['initial',runtime,'if (declaration.init) this.checkBindingScalar(env, declaration.id.name, value, execution, declaration.id.loc.start);','void declaration.init;',runtimeTest,'初期値'],
+	['assignment',runtime,'this.writeScalar(env, target.name, assigned, execution, pos);','this.writeChecked(env, target.name, assigned, pos);',runtimeTest,'単純代入'],
+	['argument',runtime,'checkScalar(check, value, pattern.name, pattern.loc.start);','void check;',runtimeTest,'引数'],
+	['return',runtime,'checkScalar(check, value, `${target.name ?? \'<anonymous>\'}()`, returnedAt);','void check;',runtimeTest,'戻り値'],
+	['default-before-value',runtime,'if (value === null && projected && !projected.explicit) yield this.checkType(projected.check, assigned,','if (value === null && projected && !projected.explicit) yield this.checkType(projected.check, value,',runtimeTest,'分割既定値の検査'],
+	['callback-argument',runtime,'if (checks[i]) { this.tick(current, param.loc.start); checkScalar(checks[i]!, value, param.name, param.loc.start); }','if (checks[i]) { this.tick(current, param.loc.start); }',runtimeTest,'callbackの引数'],
+	['callback-return',runtime,'if (returned) { this.tick(current, returnedAt); checkScalar(returned, value, `${fn.name ?? \'<anonymous>\'}()`, returnedAt); }','if (returned) { this.tick(current, returnedAt); }',runtimeTest,'callbackの戻り値'],
+	['union-and',types,'if (failure === null) return null;\n\t\t}\n\t\treturn { name, check, value };','if (failure !== null) return failure;\n\t\t}\n\t\treturn null;',runtimeTest,'原始型と合併型'],
+	['array-depth-zero',types,'if (!matched) return { name: `${name}[${i}]`','if (Boolean(0) && !matched) return { name: `${name}[${i}]`',runtimeTest,'配列要素'],
+	['array-depth-recursive',types,"const matched = check.element.kind === 'union' || check.element.kind === 'projection' ? yield* matchesShallow(check.element, item, tick) : matchesOuter(check.element, item);",'const matched = (yield* mismatch(check.element, item, name, properties, pos, tick)) === null;',runtimeTest,'配列は直下まで'],
+	['required-property',types,'if (!property.optional) return','if (property.optional) return',runtimeTest,'必須プロパティ欠如'],
+	['optional-null',types,'if (!matched) return { name: `${name}.${property.key}`','if (item !== null && !matched) return { name: `${name}.${property.key}`',runtimeTest,'optionalの明示null'],
+	['projection',types,'const property = source.byKey.get(operation.key);','const property = source.byKey.get(operation.key + "__missing");',runtimeTest,'分割後の再代入'],
+	['optional-argument',plan,"const nullable = (check: TypeCheck): TypeCheck => ({ kind: 'union', types: [check, { kind: 'null' }] });","const nullable = (check: TypeCheck): TypeCheck => ({ kind: 'union', types: [check, { kind: 'number' }] });",runtimeTest,'optional引数はnullも受け入れる'],
+	['literal-check',checker,'type && literalMatch(type, value) === false','type && literalMatch(type, value) === true',checkerTest,'不一致: let x: number = "bad";'],
+	['const-write',checker,"if (binding && !binding.mutable) emit('CONST_ASSIGNMENT'","if (binding && binding.mutable) emit('CONST_ASSIGNMENT'",checkerTest,'再代入: const x = 1; x = 2;'],
+	['undeclared-suggestion',checker,'if (candidates[0]) emit(','if (candidates[0] && Boolean(0)) emit(',checkerTest,'未宣言と近い名前'],
+	['arity-maximum',checker,"if (count < minimum || count > maximum) emit('ARGUMENT_COUNT'","if (count < minimum || count > maximum + 1) emit('ARGUMENT_COUNT'",checkerTest,'引数不足・過剰: range(1, 2, 3, 4);'],
+	['arity-optional',checker,'definition.args.filter(arg => !arg.optional && !arg.rest).length','definition.args.filter(arg => !arg.rest).length',checkerTest,'確定できない呼出しは断定しない: range(1, 2);'],
+	['unknown-spread',checker,'count += arg.argument.elements.length;\n\t\t\telse return;','count += arg.argument.elements.length;\n\t\t\telse count += 0;',checkerTest,'確定できない呼出しは断定しない: range(...unknown);'],
+	['fallthrough-warning',checker,"emit('CASE_FALLTHROUGH', item, {}, 'warning')","emit('CASE_FALLTHROUGH', item, {}, 'error')",checkerTest,'複数診断の位置・順序・日英・警告'],
+	['fallthrough-break', 'src/v2/checker/control-flow.ts',"case 'BreakStatement': return new Set([`break:${node.label?.name ?? ''}`]);","case 'BreakStatement': return new Set(['normal']);",checkerTest,'次へ進まない: break;'],
+	['void-position',parser,"if (node.name === 'void' && !returns) this.fail('VOID_TYPE_POSITION', node)","if (node.name === 'void' && returns) this.fail('VOID_TYPE_POSITION', node)",parserTest,'void の値位置を拒否: let x: void;'],
+	['arrow-return-parentheses',parser,"if (this.at('=>') && typeAnnotation.type === 'ObjectTypeAnnotation') this.fail('PARENTHESIZED_ARROW_RETURN_TYPE', start);","if (this.at('=>') && typeAnnotation.type === 'ObjectTypeAnnotation') void start;",parserTest,'括弧ひとつのオブジェクト戻り値型を拒否'],
+	['metadata-skip-typed',plan,'if (parsedTypeAnnotations(program) === false) return true;','if (parsedTypeAnnotations(program) === true) return true;',runtimeTest,'初期値'],
+	['foreign-shared-ast',runtime,'const target = simple === undefined ? this.detachedFunction(fn) : fn;','const target = fn;',runtimeTest,'同じASTでも別Interpreterの注釈を取り込まない: 引数と戻り値'],
+	['foreign-callback',runtime,'if (!returned && !this.simpleParameters.has(fn)) return Interpreter.prototype.callback.call(this, this.detachedFunction(fn), args, receiver, execution, pos);','if (Boolean(0) && !returned && !this.simpleParameters.has(fn)) return Interpreter.prototype.callback.call(this, this.detachedFunction(fn), args, receiver, execution, pos);',runtimeTest,'同じASTでも別Interpreterの注釈を取り込まない: 戻り注釈のないmap'],
+].map(([name,file,before,after,testFile,testName])=>({name,file,before,after,testFile,testName}));
+const selected=process.env.V2_TYPES_MUTATIONS ? mutations.filter(item=>process.env.V2_TYPES_MUTATIONS.split(',').includes(item.name)) : mutations;
+assert.ok(selected.length,'対象の変異がありません');
+const directory=mkdtempSync(join(process.cwd(),'.git','v2-types-mutations-'));
+const originals=new Map(selected.map(item=>[item.file,readFileSync(item.file,'utf8')]));
+const report={directory,expected:selected.length,detected:0,survived:0,invalid:0,excluded:0,records:[],restored:false};
+const qualifiedNames=new Map();
+const escapeRegex=value=>value.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
+function command(name,args) {
+	const result=spawnSync('bun',args,{encoding:'utf8',timeout:120000,maxBuffer:16*1024*1024});
+	writeFileSync(join(directory,`${name}.log`),`${result.stdout ?? ''}${result.stderr ?? ''}\nstatus=${result.status}; signal=${result.signal}; error=${result.error ?? ''}\n`);
+	return {status:result.status,signal:result.signal,error:result.error ? String(result.error) : undefined};
+}
+function typecheck(name) { return command(name,['run','typecheck']); }
+function tests(name,testFile,testName) {
+	const output=join(directory,`${name}.json`);
+	const args=['run','test',testFile,'--reporter=json',`--outputFile=${output}`];
+	if(testName) {
+		const candidates=qualifiedNames.get(testFile)?.filter(item=>item.title===testName) ?? [];
+		assert.equal(candidates.length,1,`${testName}: 対象のテストが一意ではありません`);
+		args.push('-t','^'+escapeRegex(candidates[0].fullName)+'$');
+	}
+	const result=command(name,args);
+	try {
+		const data=JSON.parse(readFileSync(output,'utf8'));
+		const assertions=data.testResults.flatMap(suite=>suite.assertionResults);
+		if(!testName)qualifiedNames.set(testFile,assertions.map(item=>({title:item.title,fullName:[...item.ancestorTitles,item.title].join(' > ')})));
+		const executed=assertions.filter(item=>item.status==='passed'||item.status==='failed');
+		return {...result,executed:executed.length,failed:executed.filter(item=>item.status==='failed').map(item=>({name:item.fullName,messages:item.failureMessages}))};
+	} catch(error) {return {...result,executed:0,failed:[],reportError:String(error)};}
+}
+try {
+	for(const item of selected)assert.equal(originals.get(item.file).split(item.before).length-1,1,`${item.name}: 置換箇所が一意ではありません`);
+	const baselineTypecheck=typecheck('baseline-typecheck');
+	report.baselineTypecheck=baselineTypecheck;
+	assert.equal(baselineTypecheck.status,0,'正常版の型検査が失敗しました');
+	report.baseline=[];
+	for(const testFile of new Set(selected.map(item=>item.testFile))) {
+		const result=tests(`baseline-${report.baseline.length}`,testFile);
+		report.baseline.push({testFile,...result});
+		assert.ok(result.status===0 && result.executed>0,'正常版の意味検査が失敗しました');
+	}
+	for(const [index,item] of selected.entries()) {
+		const row={name:item.name,file:item.file,testName:item.testName};
+		try {
+			writeFileSync(item.file,originals.get(item.file).replace(item.before,item.after));
+			row.typecheck=typecheck(`mutant-${index}-typecheck`);
+			if(row.typecheck.status!==0) {row.outcome='invalid-typecheck';report.invalid++;}
+			else {
+				row.test=tests(`mutant-${index}`,item.testFile,item.testName);
+				// 起動・変換失敗ではなく、指定した意味検査の実行済み assertion だけを検出に数えます。
+				if(row.test.executed===1 && row.test.status===1 && row.test.failed.length===1 && row.test.failed[0].name.endsWith(item.testName)) {row.outcome='detected';report.detected++;}
+				else if(row.test.executed===1 && row.test.status===0) {row.outcome='survived';report.survived++;}
+				else {row.outcome='invalid-test';report.invalid++;}
+			}
+		} catch(error) {row.outcome='invalid-run';row.error=String(error);report.invalid++;}
+		finally {writeFileSync(item.file,originals.get(item.file));}
+		row.restoredTest=tests(`restored-${index}`,item.testFile,item.testName);
+		report.records.push(row);
+		console.error(JSON.stringify({name:row.name,outcome:row.outcome,restored:row.restoredTest.status===0}));
+		assert.ok(row.restoredTest.status===0 && row.restoredTest.executed===1,`${item.name}: 復元後の意味検査が失敗しました`);
+	}
+} catch(error) {report.error=String(error);}
+finally {
+	for(const [file,original] of originals)writeFileSync(file,original);
+	report.restored=[...originals].every(([file,original])=>readFileSync(file,'utf8')===original);
+	report.finalTypecheck=typecheck('restored-typecheck');
+	report.valid=report.detected===report.expected && report.invalid===0 && report.survived===0 && report.restored && report.finalTypecheck.status===0 && !report.error;
+	writeFileSync(join(directory,'summary.json'),JSON.stringify(report,null,2)+'\n');
+	console.log(JSON.stringify(report,null,2));
+	if(!report.valid)process.exitCode=1;
+}

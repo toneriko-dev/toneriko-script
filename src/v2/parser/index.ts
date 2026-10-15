@@ -475,7 +475,7 @@ class Parser {
 				}
 				if (annotation === 'forbid' && this.at(':')) this.fail('UNEXPECTED_TOKEN');
 				if (annotation === 'allow' && this.eat(':')) {
-					pattern.typeAnnotation = this.typeAnnotation();
+					pattern.typeAnnotation = this.checkedTypeAnnotation();
 				}
 				pattern.loc.end = this.previous!.loc.end;
 				if (defaultValue && this.eat('=')) {
@@ -543,11 +543,27 @@ class Parser {
 				const id = this.identifier();
 				if (this.at('<')) this.fail('TYPE_ARGUMENTS');
 				const params = this.parameters();
-				const returnType = this.eat(':') ? this.typeAnnotation() : undefined;
+				const returnType = this.eat(':') ? this.checkedTypeAnnotation(true) : undefined;
 				const body = this.functionBody();
 				return this.node(start, { type: 'FunctionDeclaration', id, params, body, async, generator: false, ...(returnType ? { returnType } : {}) });
 			} finally { this.syntaxDepth--; }
 		} finally { this.parserDepth--; }
+	}
+	private checkedTypeAnnotation(returnPosition = false): A.TypeAnnotation {
+		const annotation = this.typeAnnotation();
+		const pending: { node: A.TypeAnnotation; returns: boolean }[] = [{ node: annotation, returns: returnPosition }];
+		// 括弧と合併だけが戻り値位置を引き継ぎ、配列要素とプロパティは値の型です。
+		while (pending.length) {
+			const { node, returns } = pending.pop()!;
+			switch (node.type) {
+				case 'KeywordTypeAnnotation': if (node.name === 'void' && !returns) this.fail('VOID_TYPE_POSITION', node); break;
+				case 'ParenthesizedTypeAnnotation': pending.push({ node: node.typeAnnotation, returns }); break;
+				case 'UnionTypeAnnotation': for (const child of node.types) pending.push({ node: child, returns }); break;
+				case 'ArrayTypeAnnotation': pending.push({ node: node.elementType, returns: false }); break;
+				case 'ObjectTypeAnnotation': for (const property of node.properties) pending.push({ node: property.typeAnnotation, returns: false }); break;
+			}
+		}
+		return annotation;
 	}
 	private typeAnnotation(): A.TypeAnnotation {
 		this.enterParser();
@@ -573,6 +589,7 @@ class Parser {
 					const typeAnnotation = this.nested(() => this.typeAnnotation());
 					this.expect(')');
 					// 直後の矢印は関数型の区切りになるため、戻り値の括弧型として読み替えません。
+					if (this.at('=>') && typeAnnotation.type === 'ObjectTypeAnnotation') this.fail('PARENTHESIZED_ARROW_RETURN_TYPE', start);
 					if (this.at('=>') && (typeAnnotation.type === 'FunctionTypeAnnotation' || (typeAnnotation.type === 'KeywordTypeAnnotation' && !['null', 'void'].includes(typeAnnotation.name)))) this.fail('UNSUPPORTED_TYPE');
 					type = this.node(start, { type: 'ParenthesizedTypeAnnotation', typeAnnotation });
 				} else if (this.eat('{')) {
@@ -848,7 +865,7 @@ class Parser {
 				const start = this.peek();
 				if (async) this.take();
 				const params = this.at('(') ? this.parameters() : [this.identifier()];
-				const returnType = this.eat(':') ? this.typeAnnotation() : undefined;
+				const returnType = this.eat(':') ? this.checkedTypeAnnotation(true) : undefined;
 				if (this.peek().lineBreakBefore) this.fail('NEWLINE_ARROW');
 				this.expect('=>');
 				if (this.at('{') && this.peek(1).kind === 'identifier' && this.peek(2).raw === ':') {

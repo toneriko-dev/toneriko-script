@@ -4,7 +4,7 @@ import { spawnSync } from 'node:child_process';
 import { describe, test } from 'vitest';
 import { parse } from '../../src/v2/parser/index.js';
 import { TonerikoScriptSyntaxError, formatDiagnostic } from '../../src/v2/diagnostics.js';
-import { messages, runtimeMessages } from '../../src/v2/messages.js';
+import { messages, runtimeMessages, checkMessages } from '../../src/v2/messages.js';
 
 const accepted = [
 	['テンプレート補間をまたいで型引数を読まない', 'const t = `${a < b}${c > (d)}`;'],
@@ -154,6 +154,8 @@ describe('v2 parser: 使える構文', () => {
 });
 
 const rejected = [
+	['VOID_TYPE_POSITION', 'let x: void;'],
+	['PARENTHESIZED_ARROW_RETURN_TYPE', 'const f = (p): ({x:number}) => p;'],
 	['NULLISH_MIX', 'a ?? b || c;'],
 	['UNARY_POWER', '-2 ** 2;'],
 	['LOGICAL_ASSIGNMENT', 'a &&= b;'],
@@ -256,7 +258,7 @@ function diagnostic(source: string, code: string): void {
 describe('v2 parser: 専用の診断', () => {
 	for (const [code, source] of rejected) test(code, () => diagnostic(source, code));
 	test('すべての構文診断 code に入力例がある', () => {
-		assert.deepEqual(new Set(rejected.map(([code]) => code)), new Set(Object.keys(messages).filter(code => !Object.hasOwn(runtimeMessages, code))));
+		assert.deepEqual(new Set(rejected.map(([code]) => code)), new Set(Object.keys(messages).filter(code => !Object.hasOwn(runtimeMessages, code) && !Object.hasOwn(checkMessages, code))));
 	});
 });
 
@@ -646,4 +648,14 @@ describe('インタプリタに渡す前の診断', () => {
 			else diagnostic(source, 'DUPLICATE_DECLARATION');
 		});
 	}
+});
+
+describe('型の位置とアロー戻り値型', () => {
+	for (const source of ['let x: void;', 'let x: number | void;', 'function f(x: void) {}', 'const f = (x: (void)) => x;', 'function f(): void[] {}', 'function f(): { x: void } {}']) {
+		test(`void の値位置を拒否: ${source}`, () => diagnostic(source, 'VOID_TYPE_POSITION'));
+	}
+	for (const source of ['function f(): void {}', 'const f = (): (void) => null;', 'function f(): number | void {}', 'const f = (p): { x: number } => p;', 'const f = (p): (({ x: number })) => p;', 'const f = (p): ({ x: number })[] => p;', 'function f(p): ({ x: number }) { return p; }']) {
+		test(`戻り値型を受理: ${source}`, () => { parse(source); });
+	}
+	test('括弧ひとつのオブジェクト戻り値型を拒否', () => diagnostic('const f = (p): ({ x: number }) => p;', 'PARENTHESIZED_ARROW_RETURN_TYPE'));
 });

@@ -342,7 +342,7 @@ const generatedStatement = fc.oneof(
 );
 
 function generatedType(depth: number): fc.Arbitrary<string> {
-	const simple = fc.constantFrom('number', 'string', 'boolean', 'null', 'any', 'void', 'Function');
+	const simple = fc.constantFrom('number', 'string', 'boolean', 'null', 'any', 'Function');
 	if (depth === 0) return simple;
 	const child = generatedType(depth - 1);
 	return fc.oneof(

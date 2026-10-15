@@ -6,6 +6,7 @@ function entry(message: string, hint: string, english: string, englishHint: stri
 }
 
 export const runtimeMessages = {
+	TYPE_ANNOTATION_MISMATCH: entry('{name} は {expected} と書かれていますが、{actual} の値 {value} が入りました。', '型注釈か渡す値を確認します。', '{name} is annotated as {expected}, but received the {actual} value {value}.', 'Check the annotation or the supplied value.'),
 	STDLIB_FORBIDDEN_KEY: entry('__proto__ を含む値は取り込めません。', 'そのキーを除いて JSON.stringify で作り直すか、キーを変えてもらいます。', 'Values containing __proto__ cannot be imported.', 'Recreate the input with JSON.stringify after removing that key, or ask its producer to rename the key.'),
 	STDLIB_JSON_SYNTAX: entry('JSON の書き方が不正です。', 'JSON.stringify で文字列を作り直します。', 'The JSON text is invalid.', 'Recreate the text with JSON.stringify.'),
 	STDLIB_JSON_CYCLE: entry('循環する値を JSON に変換できません。', '循環する参照を取り除きます。', 'A cyclic value cannot be serialized as JSON.', 'Remove circular references.'),
@@ -47,7 +48,17 @@ export const runtimeMessages = {
 	UNSUPPORTED_VALUE: entry("この値はスクリプトに渡せません。", "対応する基本値、配列、オブジェクト、関数を使います。", "Unsupported script value.", "Use a supported primitive, array, object, or function."),
 } as const;
 
+export const checkMessages = {
+	UNBOUND_IDENTIFIER_SUGGESTION: entry('{name} は宣言されていません。', 'もしかして {suggestion} ですか？', '{name} is not declared.', 'Did you mean {suggestion}?'),
+	ARGUMENT_COUNT: entry('{name} の引数は {min}〜{max} 個ですが、{actual} 個渡されています。', '引数の数を確認します。', '{name} expects {min}–{max} arguments, but received {actual}.', 'Check the number of arguments.'),
+	CASE_FALLTHROUGH: entry('この case は次の case に進みます。', '終了するなら break を書きます。', 'This case falls through to the next case.', 'Add break to stop here.'),
+} as const;
+
 export const messages = {
+	...checkMessages,
+	VOID_TYPE_POSITION: entry('void は戻り値の型にだけ書けます。', '変数と引数には null または値の型を書きます。', 'void is only allowed in return types.', 'Use null or the value type for variables and parameters.'),
+	PARENTHESIZED_ARROW_RETURN_TYPE: entry('このアロー関数の戻り値型には括弧を付けられません。', '括弧を外して (p): { x: number } => p と書きます。', 'This arrow return type cannot be parenthesized.', 'Remove the parentheses: (p): { x: number } => p.'),
+
 	NESTING_TOO_DEEP: entry('入れ子が深すぎます。', '括弧や式、ブロックの入れ子を減らします。', 'Syntax nesting is too deep.', 'Reduce the nesting of parentheses, expressions, or blocks.'),
 	STRICT_DELETE_IDENTIFIER: entry("strict mode では識別子を delete できません。", "オブジェクトのプロパティを delete します。", "An identifier cannot be deleted in strict mode.", "Delete an object property instead."),
 	STRICT_NON_SIMPLE_PARAMETERS: entry("既定値・分割代入・残り引数がある関数に \"use strict\" は書けません。", "この言語は常に strict mode なので、この指示文を省きます。", "A function with non-simple parameters cannot contain a use strict directive.", "Omit the directive; scripts already use strict mode."),

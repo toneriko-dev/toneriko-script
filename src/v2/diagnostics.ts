@@ -1,4 +1,4 @@
-import type { Pos } from '../node.js';
+import type { Pos, Loc } from './ast.js';
 import { messages, type DiagnosticCode } from './messages.js';
 
 export type { DiagnosticCode } from './messages.js';
@@ -7,6 +7,7 @@ export type Diagnostic = {
 	code: DiagnosticCode;
 	params: Record<string, string | number>;
 	pos: Pos;
+	loc?: Loc;
 	hint: string;
 	severity: 'error' | 'warning';
 };
@@ -17,11 +18,12 @@ function interpolate(text: string, params: Diagnostic['params']): string {
 
 export function formatDiagnostic(diagnostic: Diagnostic, language: 'ja' | 'en'): string {
 	const translation = messages[diagnostic.code][language];
-	return `${interpolate(translation.message, diagnostic.params)} ${interpolate(translation.hint, diagnostic.params)}`;
+	const position = language === 'ja' ? `(${diagnostic.pos.line} 行目、${diagnostic.pos.column} 列目)` : `(line ${diagnostic.pos.line}, column ${diagnostic.pos.column})`;
+	return `${interpolate(translation.message, diagnostic.params)} ${position} ${interpolate(translation.hint, diagnostic.params)}`;
 }
 
-export function diagnostic(code: DiagnosticCode, pos: Pos, params: Diagnostic['params'] = {}): Diagnostic {
-	return { code, params, pos, hint: interpolate(messages[code].ja.hint, params), severity: 'error' };
+export function diagnostic(code: DiagnosticCode, pos: Pos, params: Diagnostic['params'] = {}, options: { severity?: Diagnostic['severity']; loc?: Loc } = {}): Diagnostic {
+	return { code, params, pos, hint: interpolate(messages[code].ja.hint, params), severity: options.severity ?? 'error', ...(options.loc ? { loc: options.loc } : {}) };
 }
 
 export class TonerikoScriptSyntaxError extends SyntaxError implements Diagnostic {

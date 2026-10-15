@@ -1,3 +1,4 @@
+import type { CatalogFunction } from '../catalog.js';
 import type { RuntimeServices } from './services.js';
 import type { Pos } from '../ast.js';
 import type { PropertyAccess, Value } from '../runtime/values.js';
@@ -14,12 +15,7 @@ export interface StdContext {
 	checkpoint(): StdFrame;
 	call(fn: Value, args: Value[], receiver?: Value): StdFrame | { ready: Value };
 }
-export interface StdDefinition {
-	name: string;
-	receiver: 'global' | 'array' | 'string' | 'number' | 'iterator';
-	args: { name: string; type: string; optional?: boolean; rest?: boolean }[];
-	returns: string;
-	description: { ja: string; en: string };
+export interface StdDefinition extends CatalogFunction {
 	implementation(ctx: StdContext, receiver: Value, args: Value[]): StdFrame;
 }
 export const STANDARD_FUNCTION = Symbol('standard function');

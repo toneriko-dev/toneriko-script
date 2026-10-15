@@ -262,6 +262,16 @@ JavaScript と同じ名前、同じ引数、同じ結果にします(文字列�
 
 `shuffle` は Fisher–Yates で元の配列を並べ替えます。`sample` と `sampleBy` は要素を一つ返し、空配列は null です。sampleBy は重みを順に一度ずつ取り、有限の非負数を受けます。非空配列で全重みが 0 ならエラーです。rng の出力は有限の [0,1) に限ります。
 
+### JSON と辞書、複製
+
+標準関数が作る辞書は原型を持ちません。`__proto__` はどの深さでも禁止し、JSON.parse、Object.fromEntries、Object.groupBy、structuredClone でも診断コードと日英の説明を付けて拒否します。入力を黙って削除・変更しません。JSON.stringify でそのキーを除いて作り直すか、送信元へキーの変更を依頼するよう案内します。
+
+JSON.parse は reviver を子から順に呼びます。基本値には原文の source を第 3 引数で渡します。null を返した場合は JSON の null とし、削除指示にはしません。JSON.stringify は replacer・space・toJSON を扱い、関数は辞書のプロパティなら省略、配列内なら null、最上位なら null を返します。循環は TypeError です。利用者の関数は逐次呼び、元のキー順や数の表現は JavaScript に合わせます。
+
+structuredClone は共有参照と循環を保存し、関数は DataCloneError です。未対応の型と transfer 指定はエラーです。deepEqual は基本値を Object.is 相当で比べ、配列の順序・辞書の own key と内容を比較します。循環を扱い、関数は参照の同一性で比べます。
+
+Error の生成も標準関数の単一定義に含めます。new Error だけが new で呼べ、既存の例外値の原型・非公開プロパティの規則を守ります。
+
 ### 関数を呼ぶ順
 
 配列のメソッドは、すべて関数を 1 つずつ順に呼びます。今は `map`、`flat_map`、`sort` だけが並行に呼ぶので、関数の中で待つと終わる順が入れ替わります(`[1, 2, 3]` の `map` で `[2, 3, 1]`)。並行に呼びたいときは `arr.mapConcurrent(f, limit?)` を使います。`limit` は同時に動かす数の上限で、`Mk.api` をまとめて呼ぶときに、同時に送る数を抑えられます。

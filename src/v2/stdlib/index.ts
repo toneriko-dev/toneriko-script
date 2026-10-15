@@ -1,3 +1,4 @@
+import { objectDefinitions } from './objects.js';
 import { collectionDefinitions } from './collections.js';
 import { arrayDefinitions } from './arrays.js';
 import { stringDefinitions } from './strings.js';
@@ -6,7 +7,7 @@ import { basicDefinitions } from './basics.js';
 import { catalogOf, makeFunction, type StdDefinition, type StdFunction } from './core.js';
 import type { Value } from '../runtime/values.js';
 
-export const definitions: readonly StdDefinition[] = [...basicDefinitions, ...numberDefinitions, ...stringDefinitions, ...arrayDefinitions, ...collectionDefinitions];
+export const definitions: readonly StdDefinition[] = [...basicDefinitions, ...numberDefinitions, ...stringDefinitions, ...arrayDefinitions, ...collectionDefinitions, ...objectDefinitions];
 export const catalog = catalogOf(definitions);
 const methods: Record<string, Record<string, StdFunction>> = Object.create(null);
 for (const type of ['array', 'string', 'number']) methods[type] = Object.create(null);

@@ -1,3 +1,4 @@
+import { errorDefinition } from './stdlib/basics.js';
 import { standardGlobals } from './stdlib/index.js';
 import { isStdFunction, STANDARD_FUNCTION, validateArguments, type StdContext } from './stdlib/core.js';
 import type * as A from './ast.js';
@@ -11,7 +12,6 @@ export type { Value } from './runtime/values.js';
 
 const origin: A.Pos = { line: 1, column: 1 };
 const shortCircuit = Symbol('optional chain');
-const errorConstructor = () => { throw new Error('Use Interpreter.call'); };
 const promiseThen = Promise.prototype.then;
 class ScriptThrown {
 	constructor(readonly value: Value, readonly pos: A.Pos, readonly diagnostic?: RuntimeError) {}
@@ -70,8 +70,6 @@ export class Interpreter {
 		if (!(this.yieldInterval >= 0) || !(this.maxBusyTime > 0) || (options.maxSteps !== undefined && (!Number.isSafeInteger(options.maxSteps) || options.maxSteps < 0))) throw new RangeError('Invalid execution limit');
 		this.yieldToHost = options.yieldToHost ?? defaultYieldToHost;
 		const builtins = new Environment();
-		builtins.declare('Error', false);
-		builtins.write('Error', errorConstructor, origin, true);
 		for (const [name, value] of Object.entries(standardGlobals())) {
 			builtins.declare(name, false);
 			builtins.write(name, value, origin, true);
@@ -432,18 +430,8 @@ export class Interpreter {
 		return result;
 	}
 
-	private createError(args: Value[], execution: Execution, pos: A.Pos): Value {
-		const error = createScriptError('Error', args.length ? this.text(args[0]!, pos) : undefined);
-		const options = args[1];
-		if (options !== null && (typeof options === 'object' || typeof options === 'function') && execution.properties.has(options, 'cause', pos)) {
-			Object.defineProperty(error, 'cause', { value: execution.properties.get(options, 'cause', pos), configurable: true, writable: true });
-		}
-		return execution.properties.normalize(error, pos);
-	}
-
 	private *invoke(fn: Value, args: Value[], receiver: Value, execution: Execution, pos: A.Pos): Frame {
 		this.tick(execution, pos);
-		if (fn === errorConstructor) return this.createError(args, execution, pos);
 		if (isStdFunction(fn)) {
 			const context: StdContext = {
 				pos, properties: execution.properties,
@@ -855,8 +843,8 @@ export class Interpreter {
 			case 'NewExpression': {
 				const constructor = env.read(node.callee.name, pos);
 				const args: Value[] = yield this.arguments(node.arguments, env, execution);
-				if (constructor !== errorConstructor) throw runtimeError('NOT_CALLABLE', pos, {}, 'TypeError');
-				return this.createError(args, execution, pos);
+				if (!isStdFunction(constructor) || constructor[STANDARD_FUNCTION] !== errorDefinition) throw runtimeError('NOT_CALLABLE', pos, {}, 'TypeError');
+				return yield this.invoke(constructor, args, null, execution, pos);
 			}
 			case 'UnaryExpression': {
 				if (node.operator === 'typeof' && node.argument.type === 'Identifier' && !env.resolve(node.argument.name)) return 'undefined';

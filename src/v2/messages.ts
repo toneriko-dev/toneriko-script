@@ -6,6 +6,10 @@ function entry(message: string, hint: string, english: string, englishHint: stri
 }
 
 export const runtimeMessages = {
+	STDLIB_FORBIDDEN_KEY: entry('__proto__ を含む値は取り込めません。', 'そのキーを除いて JSON.stringify で作り直すか、キーを変えてもらいます。', 'Values containing __proto__ cannot be imported.', 'Recreate the input with JSON.stringify after removing that key, or ask its producer to rename the key.'),
+	STDLIB_JSON_SYNTAX: entry('JSON の書き方が不正です。', 'JSON.stringify で文字列を作り直します。', 'The JSON text is invalid.', 'Recreate the text with JSON.stringify.'),
+	STDLIB_JSON_CYCLE: entry('循環する値を JSON に変換できません。', '循環する参照を取り除きます。', 'A cyclic value cannot be serialized as JSON.', 'Remove circular references.'),
+	STDLIB_CLONE_FUNCTION: entry('関数を含む値は複製できません。', '関数を除いた値を渡します。', 'A value containing a function cannot be cloned.', 'Pass a value without functions.'),
 	STDLIB_SORT_COMPARATOR_REQUIRED: entry('文字列以外を並べ替えるには比較関数が必要です。', '比較関数を渡すか sortBy を使います。', 'Sorting non-string values requires a comparator.', 'Pass a comparator or use sortBy.'),
 	STDLIB_URI_ERROR: entry('URI の文字列が不正です。', 'エスケープとサロゲートの対応を確認します。', 'The URI string is malformed.', 'Check percent escapes and surrogate pairs.'),
 	STDLIB_ARGUMENT_RANGE: entry('引数の値が範囲外です。', '引数に許される範囲を確認します。', 'Argument value is out of range.', 'Check the accepted argument range.'),

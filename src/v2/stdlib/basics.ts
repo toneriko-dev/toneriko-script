@@ -1,7 +1,21 @@
 import type { StdDefinition } from './core.js';
-import { runtimeError } from '../runtime/errors.js';
+import { runtimeError, createScriptError } from '../runtime/errors.js';
 
-export const basicDefinitions: StdDefinition[] = [
+export const errorDefinition: StdDefinition = {
+	name: 'Error', receiver: 'global', args: [{ name: 'message', type: 'string | number | boolean', optional: true }, { name: 'options', type: 'any', optional: true }], returns: 'any',
+	description: { ja: '原型を持たないエラーの値を作ります。', en: 'Creates an error value without a prototype.' },
+	*implementation(ctx, _receiver, args) {
+		const message = args[0];
+		if (args.length && typeof message !== 'string' && typeof message !== 'number' && typeof message !== 'boolean') throw runtimeError('INVALID_STRING_CONVERSION', ctx.pos, {}, 'TypeError');
+		const error = createScriptError('Error', args.length ? String(message) : undefined);
+		const options = args[1];
+		if (options !== null && (typeof options === 'object' || typeof options === 'function') && ctx.properties.has(options, 'cause', ctx.pos)) {
+			Object.defineProperty(error, 'cause', { value: ctx.properties.get(options, 'cause', ctx.pos), configurable: true, writable: true });
+		}
+		return error;
+	},
+};
+export const basicDefinitions: StdDefinition[] = [errorDefinition,
 	{
 		name: 'push', receiver: 'array', args: [{ name: 'items', type: 'any[]', rest: true }], returns: 'number',
 		description: { ja: '末尾に値を追加し、配列の長さを返します。', en: 'Appends values and returns the array length.' },

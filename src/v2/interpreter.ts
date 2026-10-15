@@ -8,7 +8,7 @@ import { Environment, boundNames, type Binding } from './runtime/environment.js'
 import { ExecutionStopped, RuntimeError, runtimeError, scriptErrorDiagnostic, createScriptError } from './runtime/errors.js';
 import { PropertyAccess, SCRIPT_FUNCTION, isScriptFunction, valueTypeof, errorValue, scriptObject } from './runtime/values.js';
 import type { Value, ScriptFunction } from './runtime/values.js';
-import { TypePlan, projectType, restType, type PatternCheck } from './runtime/type-plan.js';
+import { TypePlan, projectType, restType, bindingMayHaveEffects, type PatternCheck } from './runtime/type-plan.js';
 import { checkValue, checkScalar, isComposite, type TypeCheck } from './runtime/type-checks.js';
 export { RuntimeError, ExecutionStopped } from './runtime/errors.js';
 export type { Value } from './runtime/values.js';
@@ -475,7 +475,8 @@ export class Interpreter {
 			this.tick(execution, pos);
 			const binding = initialize ? env.bindings.get(pattern.name) : env.resolve(pattern.name);
 			const check = (binding as TypedBinding | undefined)?.[BINDING_TYPE];
-			if (check) {
+			// 親と同じ深さで検査済みの rest だけ、初期化時の重複検査を省く。
+			if (check && (!initialize || !plan?.restCovered)) {
 				if (isComposite(check)) yield this.checkType(check, value, pattern.name, execution, pos);
 				else { this.tick(execution, pos); checkScalar(check, value, pattern.name, pos); }
 			}
@@ -497,7 +498,7 @@ export class Interpreter {
 					const target: Reference | null = yield this.bindingReference(property, env, execution);
 					const rest = scriptObject(Object.create(null));
 					const check = dynamic ? undefined : restType(plan.check, excluded);
-					if (initialize && check) this.registerPattern(property.argument, env, this.typePlan.project(property.argument, check));
+					if (initialize && check) this.registerPattern(property.argument, env, this.typePlan.project(property.argument, check, !!plan.explicit && !bindingMayHaveEffects(pattern)));
 					for (const [key, item] of execution.properties.entriesIterator(value, pos)) {
 						if (!excluded.has(key)) rest[key] = item;
 						if (execution.clock >= 64) yield this.checkpoint();

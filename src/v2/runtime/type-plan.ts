@@ -2,7 +2,7 @@ import type * as A from '../ast.js';
 import { parsedTypeAnnotations } from '../type-metadata.js';
 import { compileType, isComposite, type TypeCheck } from './type-checks.js';
 
-export type PatternCheck = { check: TypeCheck; explicit: boolean };
+export type PatternCheck = { check: TypeCheck; explicit: boolean; restCovered?: boolean };
 const nullable = (check: TypeCheck): TypeCheck => ({ kind: 'union', types: [check, { kind: 'null' }] });
 
 export function projectType(check: TypeCheck, key: string | null, rest = false): TypeCheck {
@@ -11,6 +11,26 @@ export function projectType(check: TypeCheck, key: string | null, rest = false):
 
 export function restType(check: TypeCheck, excluded: ReadonlySet<string>): TypeCheck {
 	return { kind: 'projection', source: check, operation: { kind: 'rest', excluded } };
+}
+
+const patternEffects = new WeakMap<A.Pattern | A.MemberExpression, boolean>();
+
+/** 判定を構文要素ごとに共有し、入れ子の rest でも準備の再走査を増やさない。 */
+export function bindingMayHaveEffects(pattern: A.Pattern | A.MemberExpression): boolean {
+	const cached = patternEffects.get(pattern);
+	if (cached !== undefined) return cached;
+	let effects: boolean;
+	switch (pattern.type) {
+		case 'Identifier': effects = false; break;
+		case 'AssignmentPattern': case 'MemberExpression': effects = true; break;
+		case 'RestElement': effects = bindingMayHaveEffects(pattern.argument); break;
+		case 'ArrayPattern': effects = pattern.elements.some(part => part !== null && bindingMayHaveEffects(part)); break;
+		case 'ObjectPattern': effects = pattern.properties.some(property => property.type === 'RestElement'
+			? bindingMayHaveEffects(property.argument)
+			: property.computed && property.key.type !== 'Literal' || bindingMayHaveEffects(property.value as A.Pattern)); break;
+	}
+	patternEffects.set(pattern, effects);
+	return effects;
 }
 
 export class TypePlan {
@@ -44,9 +64,9 @@ export class TypePlan {
 		return true;
 	}
 
-	project(pattern: A.Pattern | A.MemberExpression, check: TypeCheck): WeakMap<A.Pattern | A.MemberExpression, PatternCheck> {
+	project(pattern: A.Pattern | A.MemberExpression, check: TypeCheck, restCovered = false): WeakMap<A.Pattern | A.MemberExpression, PatternCheck> {
 		const projected = new TypePlan();
-		projected.pattern(pattern, check);
+		projected.pattern(pattern, check, restCovered);
 		return projected.patterns;
 	}
 
@@ -61,28 +81,33 @@ export class TypePlan {
 		}
 	}
 
-	private pattern(pattern: A.Pattern | A.MemberExpression, inherited?: TypeCheck): void {
+	private pattern(pattern: A.Pattern | A.MemberExpression, inherited?: TypeCheck, restCovered = false): void {
 		const annotation = 'typeAnnotation' in pattern ? pattern.typeAnnotation : undefined;
 		let check = annotation ? compileType(annotation) : inherited;
 		if (check && 'optional' in pattern && pattern.optional) check = nullable(check);
 		if (check) {
 			this.hasTypes = true;
-			this.patterns.set(pattern, { check, explicit: !!annotation });
+			this.patterns.set(pattern, { check, explicit: !!annotation, restCovered: restCovered && !annotation });
 		}
 		switch (pattern.type) {
 			case 'Identifier': if (check && isComposite(check)) this.compositeNames.add(pattern.name); break;
 			case 'AssignmentPattern': this.pattern(pattern.left, check); break;
-			case 'RestElement': this.pattern(pattern.argument, check); break;
-			case 'ArrayPattern':
-				for (const part of pattern.elements) if (part) this.pattern(part, check ? projectType(check, null, part.type === 'RestElement') : undefined);
+			case 'RestElement': this.pattern(pattern.argument, check, restCovered || !!annotation); break;
+			case 'ArrayPattern': {
+				let covered = !!annotation || restCovered;
+				for (const part of pattern.elements) if (part) {
+					this.pattern(part, check ? projectType(check, null, part.type === 'RestElement') : undefined, part.type === 'RestElement' && covered);
+					if (bindingMayHaveEffects(part)) covered = false;
+				}
 				break;
+			}
 			case 'ObjectPattern': {
 				const dynamic = pattern.properties.some(property => property.type !== 'RestElement' && property.computed && property.key.type !== 'Literal');
 				const removed = new Set(pattern.properties.flatMap(property => property.type === 'RestElement' || property.computed && property.key.type !== 'Literal' ? [] : [property.key.type === 'Identifier' ? property.key.name : String((property.key as A.Literal).value)]));
 				for (const property of pattern.properties) {
 					if (property.type === 'RestElement') {
 						const rest = check && !dynamic ? restType(check, removed) : undefined;
-						this.pattern(property, rest);
+						this.pattern(property, rest, !!annotation && !bindingMayHaveEffects(pattern));
 					} else {
 						const key = !property.computed ? property.key.type === 'Identifier' ? property.key.name : String((property.key as A.Literal).value) : property.key.type === 'Literal' ? String(property.key.value) : null;
 						if (key === null) for (const name of this.names(property.value as A.Pattern)) this.compositeNames.add(name);

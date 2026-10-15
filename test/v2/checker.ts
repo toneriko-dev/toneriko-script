@@ -6,6 +6,7 @@ import { check, type CheckOptions } from '../../src/v2/checker/index.js';
 import { formatDiagnostic } from '../../src/v2/diagnostics.js';
 import { catalog } from '../../src/v2/stdlib/index.js';
 import type { CatalogEntry } from '../../src/v2/catalog.js';
+import type * as A from '../../src/v2/ast.js';
 
 function diagnostics(source: string, options?: CheckOptions) { return check(parse(source).program, options); }
 function codes(source: string, options?: CheckOptions) { return diagnostics(source, options).map(item => item.code); }
@@ -207,4 +208,66 @@ for (const [label, source, expected] of [
 test('長い else-if の fallthrough 判定もスタック超過しない', () => {
 	const branches = 'if (false) break; else '.repeat(10_000);
 	assert.deepEqual(codes(`switch (0) {case 0: ${branches} break; case 1: break;}`), []);
+});
+
+
+for (const [source, name] of [
+	['let [[a], b]: number[][] = [1, [2]];', '[a]'],
+	['let {p: [a]}: {p: number[]} = {p: 1};', '[a]'],
+	['let {p: {q}}: {p: {q: number}} = {p: 1};', '{q}'],
+	['let {p: [a, b] = [1]}: {p: number[]} = {};', '[a, b]'],
+] as const) test(`部分パターンの診断名を実行時と揃える: ${source}`, async () => {
+	const result = diagnostics(source);
+	const failure = source.endsWith('= {};') ? result.find(item => item.params.actual === 'missing') : result[0];
+	assert.equal(failure?.params.name, name);
+	await assert.rejects(new Interpreter().exec(parse(source).program), (error: unknown) => {
+		assert.equal((error as { params: { name: string } }).params.name, name);
+		return true;
+	});
+});
+
+for (const typed of [false, true]) for (const assignment of [false, true]) test(`幅を倍にした数値キーの${assignment ? '分割代入' : '分割宣言'}の要素読取りは線形に増える${typed ? '（注釈あり）' : ''}`, () => {
+	const reads = [1_000, 2_000].map(width => {
+		const names = Array.from({ length: width }, (_, index) => `x${index}`);
+		const pattern = `{${names.map((name, index) => `${index}: ${name}`).join(',')}}`;
+		const values = `[${Array(width).fill('1').join(',')}]`;
+		const source = assignment ? `let ${names.map(name => `${name}${typed ? ': number' : ''}`).join(',')}; (${pattern} = ${values});` : `let ${pattern}${typed ? ': number[]' : ''} = ${values};`;
+		const program = parse(source).program;
+		const value = assignment ? ((program.body[1] as A.ExpressionStatement).expression as A.AssignmentExpression).right as A.ArrayExpression : (program.body[0] as A.VariableDeclaration).declarations[0]!.init as A.ArrayExpression;
+		let accesses = 0;
+		value.elements = new Proxy(value.elements, {
+			get(target, key, receiver) {
+				if (typeof key === 'string' && /^(0|[1-9][0-9]*)$/.test(key)) accesses++;
+				return Reflect.get(target, key, receiver);
+			},
+		});
+		assert.deepEqual(check(program), []);
+		return accesses;
+	});
+	assert.ok(reads[0]! > 0);
+	assert.ok(reads[1]! / reads[0]! >= 1.9 && reads[1]! / reads[0]! <= 2.1, `element reads: ${reads.join(' -> ')}`);
+});
+
+test('数値キーの型検査は最初の spread より手前だけを確定する', () => {
+	assert.deepEqual(codes('let {0: first, 1: second}: number[] = [1, ...unknown];', { globals: ['unknown'] }), []);
+	assert.deepEqual(codes('let {0: first, 1: second}: number[] = [...unknown, 1];', { globals: ['unknown'] }), []);
+	assert.deepEqual(codes('let {1: second}: number[] = [1];'), ['TYPE_ANNOTATION_MISMATCH']);
+	assert.deepEqual(codes('let {1: second = 2}: number[] = [1];'), []);
+	assert.deepEqual(codes('let first: number = 0; ({0: first} = ["bad", ...unknown]);', { globals: ['unknown'] }), ['TYPE_ANNOTATION_MISMATCH']);
+	assert.deepEqual(codes('let first: number = 0; ({0: first} = [...unknown, "bad"]);', { globals: ['unknown'] }), []);
+});
+
+
+test('型なし分割代入も既存の型付き束縛を検査する', () => {
+	assert.deepEqual(codes('let x: number = 1; let y = 1; ({0: y, 1: x} = [2, "bad"]);'), ['TYPE_ANNOTATION_MISMATCH']);
+	assert.deepEqual(codes('let x = 1; let y = 1; ({0: y, 1: x} = [2, "bad"]);'), []);
+	assert.deepEqual(codes('let x = 1; { let x: number = 1; ({0: x} = ["bad"]); }'), ['TYPE_ANNOTATION_MISMATCH']);
+});
+
+
+test('型なし分割の投影を省いても束縛と計算キーの参照を検査する', () => {
+	assert.deepEqual(codes('let x: number = 1; { let {x} = {x: "ok"}; x = false; }'), []);
+	const result = diagnostics('let {[missing]: x = unknown} = {};');
+	assert.deepEqual(result.map(item => item.params.name), ['missing', 'unknown']);
+	assert.deepEqual(codes('let {x, ...rest} = {x: 1, y: "ok"}; rest = 2;'), []);
 });

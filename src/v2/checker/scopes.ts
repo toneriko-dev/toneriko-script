@@ -49,6 +49,10 @@ export function bindPattern(scope: Scope, pattern: A.Pattern | A.MemberExpressio
 			for (const [index, item] of pattern.elements.entries()) if (item) bindPattern(scope, item, mutable, item.type === 'RestElement' ? annotation : project(annotation, String(index), true));
 			break;
 		case 'ObjectPattern': {
+			if (!annotation) {
+				for (const item of pattern.properties) bindPattern(scope, item.type === 'RestElement' ? item : item.value as A.Pattern, mutable);
+				break;
+			}
 			const dynamic = pattern.properties.some(item => item.type === 'Property' && item.computed && item.key.type !== 'Literal');
 			const used = new Set(pattern.properties.filter(item => item.type === 'Property' && (!item.computed || item.key.type === 'Literal')).map(item => propertyName((item as A.Property).key)));
 			for (const item of pattern.properties) {

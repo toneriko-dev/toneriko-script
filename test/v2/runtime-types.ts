@@ -377,6 +377,43 @@ f();`)).rejects.toMatchObject({code:'TYPE_ANNOTATION_MISMATCH',pos:{line:3,colum
 		expect(interpreter.stepCount).toBeLessThan(256);
 	});
 
+	test.each([
+		['array rest 100000要素', 'let [...r]:number[]=h;', 100000, 200007],
+		['rest引数 100000要素', 'function f(...r:number[]){} f(...h);', 100000, 300011],
+		['array rest 200000要素は既定上限内', 'let [...r]:number[]=h;', 200000, 400007],
+	])('同じ深さのrestを二重に検査しない: %s', async (_name, source, size, steps) => {
+		const interpreter = new Interpreter({ h:Array(size).fill(1) });
+		await interpreter.exec(parse(source).program);
+		expect(interpreter.stepCount).toBe(steps);
+	});
+
+	test('rest内の分割でも同じ配列層の検査を引き継ぐ', async () => {
+		const interpreter = new Interpreter({ h:Array(100).fill(1) });
+		await interpreter.exec(parse('let [...[...r]]:number[]=h;').program);
+		expect(interpreter.stepCount).toBe(309);
+		expect(interpreter.getGlobal('r')).toHaveLength(100);
+	});
+
+	test('副作用のない入れ子分割後もrestを二重に検査しない', async () => {
+		const interpreter = new Interpreter({ h:Array.from({length:100},()=>[1]) });
+		await interpreter.exec(parse('let [[x],...r]:number[][]=h;').program);
+		expect(interpreter.stepCount).toBe(214);
+		expect(interpreter.getGlobal('x')).toBe(1);
+		expect(interpreter.getGlobal('r')).toHaveLength(99);
+	});
+
+	test.each([
+		['array restの不正要素', 'let [...r]:number[]=h;', {h:[1,'bad']}],
+		['rest引数の不正要素', 'function f(...r:number[]){} f(...h);', {h:[1,'bad']}],
+		['object restの不正要素', 'let {a,...r}:{a:number,b:number}=h;', {h:{a:1,b:'bad'}}],
+		['非明示投影は一段深い検査を保つ', 'let {a}:{a:number[]}=h;', {h:{a:['bad']}}],
+		['array restへの後代入', 'let [...r]:number[]=h;r=["bad"];', {h:[1]}],
+		['既定値がarray restを変異する', 'let h=[null,1];function change(){h[1]="bad";return 1;}let [a=change(),...r]:(number|null)[]=h;', {}],
+		['既定値がobject restを変異する', 'let h={a:null,b:1};function change(){h.b="bad";return 1;}let {a=change(),...r}:{a:number|null,b:number}=h;', {}],
+	] as const)('rest検査省略で契約を弱めない: %s', async (_name, source, globals) => {
+		await expect(execute(source, globals)).rejects.toMatchObject({code:'TYPE_ANNOTATION_MISMATCH'});
+	});
+
 	test('検査の要素数も実行予算へ課金する', async () => {
 		const interpreter=new Interpreter({input:Array(1000).fill(1)},{maxSteps:100});
 		await expect(interpreter.exec(parse('let x:number[]=input;').program)).rejects.toMatchObject({code:'STEP_LIMIT_EXCEEDED'});

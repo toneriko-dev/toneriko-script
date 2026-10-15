@@ -2,6 +2,7 @@ import type * as A from '../ast.js';
 import type { CatalogEntry } from '../catalog.js';
 import { diagnostic, type Diagnostic, type DiagnosticCode } from '../diagnostics.js';
 import { catalog } from '../stdlib/index.js';
+import { boundNames } from '../runtime/environment.js';
 import { fallsThrough } from './control-flow.js';
 import { Scope, bindPattern, declare, propertyName, project } from './scopes.js';
 
@@ -100,21 +101,20 @@ function literalProperties(value: A.ObjectExpression): { properties: Map<string,
 	return { properties, uncertain };
 }
 function patternName(pattern: A.Pattern | A.MemberExpression): string {
-	switch (pattern.type) {
-		case 'Identifier': return pattern.name;
-		case 'AssignmentPattern': return patternName(pattern.left);
-		case 'RestElement': return `...${patternName(pattern.argument)}`;
-		case 'ArrayPattern': return `[${pattern.elements.map(item => item ? patternName(item) : '').join(', ')}]`;
-		case 'ObjectPattern': return `{ ${pattern.properties.map(item => patternName(item.type === 'RestElement' ? item : item.value as A.Pattern)).join(', ')} }`;
-		case 'MemberExpression': return 'property';
-	}
+	if (pattern.type === 'Identifier') return pattern.name;
+	if (pattern.type === 'AssignmentPattern') return patternName(pattern.left);
+	if (pattern.type === 'RestElement') return patternName(pattern.argument);
+	const names = boundNames(pattern).join(', ');
+	return pattern.type === 'ArrayPattern' ? `[${names}]` : `{${names}}`;
 }
+
 function mismatchName(name: string, path: readonly Segment[], pattern?: A.Pattern | A.MemberExpression): string {
 	const keys = [...path];
 	let index = 0;
 	while (pattern) {
 		if (pattern.type === 'AssignmentPattern' || pattern.type === 'RestElement') { pattern = pattern.type === 'AssignmentPattern' ? pattern.left : pattern.argument; continue; }
-		if (pattern.type === 'Identifier') { name = pattern.name; break; }
+		name = patternName(pattern);
+		if (pattern.type === 'Identifier') break;
 		if (index >= keys.length) break;
 		const key = keys[index]!;
 		let next: A.Pattern | A.MemberExpression | undefined | null;
@@ -202,7 +202,8 @@ export function check(program: A.Program, options: CheckOptions = {}): Diagnosti
 		const annotation = 'typeAnnotation' in pattern ? pattern.typeAnnotation ?? inherited : inherited;
 		switch (pattern.type) {
 			case 'AssignmentPattern': {
-				const failed = mismatch(annotation ?? ('typeAnnotation' in pattern.left ? pattern.left.typeAnnotation : undefined), pattern.right, patternName(pattern.left), pattern.left);
+				const type = annotation ?? ('typeAnnotation' in pattern.left ? pattern.left.typeAnnotation : undefined);
+				const failed = !collecting && type ? mismatch(type, pattern.right, patternName(pattern.left), pattern.left) : false;
 				if (!failed && pattern.left.type !== 'Identifier') initialBindings(pattern.left, pattern.right, scope);
 				expression(pattern.right, scope); bindingExpressions(pattern.left, scope, annotation); break;
 			}
@@ -210,7 +211,7 @@ export function check(program: A.Program, options: CheckOptions = {}): Diagnosti
 			case 'ArrayPattern': for (const [index, item] of pattern.elements.entries()) if (item) bindingExpressions(item, scope, item.type === 'RestElement' ? annotation : project(annotation, String(index), true)); break;
 			case 'ObjectPattern': for (const item of pattern.properties) {
 				if (item.type === 'RestElement') bindingExpressions(item.argument, scope);
-				else { if (item.computed) expression(item.key as A.Expression, scope); bindingExpressions(item.value as A.Pattern, scope, !item.computed || item.key.type === 'Literal' ? project(annotation, propertyName(item.key)!) : undefined); }
+				else { if (item.computed) expression(item.key as A.Expression, scope); bindingExpressions(item.value as A.Pattern, scope, annotation && (!item.computed || item.key.type === 'Literal') ? project(annotation, propertyName(item.key)!) : undefined); }
 			} break;
 			case 'MemberExpression': expression(pattern, scope); break;
 			case 'Identifier': break;
@@ -218,11 +219,25 @@ export function check(program: A.Program, options: CheckOptions = {}): Diagnosti
 	}
 	function initialBindings(pattern: A.Pattern | A.MemberExpression, value: A.Expression | undefined, scope: Scope): void {
 		if (!value || collecting) return;
+		// 注釈のない分割は値を取り出す必要がありません。代入先の既存の注釈もここで調べます。
+		const pending: (A.Pattern | A.MemberExpression)[] = [pattern];
+		while (pending.length) {
+			const part = pending.pop()!;
+			if (part.type === 'Identifier') {
+				if (scope.resolve(part.name)?.annotation) { checkedInitialBindings(pattern, value, scope); return; }
+			} else if (part.type === 'AssignmentPattern') pending.push(part.left);
+			else if (part.type === 'RestElement') pending.push(part.argument);
+			else if (part.type === 'ArrayPattern') { for (const item of part.elements) if (item) pending.push(item); }
+			else if (part.type === 'ObjectPattern') { for (const item of part.properties) pending.push(item.type === 'RestElement' ? item.argument : item.value as A.Pattern); }
+		}
+	}
+	function checkedInitialBindings(pattern: A.Pattern | A.MemberExpression, value: A.Expression | undefined, scope: Scope): void {
+		if (!value || collecting) return;
 		const absent = (node: A.Node): A.Literal => ({ type: 'Literal', value: null, raw: 'null', loc: node.loc });
 		switch (pattern.type) {
 			case 'Identifier': mismatch(scope.resolve(pattern.name)?.annotation, value, pattern.name); break;
-			case 'AssignmentPattern': initialBindings(pattern.left, value.type === 'Literal' && value.value === null ? pattern.right : value, scope); break;
-			case 'RestElement': initialBindings(pattern.argument, value, scope); break;
+			case 'AssignmentPattern': checkedInitialBindings(pattern.left, value.type === 'Literal' && value.value === null ? pattern.right : value, scope); break;
+			case 'RestElement': checkedInitialBindings(pattern.argument, value, scope); break;
 			case 'MemberExpression': break;
 			case 'ArrayPattern': {
 				if (value.type !== 'ArrayExpression') break;
@@ -233,20 +248,22 @@ export function check(program: A.Program, options: CheckOptions = {}): Diagnosti
 					if (!item || !known) continue;
 					if (item.type === 'RestElement') {
 						const elements = value.elements.slice(index);
-						if (!elements.some(part => part?.type === 'SpreadElement')) initialBindings(item.argument, { ...value, elements }, scope);
-					} else initialBindings(item, element && element.type !== 'SpreadElement' ? element : absent(item), scope);
+						if (!elements.some(part => part?.type === 'SpreadElement')) checkedInitialBindings(item.argument, { ...value, elements }, scope);
+					} else checkedInitialBindings(item, element && element.type !== 'SpreadElement' ? element : absent(item), scope);
 				}
 				break;
 			}
 			case 'ObjectPattern': {
 				const literal = value.type === 'ObjectExpression' ? literalProperties(value) : undefined;
+				// すべての添字で同じ spread 境界を使い、各要素までの再走査を避けます。
+				const firstSpread = value.type === 'ArrayExpression' ? value.elements.findIndex(part => part?.type === 'SpreadElement') : -1;
 				const excluded = new Set<string>();
 				let dynamic = false;
 				for (const item of pattern.properties) {
 					if (item.type === 'RestElement') {
 						if (literal && !literal.uncertain && !dynamic) {
 							const properties: A.Property[] = [...literal.properties].filter(([key]) => !excluded.has(key)).map(([key, child]) => ({ type: 'Property', key: { type: 'Literal', value: key, raw: JSON.stringify(key), loc: value.loc }, value: child, kind: 'init', method: false, shorthand: false, computed: false, loc: value.loc }));
-							initialBindings(item.argument, { type: 'ObjectExpression', properties, loc: value.loc }, scope);
+							checkedInitialBindings(item.argument, { type: 'ObjectExpression', properties, loc: value.loc }, scope);
 						}
 						continue;
 					}
@@ -256,16 +273,16 @@ export function check(program: A.Program, options: CheckOptions = {}): Diagnosti
 					let child: A.Expression | undefined;
 					if (literal) child = literal.properties.get(key) ?? (literal.uncertain ? undefined : absent(item.value));
 					else if (value.type === 'ArrayExpression') {
-						if (key === 'length' && !value.elements.some(part => part?.type === 'SpreadElement')) child = { type: 'Literal', value: value.elements.length, raw: String(value.elements.length), loc: value.loc };
+						if (key === 'length' && firstSpread < 0) child = { type: 'Literal', value: value.elements.length, raw: String(value.elements.length), loc: value.loc };
 						else if (/^(0|[1-9][0-9]*)$/.test(key) && Number(key) < 4294967295) {
 							const index = Number(key);
-							if (!value.elements.slice(0, index + 1).some(part => part?.type === 'SpreadElement')) {
+							if (firstSpread < 0 || index < firstSpread) {
 								const element = value.elements[index];
 								child = element && element.type !== 'SpreadElement' ? element : absent(item.value);
 							}
 						}
 					}
-					initialBindings(item.value as A.Pattern, child, scope);
+					checkedInitialBindings(item.value as A.Pattern, child, scope);
 				}
 				break;
 			}
@@ -357,7 +374,8 @@ export function check(program: A.Program, options: CheckOptions = {}): Diagnosti
 			case 'VariableDeclaration': for (const item of node.declarations) {
 				bindingExpressions(item.id, scope);
 				if (item.init) {
-					const failed = mismatch('typeAnnotation' in item.id ? item.id.typeAnnotation : undefined, item.init, patternName(item.id), item.id);
+					const type = 'typeAnnotation' in item.id ? item.id.typeAnnotation : undefined;
+					const failed = !collecting && type ? mismatch(type, item.init, patternName(item.id), item.id) : false;
 					if (!failed && item.id.type !== 'Identifier') initialBindings(item.id, item.init, scope);
 					expression(item.init, scope);
 				}

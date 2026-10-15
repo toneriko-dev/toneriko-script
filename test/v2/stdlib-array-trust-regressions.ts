@@ -17,44 +17,45 @@ describe('配列の組み込み操作とホスト境界', () => {
 		const {output}=await execute('const a=[-1,-2]; const alias=a; out(a.unshift(...range(0,200000))); out(a===alias); out(a);',{}, {maxSteps:2000000});
 		expect(output).toEqual([200002,true,[...Array.from({length:200000},(_,i)=>i),-1,-2]]);
 	});
-	for (const method of ['shift()', 'unshift(9)']) test(`${method}: ホストが追加した getter と setter を実行しない`, async () => {
-		for(const kind of ['get','set'] as const){
-			let calls=0;
-			const mutate=(a: unknown[])=>{Object.defineProperty(a,'1',{[kind]:()=>{calls++;return 77;},configurable:true});return a;};
-			await expect(execute(`const a=[1,2,3]; mutate(a); a.${method};`,{mutate})).rejects.toMatchObject({code:'ACCESSOR_PROPERTY'});
+	for (const method of ['shift()', 'unshift(9)']) {
+		for (const kind of ['get', 'set'] as const) test(`${method}: ホストが返した ${kind} を実行せず拒否する`, async () => {
+			let calls = 0;
+			const make = () => { const a = [1,2,3]; Object.defineProperty(a, '1', { [kind]: () => { calls++; return 77; }, configurable: true }); return a; };
+			await expect(execute(`const a=make(); a.${method};`, { make })).rejects.toMatchObject({ code: 'ACCESSOR_PROPERTY' });
 			expect(calls).toBe(0);
+		});
+		test(`${method}: ホストの穴のある配列を拒否する`, async () => {
+			await expect(execute(`make().${method};`, { make: () => [1,,3] })).rejects.toMatchObject({ code: 'SPARSE_ARRAY' });
+		});
+		test(`${method}: 異なる原型の getter に届かない`, async () => {
+			let calls = 0;
+			class HostArray extends Array { get secret() { calls++; return 99; } }
+			await expect(execute(`make().${method};`, { make: () => new HostArray(1,2) })).rejects.toMatchObject({ code: 'UNSUPPORTED_VALUE' });
+			expect(calls).toBe(0);
+		});
+	}
+	for (const route of ['nested','async','reenter','parallel','public-call','throw']) test(`${route}: ホストから受け取る accessor 配列は呼ばずに拒否する`, async () => {
+		let calls = 0;
+		const make = () => { const a = [1,2]; Object.defineProperty(a,'0',{ get: () => { calls++; return 7; }, configurable:true }); return a; };
+		if (route === 'public-call') {
+			const vm = new Interpreter();
+			try {
+				await vm.exec(parse('function take(a){return a.shift();}').program);
+				await expect(vm.call(vm.getGlobal('take'), [make()])).rejects.toMatchObject({ code:'ACCESSOR_PROPERTY' });
+			} finally { vm.abort(); }
+		} else {
+			const sources = {
+				nested:'const box=make(); box.items.shift();',
+				async:'make().shift();',
+				reenter:'work(a=>a.shift());',
+				parallel:'[0,1].mapConcurrent(()=>make().shift(),1);',
+				throw:'try { make(); } catch(a) { a.shift(); }',
+			};
+			const hostMake = route === 'nested' ? () => ({items:make()}) : route === 'async' || route === 'parallel' ? async () => { await Promise.resolve(); return make(); } : route === 'throw' ? () => { throw make(); } : make;
+			const work = hostFunction((args,ctx) => ctx.call(args[0]!,[make()]));
+			await expect(execute(sources[route], {make:hostMake,work})).rejects.toMatchObject({ code:'ACCESSOR_PROPERTY' });
 		}
-	});
-	test('別名・入れ子・保持済みの参照がホストで変わっても印を失効する', async () => {
-		let saved: any, reads=0;
-		const save=(box: any)=>{saved=box.items;};
-		const mutate=()=>{Object.defineProperty(saved,'0',{get(){reads++;return 7;},configurable:true});};
-		await expect(execute('const a=[1,2]; save({items:a}); a.unshift(3); mutate(); a.shift();',{save,mutate})).rejects.toMatchObject({code:'ACCESSOR_PROPERTY'});
-		expect(reads).toBe(0);
-	});
-	test('console のホスト処理が追加した accessor を実行しない', async () => {
-		let reads=0;
-		await expect(execute('const a=[1,2]; console.log(a); a.shift();',{}, {onConsoleLog:values=>{Object.defineProperty(values[0],'0',{get(){reads++;return 7;},configurable:true});}})).rejects.toMatchObject({code:'ACCESSOR_PROPERTY'});
-		expect(reads).toBe(0);
-	});
-	test('非同期のホスト処理とスクリプトへの再入でも印を失効する', async () => {
-		let reads=0;
-		const poison=(a: any)=>Object.defineProperty(a,'0',{get(){reads++;return 7;},configurable:true});
-		await expect(execute('const a=[1,2]; work(a); a.shift();',{work:async(a:any)=>{await Promise.resolve();poison(a);}})).rejects.toMatchObject({code:'ACCESSOR_PROPERTY'});
-		const reenter=hostFunction(async(args,ctx)=>{poison(args[0]);return ctx.call(args[1]!,[]);});
-		await expect(execute('const a=[1,2]; work(a,()=>a.shift());',{work:reenter})).rejects.toMatchObject({code:'ACCESSOR_PROPERTY'});
-		expect(reads).toBe(0);
-	});
-	test('ホストへ譲った後の保持済み配列の変更を検査する', async () => {
-		let saved: any, reads=0, poisoned=false;
-		await expect(execute('const a=[1,2]; save(a); for(let i=0;i<1000;i++){} a.shift();',{save:(a:any)=>{saved=a;}}, {yieldInterval:0.000001,yieldToHost:async()=>{if(saved&&!poisoned){poisoned=true;Object.defineProperty(saved,'0',{get(){reads++;return 7;},configurable:true});}}})).rejects.toMatchObject({code:'ACCESSOR_PROPERTY'});
-		expect(poisoned).toBe(true); expect(reads).toBe(0);
-	});
-	test('検査の途中にホストへ譲ると検査済みの添字も信用しない', async () => {
-		let reads=0, poisoned=false;
-		const a=Array.from({length:10000},(_,i)=>i);
-		await expect(execute('a.shift();',{a},{yieldInterval:0.000001,yieldToHost:async()=>{if(!poisoned){poisoned=true;Object.defineProperty(a,'0',{get(){reads++;return 7;},configurable:true});}}})).rejects.toMatchObject({code:'ACCESSOR_PROPERTY'});
-		expect(reads).toBe(0);
+		expect(calls).toBe(0);
 	});
 	test('ホスト配列は一度の検査でキューの速い経路に乗る', async () => {
 		const steps:number[]=[];
@@ -65,51 +66,38 @@ describe('配列の組み込み操作とホスト境界', () => {
 		}
 		expect(steps[1]! - steps[0]!).toBe(4500);
 	});
-	test('ホストの入れ物へ公開した配列は待機中の変更後に再検査する', async () => {
-		for (const array of [false,true]) {
-			const box:any=array?[]:{}; let reads=0;
-			const timer=setTimeout(()=>{const a=array?box[0]:box.a; Object.defineProperty(a,'0',{get(){reads++;return 7;},configurable:true});},0);
-			try {
-				await expect(execute(`${array?'box.unshift([1,2]);':'box.a=[1,2];'} sleep(10); ${array?'box[0]':'box.a'}.shift();`,{box})).rejects.toMatchObject({code:'ACCESSOR_PROPERTY'});
-			} finally { clearTimeout(timer); }
-			expect(reads).toBe(0);
-		}
-	});
-	test('public call が返した配列は次の実行で再検査する', async () => {
-		const vm=new Interpreter(); let reads=0;
-		try {
-			await vm.exec(parse('let saved; function create(){saved=[1,2];return saved;}').program);
-			const a=await vm.call(vm.getGlobal('create'),[]);
-			Object.defineProperty(a,'0',{get(){reads++;return 7;},configurable:true});
-			await expect(vm.exec(parse('saved.shift();').program)).rejects.toMatchObject({code:'ACCESSOR_PROPERTY'});
-			expect(reads).toBe(0);
-		} finally { vm.abort(); }
-	});
 	test('ホスト配列の undefined は null とし、未対応の値は拒否する', async () => {
 		expect((await execute('out(a.shift());',{a:[undefined,1]})).output).toEqual([null]);
 		await expect(execute('a.shift();',{a:[Symbol('value')]})).rejects.toMatchObject({code:'UNSUPPORTED_VALUE'});
 	});
-	test('原型の数値 setter を呼ばず、属性が特殊な配列は既存の検査を使う', async () => {
-		let calls=0;
-		try {
-			Object.defineProperty(Array.prototype,'5001',{set(){calls++;},configurable:true});
-			await expect(execute('const a=range(0,5000); a.unshift(1,2);')).rejects.toMatchObject({code:'ACCESSOR_PROPERTY'});
-		} finally { delete (Array.prototype as any)[5001]; }
-		expect(calls).toBe(0);
-		const a=[1,2];Object.defineProperty(a,'0',{writable:false});
+	test('変更できない添字と length は既存の検査で拒否する', async () => {
+		const a=[1,2]; Object.defineProperty(a,'0',{writable:false});
 		await expect(execute('a.shift();',{a})).rejects.toMatchObject({code:'READONLY_PROPERTY'});
 		const fixed=[1,2]; Object.defineProperty(fixed,'length',{writable:false});
 		await expect(execute('a.unshift();',{a:fixed})).rejects.toMatchObject({code:'READONLY_PROPERTY'});
 	});
 });
 
-test('exec の例外で公開した配列も再検査する', async () => {
-	const vm = new Interpreter(); let calls = 0;
-	try {
-		let thrown: any;
-		try { await vm.exec(parse('const a=[1,2]; throw a;').program); } catch (error) { thrown = error; }
-		Object.defineProperty(thrown.thrownValue, '0', { get: () => { calls++; return 99; }, configurable: true });
-		await expect(vm.exec(parse('a.shift();').program)).rejects.toMatchObject({ code: 'ACCESSOR_PROPERTY' });
-		expect(calls).toBe(0);
-	} finally { vm.abort(); }
-});
+for (const origin of ['script','host']) for (const mode of ['control','out','console','results','unshift']) {
+	test(`${origin}/${mode}: ホストとのやり取りを挟むキューのステップは線形`, async () => {
+		const steps: number[] = [];
+		for (const size of mode === 'unshift' ? [2500,5000] : [5000,10000]) {
+			const output: unknown[] = []; let final: unknown;
+			const vm = new Interpreter({make:()=>Array.from({length:size},(_,i)=>i),out:(x:unknown)=>{output.push(x);},finish:(x:unknown)=>{final=x;}}, {onConsoleLog:args=>{output.push(args[0]);}, maxSteps:2000000});
+			const source = mode === 'unshift'
+				? `const st=${origin==='host'?'make()':'[]'}; for(let i=0;i<${size};i++){out(st);st.unshift(i);}finish(st);`
+				: `const q=${origin==='host'?'make()':`range(0,${size})`}; const results=[];let sum=0;while(q.length){const x=q.shift();sum+=x;${mode==='out'?'out(x);':mode==='console'?'console.log(x);':mode==='results'?'out(x);results.push({x});':''}}finish([sum,q.length,results]);`;
+			try { await vm.exec(parse(source).program); steps.push(vm.stepCount); }
+			finally { vm.abort(); }
+			if (mode === 'unshift') {
+				expect(final).toEqual([...Array.from({length:size},(_,i)=>size-i-1),...(origin==='host'?Array.from({length:size},(_,i)=>i):[])]);
+				expect(output.length).toBe(size); for(const value of output)expect(value).toBe(final);
+			} else {
+				expect(final).toEqual([size*(size-1)/2,0,mode==='results'?Array.from({length:size},(_,x)=>({x})):[]]);
+				expect(output).toEqual(mode==='control'?[]:Array.from({length:size},(_,i)=>i));
+			}
+			expect(vm.stepCount).toBeLessThan(size*80);
+		}
+		expect(steps[1]!).toBeLessThan(steps[0]!*2.05);
+	});
+}

@@ -1,4 +1,3 @@
-import { arrayRevision, trustedArray, trustArray, safeArrayPrototype, privateObject, invalidateHostArrays } from '../runtime/array-trust.js';
 import { type StdFunction, type StdDefinition, type StdContext, type StdFrame, requireArray, requireNumber, isStdFunction, makeFunction } from './core.js';
 import { scriptObject, scriptObjects, isScriptFunction, type Value } from '../runtime/brands.js';
 import type { PropertyAccess } from '../runtime/values.js';
@@ -47,27 +46,25 @@ function* copy(ctx: StdContext, array: Value[], start = 0, end = array.length): 
 	for (let i = start; i < end; i++) { result.push(ctx.properties.get(array, i, ctx.pos)); yield* step(ctx, i); }
 	return scriptObject(result);
 }
-// 密で変更可能な own data property だけを確認した配列を、同じホスト世代内で再利用します。
+// ホストは共有した値を後から変更しないため、密なデータ配列の検査結果を再利用できます。
+const checkedHostArrays = new WeakSet<object>();
 function* nativeArray(ctx: StdContext, xs: Value[]): Generator<any, boolean, any> {
-	if (Object.getPrototypeOf(xs) !== Array.prototype || !safeArrayPrototype()) return false;
-	if (trustedArray(xs)) return true;
-	const revision = arrayRevision();
-	if (!Object.getOwnPropertyDescriptor(xs, 'length')!.writable || !Object.isExtensible(xs)) return false;
+	if (scriptObjects.has(xs) || checkedHostArrays.has(xs)) return true;
+	if (Object.getPrototypeOf(xs) !== Array.prototype) throw runtimeError('UNSUPPORTED_VALUE', ctx.pos, {}, 'TypeError');
+	let mutable = Object.getOwnPropertyDescriptor(xs, 'length')!.writable === true && Object.isExtensible(xs);
 	for (let i = 0; i < xs.length; i++) {
 		const descriptor = Object.getOwnPropertyDescriptor(xs, String(i));
 		if (!descriptor) throw runtimeError('SPARSE_ARRAY', ctx.pos);
 		if (!('value' in descriptor)) throw runtimeError('ACCESSOR_PROPERTY', ctx.pos, { key: String(i) }, 'TypeError');
-		if (!descriptor.writable || !descriptor.configurable) return false;
+		if (!descriptor.writable || !descriptor.configurable) mutable = false;
 		ctx.properties.normalize(descriptor.value, ctx.pos);
 		yield* step(ctx, i);
-		// 検査中にホストへ渡った場合は、検査済みの添字も変わり得ます。
-		if (revision !== arrayRevision()) return false;
 	}
-	trustArray(xs); return true;
+	if (mutable) checkedHostArrays.add(xs);
+	return mutable;
 }
 function* prepend(ctx: StdContext, xs: Value[], items: Value[]): StdFrame {
 	if (!Object.getOwnPropertyDescriptor(xs, 'length')!.writable) throw runtimeError('READONLY_PROPERTY', ctx.pos, { key: 'length' }, 'TypeError');
-	if (!privateObject(xs) && items.some(value => value !== null && typeof value === 'object')) invalidateHostArrays();
 	if (yield* nativeArray(ctx, xs)) return nativeUnshift.call(xs, ...items);
 	const old = (yield* copy(ctx, xs)) as Value[];
 	for (let i = 0; i < items.length + old.length; i++) { ctx.properties.set(xs, i, i < items.length ? items[i]! : old[i - items.length]!, ctx.pos); yield* step(ctx, i); }
@@ -82,9 +79,9 @@ export const arrayDefinitions: StdDefinition[] = [
 		const value = ctx.properties.get(xs, xs.length - 1, ctx.pos); ctx.properties.set(xs, 'length', xs.length - 1, ctx.pos); return value;
 	}),
 	def('shift', [], 'any', '先頭の要素を取り除いて返します。', 'Removes and returns the first element.', function* (ctx, r) {
-		const xs = requireArray(ctx, r); if (!xs.length) return null;
-		// 検査済みの配列は、保存した組み込み関数で移動します。
-		if (yield* nativeArray(ctx, xs)) return ctx.properties.normalize(nativeShift.call(xs), ctx.pos);
+		const xs = requireArray(ctx, r); const native = yield* nativeArray(ctx, xs); if (!xs.length) return null;
+		// スクリプトの配列と検査済みのホスト配列は、保存した組み込み関数で移動します。
+		if (native) return ctx.properties.normalize(nativeShift.call(xs), ctx.pos);
 		const first = ctx.properties.get(xs, 0, ctx.pos);
 		for (let i = 1; i < xs.length; i++) { ctx.properties.set(xs, i - 1, ctx.properties.get(xs, i, ctx.pos), ctx.pos); yield* step(ctx, i); }
 		ctx.properties.set(xs, 'length', xs.length - 1, ctx.pos); return first;

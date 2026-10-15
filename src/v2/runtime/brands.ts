@@ -1,4 +1,3 @@
-import { registerScriptArray, registerPrivateObject } from './array-trust.js';
 import type * as AST from '../ast.js';
 import { isStdFunction } from '../stdlib/core.js';
 
@@ -23,8 +22,6 @@ export const scriptObjects = new WeakSet<object>();
 /** 通常の辞書と配列の作成元だけを記録し、ホストへ渡した後も現在の原型を別に確かめます。 */
 export function scriptObject<T extends object>(value: T): T {
 	scriptObjects.add(value);
-	registerPrivateObject(value);
-	if (Array.isArray(value)) registerScriptArray(value);
 	return value;
 }
 

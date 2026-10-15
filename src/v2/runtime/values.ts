@@ -47,74 +47,65 @@ const domExceptionPrototype = typeof DOMException === 'undefined' ? undefined : 
 const domExceptionName = domExceptionPrototype && Object.getOwnPropertyDescriptor(domExceptionPrototype, 'name')?.get;
 const hiddenErrorKeys = new Set(['stack', 'sourceURL', 'line', 'column', 'originalLine', 'originalColumn', 'fileName', 'lineNumber', 'columnNumber']);
 
-let scriptObjects = new WeakSet<object>();
-const createdScriptObjects = new WeakSet<object>();
-
-/** ホストが値の原型を変更できる境界で、判定だけを一括して破棄する。 */
-export function invalidateErrorKinds(): void { scriptObjects = new WeakSet(); }
-
-/** スクリプトで作る辞書と配列は、ホストへ渡るまではエラーにならない。 */
-export function scriptObject<T extends object>(value: T): T {
-	createdScriptObjects.add(value);
-	scriptObjects.add(value);
-	return value;
-}
+const errorConstructorNames = new Set(['Error', 'TypeError', 'RangeError', 'ReferenceError', 'SyntaxError', 'EvalError', 'URIError', 'AggregateError', 'DOMException']);
+const errorPrototypes = new Set<object>([
+	Error.prototype, TypeError.prototype, RangeError.prototype, ReferenceError.prototype,
+	SyntaxError.prototype, EvalError.prototype, URIError.prototype, AggregateError.prototype,
+]);
 
 export function errorValue(value: unknown, pos: AST.Pos = { line: 1, column: 1 }): value is object {
-	if (typeof value !== 'object' || value === null) return false;
-	if (scriptObjects.has(value)) return false;
-	const error = classifyError(value, pos);
-	// 中断後も、作成元がスクリプトと分かる値だけを検証して近道へ戻します。
-	if (!error && createdScriptObjects.has(value)) scriptObjects.add(value);
-	return error;
+	return classifyError(value, pos, 'detached');
 }
 
-/** 位置情報のキーは、Proxy の罠が原型を変えた場合にも古い判定で公開しない。 */
+/** 隠すキーでは、原型を外された DOMException のブランドも確かめます。 */
 function propertyError(value: unknown, key: string, pos: AST.Pos): value is object {
-	if (!hiddenErrorKeys.has(key) || typeof value !== 'object' || value === null) return errorValue(value, pos);
-	return classifyError(value, pos, false);
+	return classifyError(value, pos, hiddenErrorKeys.has(key) ? 'all' : false);
 }
 
-/** 情報を隠す判定は広く取り、利用者の toStringTag の getter は呼ばない。 */
-function classifyError(value: unknown, _pos: AST.Pos = { line: 1, column: 1 }, plain = true): value is object {
-	if (isScriptErrorValue(value)) return true;
+/** 原型は毎回確かめ、利用者の toStringTag の getter は呼びません。 */
+function classifyError(value: unknown, pos: AST.Pos, domProbe: false | 'detached' | 'all'): value is object {
 	if (typeof value !== 'object' || value === null) return false;
-	// 通常の辞書は例外を使うブランド検査や原型の全走査を省きます。
-	// ホストの Proxy は操作の間にも値を変えられるため、判定結果は保存しません。
-	if (plain) {
-		const prototype = Object.getPrototypeOf(value);
-		const array = prototype === Array.prototype && Array.isArray(value)
-			&& Object.getPrototypeOf(prototype) === Object.prototype
-			&& !Object.getOwnPropertyDescriptor(prototype, Symbol.toStringTag);
-		if ((prototype === null || prototype === Object.prototype || array)
-			&& !Object.getOwnPropertyDescriptor(value, Symbol.toStringTag)
-			&& (prototype === null || !Object.getOwnPropertyDescriptor(Object.prototype, Symbol.toStringTag))) {
-			// 原型を外されたネイティブ Error の内部ブランドは残っています。
-			return !array && Object.prototype.toString.call(value) === '[object Error]';
-		}
-	}
-	if (domExceptionName) {
-		try { Reflect.apply(domExceptionName, value, []); return true; } catch { /* 通常の Error 判定を続ける。 */ }
-	}
-	let object: object | null = value;
-	let tag: PropertyDescriptor | undefined;
+	if (isScriptErrorValue(value)) return true;
+	const prototype = Object.getPrototypeOf(value);
+	let tag = Object.getOwnPropertyDescriptor(value, Symbol.toStringTag);
+	let object: object | null = prototype;
+	let local = false;
 	while (object) {
-		if (object === Error.prototype) return true;
+		if (errorPrototypes.has(object) || object === domExceptionPrototype) return true;
 		tag ??= Object.getOwnPropertyDescriptor(object, Symbol.toStringTag);
-		const constructor = Object.getOwnPropertyDescriptor(object, 'constructor');
-		if (constructor && 'value' in constructor && typeof constructor.value === 'function') {
-			const source = Function.prototype.toString.call(constructor.value);
-			if (/^function\s+(?:Error|TypeError|RangeError|ReferenceError|SyntaxError|EvalError|URIError|AggregateError|DOMException)\s*\(\s*\)\s*\{\s*\[native code\]\s*\}$/.test(source)) return true;
-		}
+		if (object === Object.prototype) { local = true; break; }
 		object = Object.getPrototypeOf(object);
+	}
+	const brand = tag ? undefined : Object.prototype.toString.call(value);
+	if (brand === '[object Error]' || brand === '[object DOMException]') return true;
+	// 原型を外すとタグを失う DOMException は、境界と非公開キーでブランドを確かめます。
+	// 普通のプロパティ操作では現在の原型を使い、例外を投げる検査を省きます。
+	if (domExceptionName && (domProbe === 'all' || (prototype === null && (domProbe === 'detached' || tag)))) {
+		try { Reflect.apply(domExceptionName, value, []); return true; } catch { /* ブランドを持たない値です。 */ }
+	}
+	// この realm の普通のクラスでは、例外を投げるブランド検査も関数の文字列化も不要です。
+	// 別 realm の古い Error 子クラスは内部ブランドを持たないため、組み込みの原型も確認します。
+	if (!local && prototype !== null) {
+		object = prototype;
+		while (object) {
+			const constructor = Object.getOwnPropertyDescriptor(object, 'constructor');
+			if (constructor && 'value' in constructor && typeof constructor.value === 'function') {
+				const name = Object.getOwnPropertyDescriptor(constructor.value, 'name')?.value;
+				if (!errorConstructorNames.has(name)) { object = Object.getPrototypeOf(object); continue; }
+				const source = Function.prototype.toString.call(constructor.value);
+				if (/^function\s+(?:Error|TypeError|RangeError|ReferenceError|SyntaxError|EvalError|URIError|AggregateError|DOMException)\s*\(\s*\)\s*\{\s*\[native code\]\s*\}$/.test(source)) return true;
+			}
+			object = Object.getPrototypeOf(object);
+		}
 	}
 	if (tag) {
 		if ('value' in tag && (tag.value === 'Error' || tag.value === 'DOMException')) return true;
-		// 原型とタグの両方を隠されたエラーらしい値も、内部情報を辞書として公開しない。
-		if (Object.hasOwn(value, 'stack') || Object.hasOwn(value, 'message')) throw runtimeError('UNSUPPORTED_VALUE', _pos, {}, 'TypeError');
+		// 原型とタグの両方を隠されたエラーらしい値も、内部情報を辞書として公開しません。
+		if (Object.hasOwn(value, 'stack') || Object.hasOwn(value, 'message')) throw runtimeError('UNSUPPORTED_VALUE', pos, {}, 'TypeError');
 		return false;
 	}
-	return Object.prototype.toString.call(value) === '[object Error]';
+
+	return false;
 }
 
 function hiddenErrorKey(value: object, key: string): boolean {

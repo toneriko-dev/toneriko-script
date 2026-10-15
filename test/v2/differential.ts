@@ -395,6 +395,29 @@ function generatedControlStatement(depth: number): fc.Arbitrary<string> {
 }
 
 describe('v2 parser: TypeScript パーサーとの差分', () => {
+	for (const source of [
+		'for (let f = x => a in b; ;) break;',
+		'for (x => a in b; ;) break;',
+		'for (let f = async x => a in b; ;) break;',
+		'const f = (p): (number) => p;',
+	]) {
+		test(`TypeScriptも拒否するアロー構文: ${source}`, () => {
+			const file = ts.createSourceFile('input.mts', source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+			assert.ok((file as ts.SourceFile & { parseDiagnostics: readonly ts.Diagnostic[] }).parseDiagnostics.length > 0);
+			assert.throws(() => parse(source));
+		});
+	}
+	for (const source of [
+		'for (let f = x => (a in b); ;) break;',
+		'for (let f = (x => a in b); ;) break;',
+		'const f = (p): (number)[] => p;',
+		'const f = (p): ((number)) => p;',
+		'const f = (p): (number[]) => p;',
+		'const f = (p): (number | string) => p;',
+		'const f = (p): (void) => p;',
+		'const f = (p): (null) => p;',
+	]) test(`区切りを明示したアロー構文: ${source}`, () => compare(source));
+
 	for (const [index, source] of examples.entries()) {
 		test(`手書きの構文 ${index + 1}`, () => compare(source));
 	}

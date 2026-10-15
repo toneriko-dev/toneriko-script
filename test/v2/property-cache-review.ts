@@ -1,7 +1,8 @@
+import { runInNewContext } from 'node:vm';
 import { describe, expect, test, vi } from 'vitest';
 import { Interpreter } from '../../src/v2/interpreter.js';
 import { parse } from '../../src/v2/parser/index.js';
-import { PropertyAccess, scriptObject, invalidateErrorKinds } from '../../src/v2/runtime/values.js';
+import { PropertyAccess, errorValue } from '../../src/v2/runtime/values.js';
 
 const pos = { line: 1, column: 1 };
 
@@ -25,36 +26,57 @@ describe('ホストとスクリプトのエラー判定', () => {
 		});
 	}
 
-	test('スクリプトが作った辞書と配列はエラー判定の原型走査を通らない', async () => {
-		const getPrototypeOf = Object.getPrototypeOf;
-		let prototypes = 0;
-		const spy = vi.spyOn(Object, 'getPrototypeOf').mockImplementation(value => {
-			if (Object.hasOwn(value, 'rv6Marker') || (Array.isArray(value) && value[0] === 'rv6Marker')) prototypes++;
-			return getPrototypeOf(value);
-		});
-		try {
-			await new Interpreter({}, { now: () => 0 }).exec(parse(`
-				let o = { rv6Marker: 1 }; let a = ["rv6Marker"];
-				for (let i = 0; i < 100; i++) { o.rv6Marker += 1; a[0]; }
-			`).program);
-			expect(prototypes).toBe(0);
-		} finally { spy.mockRestore(); }
+	test('保存したスクリプトの値もProxyが原型を変えた直後に読み直す', async () => {
+		let saved: object;
+		const p = new Proxy({}, { getOwnPropertyDescriptor(target, key) {
+			if (key === 'x') Object.setPrototypeOf(saved, TypeError.prototype);
+			return Reflect.getOwnPropertyDescriptor(target, key);
+		} });
+		const output: unknown[] = [];
+		await new Interpreter({ save: (value: object) => { saved = value; }, p, out: (value: unknown) => { output.push(value); } }).exec(parse(`
+			const o = {}; save(o); o.name; p.x; const r = [o.name, "name" in o]; out(r);
+		`).program);
+		expect(output).toEqual([['TypeError', true]]);
 	});
 
-	test('中断後はスクリプトで作った値だけを一度再検証して近道へ戻す', () => {
+	test('Proxyへの代入で渡したスクリプトの値の原型変更も見落とさない', async () => {
+		const holder = new Proxy({}, { defineProperty(target, key, descriptor) {
+			Object.setPrototypeOf(descriptor.value, RangeError.prototype);
+			return Reflect.defineProperty(target, key, descriptor);
+		} });
+		const output: unknown[] = [];
+		await new Interpreter({ holder, out: (value: unknown) => { output.push(value); } }).exec(parse(`
+			const o = {}; holder.x = o; const r = [o.name, "name" in o]; out(r);
+		`).program);
+		expect(output).toEqual([['RangeError', true]]);
+	});
+
+	test.each([false, true])('普通のクラスの読み取りでDOMExceptionのブランド検査や関数の文字列化をしない: 別realm=%s', foreign => {
+		class H { x = 1; }
+		const h = foreign ? runInNewContext('new (class H { x = 1 })()') : new H();
 		const properties = new PropertyAccess();
-		const value = scriptObject(Object.assign(Object.create(null), { a: 1 }));
-		invalidateErrorKinds();
-		const getPrototypeOf = Object.getPrototypeOf;
-		let prototypes = 0;
-		const spy = vi.spyOn(Object, 'getPrototypeOf').mockImplementation(object => {
-			if (object === value) prototypes++;
-			return getPrototypeOf(object);
-		});
+		const getter = Object.getOwnPropertyDescriptor(DOMException.prototype, 'name')!.get;
+		const apply = vi.spyOn(Reflect, 'apply');
+		const source = vi.spyOn(Function.prototype, 'toString');
 		try {
-			for (let i = 0; i < 100; i++) expect(properties.get(value, 'a', pos)).toBe(1);
-			expect(prototypes).toBe(1);
-		} finally { spy.mockRestore(); }
+			for (let i = 0; i < 100; i++) expect(properties.get(h, 'x', pos)).toBe(1);
+			expect(apply.mock.calls.filter(([fn]) => fn === getter)).toHaveLength(0);
+			expect(source).not.toHaveBeenCalled();
+		} finally { source.mockRestore(); apply.mockRestore(); }
+	});
+
+	test('原型をnullにしたDOMExceptionもエラーのブランドを保つ', () => {
+		const error = Object.setPrototypeOf(new DOMException('host', 'AbortError'), null);
+		expect(errorValue(error)).toBe(true);
+	});
+
+	test.each([null, Object.prototype, (class H {}).prototype])('原型を変えたDOMExceptionの非公開キーも隠す: %s', prototype => {
+		const error = Object.setPrototypeOf(new DOMException('host', 'AbortError'), prototype);
+		Object.defineProperty(error, 'stack', { value: 'private', enumerable: true, configurable: true });
+		const properties = new PropertyAccess();
+		expect(properties.get(error, 'stack', pos)).toBeNull();
+		expect(properties.has(error, 'stack', pos)).toBe(false);
+		expect(properties.entries(error, pos)).toEqual([]);
 	});
 
 	test('ホスト呼び出しと次の実行で原型が変わっても古い判定を使わない', async () => {

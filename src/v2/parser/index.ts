@@ -7,8 +7,8 @@ import { checkEarlyErrors } from './early-errors.js';
 // 左結合の連鎖や else if の並びは反復で読み、この深さには含めません。
 // 256 は Chromium 153・Firefox 155・WebKit 26.6 で、括弧・配列・関数・
 // 分割代入などの構文を上限まで解析・評価してスタックを溢れさせない深さです。
-// 全優先順位と型付きアローの既定値を重ねる cold 測定では、最小の実スタック上限は
-// Chromium の 421 段（256 段の 1.64 倍）です。複数構文を混ぜた形でも確認します。
+// 条件式の偽の枝に型付きアローの既定値を重ねる altTyped の cold 測定では、
+// Chromium の実スタック上限は 382 段（256 段の 1.49 倍）です。
 // 再現手順は scripts/v2-browser-depth.mjs にあります。
 const MAX_SYNTAX_DEPTH = 256;
 // 再帰する各入口も別に数え、構文の深さに含まれない試し読みや補助処理の重なりを制限します。
@@ -64,7 +64,8 @@ class Parser {
 	private labels = new Map<string, boolean>();
 	// 括弧は公開 AST から省き、演算子と代入先の構文制約にだけ使います。
 	private readonly parenthesized = new WeakSet<A.Expression>();
-	private readonly checkedExpressions = new WeakSet<A.Node>();
+	// 検査済みの式の根だけを記録し、括弧や外側の式からの再走査を省きます。
+	private readonly checkedExpressions = new Set<A.Node>();
 	private readonly trailingComma = new WeakSet<A.Expression>();
 	private readonly failedTypeArguments = new Set<number>();
 	private readonly parenthesisEnds = new Map<number, number | null>();
@@ -571,6 +572,8 @@ class Parser {
 				if (this.eat('(')) {
 					const typeAnnotation = this.nested(() => this.typeAnnotation());
 					this.expect(')');
+					// 直後の矢印は関数型の区切りになるため、戻り値の括弧型として読み替えません。
+					if (this.at('=>') && (typeAnnotation.type === 'FunctionTypeAnnotation' || (typeAnnotation.type === 'KeywordTypeAnnotation' && !['null', 'void'].includes(typeAnnotation.name)))) this.fail('UNSUPPORTED_TYPE');
 					type = this.node(start, { type: 'ParenthesizedTypeAnnotation', typeAnnotation });
 				} else if (this.eat('{')) {
 					const properties: A.TypeProperty[] = [];
@@ -613,7 +616,7 @@ class Parser {
 		this.enterParser();
 		try {
 			const start = this.peek();
-			let left = this.unary(mutation, boundary, min === 0, allowReturnType);
+			let left = this.unary(mutation, boundary, min === 0, allowReturnType, allowIn);
 			// 優先順位と右結合を明示的なスタックで処理し、演算子の種類で再帰を増やしません。
 			const operators: { op: Token; left: A.Expression; start: A.NodeBase }[] = [];
 			let operandStart: A.NodeBase = start;
@@ -656,7 +659,7 @@ class Parser {
 				if (operator === '**' && powers++ >= 1024) this.fail('NESTING_TOO_DEEP', op);
 				operators.push({ op, left, start: operandStart });
 				operandStart = this.peek();
-				left = this.unary(false, boundary, false, allowReturnType);
+				left = this.unary(false, boundary, false, allowReturnType, allowIn);
 			}
 			while (operators.length) reduce();
 			if (conditional && min === 0 && this.at('?')) {
@@ -693,7 +696,7 @@ class Parser {
 		return (node.type === 'Literal' && node.value === 'undefined') || (node.type === 'TemplateLiteral' && node.expressions.length === 0 && node.quasis[0]?.value.cooked === 'undefined');
 	}
 
-	private unary(mutation: boolean, boundary: boolean, allowArrow: boolean, allowReturnType = true): A.Expression {
+	private unary(mutation: boolean, boundary: boolean, allowArrow: boolean, allowReturnType = true, allowIn = true): A.Expression {
 		this.enterParser();
 		try {
 			const prefixes: Token[] = [];
@@ -709,11 +712,11 @@ class Parser {
 			if (this.at('++') || this.at('--')) {
 				if (!mutation) this.fail('UPDATE_IN_EXPRESSION');
 				this.take();
-				const argument = this.assignmentTarget(this.unary(false, boundary, false, allowReturnType), false);
+				const argument = this.assignmentTarget(this.unary(false, boundary, false, allowReturnType, allowIn), false);
 				if (argument.type !== 'Identifier' && argument.type !== 'MemberExpression') this.fail('INVALID_ASSIGNMENT_TARGET', argument);
 				return this.node(t, { type: 'UpdateExpression', operator: t.raw as '++' | '--', prefix: true, argument });
 			}
-			let expression = this.primary(mutation, boundary, allowArrow, allowReturnType);
+			let expression = this.primary(mutation, boundary, allowArrow, allowReturnType, allowIn);
 			expression = this.suffix(expression, boundary, t);
 			if ((this.at('++') || this.at('--')) && !this.peek().lineBreakBefore) {
 				if (!mutation) this.fail('UPDATE_IN_EXPRESSION');
@@ -829,13 +832,13 @@ class Parser {
 			if (token.raw === closing.at(-1)) closing.pop();
 		}
 	}
-	private arrow(async: boolean, boundary: boolean, allowReturnType = true): A.ArrowFunctionExpression {
+	private arrow(async: boolean, boundary: boolean, allowReturnType = true, allowIn = true): A.ArrowFunctionExpression {
 		this.enterParser();
 		try {
 			this.enterSyntax();
 			try {
-				// 改行と条件式の区切りの扱いが違う解析結果は共有しません。
-				const key = this.index * 4 + Number(boundary) * 2 + Number(allowReturnType);
+				// 改行・条件式の区切り・in の可否が違う解析結果は共有しません。
+				const key = this.index * 8 + Number(boundary) * 4 + Number(allowReturnType) * 2 + Number(allowIn);
 				const cached = this.arrows.get(key);
 				if (cached) {
 					this.index = cached.end;
@@ -853,7 +856,7 @@ class Parser {
 					while (this.peek(offset).kind === 'identifier' && this.peek(offset + 1).raw === ':') offset += 2;
 					if (!['for', 'while', 'do', '{', 'function', 'async'].includes(this.peek(offset).raw)) this.fail('ARROW_OBJECT_BODY', this.peek(1));
 				}
-				const body = this.at('{') ? this.functionBody() : this.expression(0, false, boundary, true, false, allowReturnType);
+				const body = this.at('{') ? this.functionBody() : this.expression(0, false, boundary, allowIn, false, allowReturnType);
 				const expression = this.node(start, { type: 'ArrowFunctionExpression', params, body, async, generator: false, expression: body.type !== 'BlockStatement', ...(returnType ? { returnType } : {}) });
 				// 試し読みした本体は再解析せず、外側の括弧の印が漏れないよう根だけ複製します。
 				this.arrows.set(key, { expression, end: this.index });
@@ -861,17 +864,17 @@ class Parser {
 			} finally { this.syntaxDepth--; }
 		} finally { this.parserDepth--; }
 	}
-	private primary(mutation: boolean, boundary: boolean, allowArrow: boolean, allowReturnType: boolean): A.Expression {
+	private primary(mutation: boolean, boundary: boolean, allowArrow: boolean, allowReturnType: boolean, allowIn: boolean): A.Expression {
 		this.enterParser();
 		try {
 			const t = this.peek();
 			if (this.at('async') && !this.peek(1).lineBreakBefore && this.arrowAhead(1, allowReturnType)) {
 				if (!allowArrow) this.fail('UNEXPECTED_TOKEN');
-				return this.arrow(true, boundary, allowReturnType);
+				return this.arrow(true, boundary, allowReturnType, allowIn);
 			}
 			if ((this.at('(') || t.kind === 'identifier') && this.arrowAhead(0, allowReturnType)) {
 				if (!allowArrow) this.fail('UNEXPECTED_TOKEN');
-				return this.arrow(false, boundary, allowReturnType);
+				return this.arrow(false, boundary, allowReturnType, allowIn);
 			}
 			if (this.eat('(')) {
 				const expression = this.nested(() => this.expression(0, mutation, false, true));
@@ -1129,11 +1132,11 @@ class Parser {
 	}
 	// 分割代入の左辺が確定するまでは、既定値と式中の代入を区別できません。
 	private checkExpression(initial: A.Node, root = false): void {
+		if (initial.type === 'ArrowFunctionExpression' || initial.type === 'Identifier' || initial.type === 'Literal' || initial.type === 'TemplateElement') return;
 		const pending: A.Node[] = [initial];
-		const checked: A.Node[] = [];
 		while (pending.length) {
 			const node = pending.pop()!;
-			if (node.type === 'ArrowFunctionExpression') continue;
+			if (node.type === 'ArrowFunctionExpression' || node.type === 'Identifier' || node.type === 'Literal' || node.type === 'TemplateElement') continue;
 			if (node.type === 'AssignmentPattern') this.fail('ASSIGNMENT_IN_EXPRESSION', node);
 			if (node.type === 'AssignmentExpression') {
 				if (node !== initial || !root) this.fail('ASSIGNMENT_IN_EXPRESSION', node);
@@ -1145,7 +1148,6 @@ class Parser {
 				continue;
 			}
 			if (this.checkedExpressions.has(node)) continue;
-			checked.push(node);
 			if (node.type === 'ObjectExpression') {
 				let proto = false;
 				for (const property of node.properties) {
@@ -1168,7 +1170,7 @@ class Parser {
 				[pending[left], pending[right]] = [pending[right]!, pending[left]!];
 			}
 		}
-		for (const node of checked) this.checkedExpressions.add(node);
+		this.checkedExpressions.add(initial);
 	}
 
 	private assignmentTarget(expression: A.Expression, destructure: boolean): A.Pattern | A.MemberExpression {

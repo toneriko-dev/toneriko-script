@@ -81,6 +81,26 @@ const chains: [string, (size: number) => string, unknown][] = [
 ];
 
 describe('構文の深さの上限', () => {
+	for (const [name, source] of [
+		['べき乗', (outer: number, inner: number) => '1 ** '.repeat(outer) + '(' + '1 ** '.repeat(inner) + '1)'],
+		['単項', (outer: number, inner: number) => '!'.repeat(outer) + '(' + '!'.repeat(inner) + 'true)'],
+		['単項とべき乗', (outer: number, inner: number) => '!'.repeat(outer) + '(' + '1 ** '.repeat(inner) + '1)'],
+	] as const) {
+		test(`${name}は括弧をまたいだ経路の合計1024段まで`, () => {
+			const program = parse(source(512, 512)).program;
+			assert.doesNotThrow(() => structuredClone(program));
+			assert.doesNotThrow(() => JSON.stringify(program));
+			assert.throws(() => parse(source(512, 513)), { code: 'NESTING_TOO_DEEP' });
+		});
+	}
+	test('左の括弧のべき乗も経路の合計に含める', () => {
+		assert.doesNotThrow(() => parse('(' + '1 ** '.repeat(1023) + '1) ** 1'));
+		assert.throws(() => parse('(' + '1 ** '.repeat(1024) + '1) ** 1'), { code: 'NESTING_TOO_DEEP' });
+	});
+	test('隣り合う別々の式の単項演算は合算しない', () => {
+		assert.doesNotThrow(() => parse('!'.repeat(1024) + 'true; ' + '!'.repeat(1024) + 'true;'));
+	});
+
 	for (const [engine, error] of [
 		['V8', new RangeError('Maximum call stack size exceeded')],
 		['SpiderMonkey', Object.assign(new Error('too much recursion'), { name: 'InternalError' })],

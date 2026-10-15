@@ -56,8 +56,16 @@ function scope(body: A.Statement[], parameters: A.Pattern[] = [], functionBody =
 
 export function checkEarlyErrors(program: A.Program): void {
 	const pending: A.Node[] = [program];
+	// 対象演算子の子を訪問し終える位置だけを積み、通常の節には深さの記録を作りません。
+	const operatorScopes: number[] = [];
 	while (pending.length) {
+		while (operatorScopes.length && pending.length <= operatorScopes[operatorScopes.length - 1]!) operatorScopes.pop();
 		const node = pending.pop()!;
+		// 括弧を省いた AST の経路で数え、別々の枝や文の演算子は合算しません。
+		if (node.type === 'UnaryExpression' || node.type === 'AwaitExpression' || (node.type === 'BinaryExpression' && node.operator === '**')) {
+			if (operatorScopes.length >= 1024) throw syntaxError('NESTING_TOO_DEEP', node.loc.start);
+			operatorScopes.push(pending.length);
+		}
 		const begin = pending.length;
 		switch (node.type) {
 			case 'Program': scope(node.body); break;

@@ -87,6 +87,11 @@ if (process.argv[2] === '--worker') {
 	const hashes = [...new Set(report.records.filter(record => record.name === 'parsebig' && record.ok).map(record => record.astHash))];
 	report.astAgreement = hashes.length === 1;
 	if (!report.astAgreement) report.failures.push({ error: '構文木の比較が一致しませんでした', hashes });
+	report.stepAgreement = Object.keys(programs).every(name => {
+		const steps = [...new Set(report.records.filter(record => record.name === name && record.ok).map(record => record.steps))];
+		if (steps.length !== 1) report.failures.push({ name, error: 'ステップ数が一致しませんでした', steps });
+		return steps.length === 1;
+	});
 	report.failures.push(...report.records.filter(record => !record.ok));
 	const percentile = (values, q) => [...values].sort((a, b) => a - b)[Math.ceil(values.length * q) - 1];
 	report.summary = versions.flatMap(version => [...Object.keys(programs), 'parsebig'].map(name => {

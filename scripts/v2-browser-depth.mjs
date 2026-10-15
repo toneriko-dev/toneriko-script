@@ -11,7 +11,7 @@ const { chromium, firefox, webkit } = require('@playwright/test');
 const directory = await mkdtemp(join(root, '.git', 'v2-browser-depth-'));
 const results = [];
 // --margin-only は深さの二つの上限と最終防御を外し、256段から一段ずつ測ります。
-// MARGIN_CASE=mixedArrow で型付きアローの既定値だけを重ねた場合も測れます。
+// MARGIN_CASE=altTyped で条件式の偽の枝に型付きアローの既定値を重ねた場合も測れます。
 // ENGINES と MARGIN_START / MARGIN_END は、未測定の段数から続けるときに指定します。
 const marginOnly = process.argv.includes('--margin-only');
 const marginCase = process.env.MARGIN_CASE ?? 'mixedSyntax';
@@ -31,6 +31,7 @@ const forms = [
  ['function', n => 'function f(){'.repeat(n) + 'return 1;' + '}'.repeat(n)],
  ['arrow', n => 'const f = ' + 'x => '.repeat(n) + '1'],
  ['typedDefaultArrow', n => 'const f = ' + '(p = '.repeat(n) + '1' + '): number => p'.repeat(n)],
+ ['altTyped', n => 'const f = ' + 'c ? d : (p = '.repeat(n) + '1' + '): number => p'.repeat(n)],
  ['arrayBinding', n => 'let ' + '['.repeat(n) + 'x' + ']'.repeat(n) + ' = data'],
  ['objectBinding', n => 'let ' + '{x:'.repeat(n) + 'x' + '}'.repeat(n) + ' = objectData'],
  ['typeParenthesis', n => 'let x: ' + '('.repeat(n) + 'number' + ')'.repeat(n) + ' = 1'],
@@ -96,7 +97,8 @@ const additional = [
  let phase = 'parse';
  try {
   const start = performance.now();
-  const program = parse(descriptor[1](depth)).program;
+  const source = descriptor[1](depth) + (name === 'altTyped' && !parseOnly ? '; let value = f; for (let i = 0; i < ' + depth + '; i++) value = value(); out(value);' : '');
+  const program = parse(source).program;
   const parseMs = performance.now() - start;
   if (parseOnly) return { name, depth, parseMs, passed: true };
   phase = 'evaluate';
@@ -105,7 +107,8 @@ const additional = [
   const next = () => next;
   let data = 1, objectData = 1;
   for (let i = 0; i < depth; i++) { data = [data]; objectData = { x: objectData }; }
-  await new Interpreter({ data, objectData, identity: x => x, probe: () => { reached++; return 1; }, lookup: { 0: 0 }, chain, next, out: value => output.push(value) }, { maxSteps: 1000000 }).exec(program);
+  await new Interpreter({ c: false, d: 0, data, objectData, identity: x => x, probe: () => { reached++; return 1; }, lookup: { 0: 0 }, chain, next, out: value => output.push(value) }, { maxSteps: 1000000 }).exec(program);
+  if (name === 'altTyped' && (output.length !== 1 || output[0] !== 1)) throw new Error('型付きアローの既定値: ' + JSON.stringify(output));
   if (name === 'evaluatedMixed' && reached !== 1) throw new Error('最内側の呼び出し: ' + reached);
   const isChain = chains.includes(descriptor);
   if (isChain && (output.length !== 1 || output[0] !== descriptor[2])) throw new Error(name + ': ' + JSON.stringify(output));

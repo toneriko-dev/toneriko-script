@@ -119,17 +119,42 @@ describe('restで実際にコピーする値の型検査', () => {
 	});
 
 	test.each([
-		['要素unionの先頭string混在', '(number|string)[]', true, 350013, 350013, 100000],
-		['要素unionの全number', '(number|string)[]', false, 300012, 300012, 100000],
-		['入れ子unionの全number', '(number|string)[]|(number|boolean)[]', false, 60017, 60016, 20000],
-		['array unionのnumber枝', 'number[]|string[]', false, 200016, 200015, 100000],
-	])('union restを既存予算内で検査する: %s', async (_name, annotation, mixed, limit, expectedSteps, size) => {
+		['要素unionの先頭string混在', '(number|string)[]', true, 500011, 100000],
+		['要素unionの全number', '(number|string)[]', false, 400011, 100000],
+		['入れ子unionの全number', '(number|string)[]|(number|boolean)[]', false, 100014, 20000],
+		['array unionのnumber枝', 'number[]|string[]', false, 300014, 100000],
+	])('union restの実照合枝をステップに含める: %s', async (_name, annotation, mixed, expectedSteps, size) => {
 		const h = Array.from({length:size},(_,index)=>mixed && index%2===0 ? 'x' : 1);
-		const interpreter = new Interpreter({h});
+		const interpreter = new Interpreter({h}, {maxSteps:1000000});
 		await interpreter.exec(parse(`let [a,...r]:${annotation}=h;`).program);
 		expect(interpreter.stepCount).toBe(expectedSteps);
-		expect(interpreter.stepCount).toBeLessThanOrEqual(limit);
 		expect(interpreter.getGlobal('r')).toEqual(h.slice(1));
+	});
+
+	test('restコピーの広い合併は照合した全枝を課金する', async () => {
+		const annotation = [...Array.from({length:10},(_,index)=>`{k${index}:number}`),'number'].join('|');
+		const h = Array(20000).fill(1);
+		const interpreter = new Interpreter({h});
+		await interpreter.exec(parse(`let [[a,...r]]:(${annotation})[][]=[h];`).program);
+		expect(interpreter.stepCount).toBe(240015);
+		expect(interpreter.getGlobal('r')).toEqual(h.slice(1));
+	});
+
+	test('restコピーの巨大な合併は既定ステップ上限で停止する', async () => {
+		const annotation = [...Array.from({length:5000},(_,index)=>`{k${index}:number}`),'number'].join('|');
+		const interpreter = new Interpreter({h:Array(240000).fill(1)}, {now:()=>0});
+		await expect(interpreter.exec(parse(`let [[a,...r]]:(${annotation})[][]=[h];`).program)).rejects.toMatchObject({code:'STEP_LIMIT_EXCEEDED'});
+		expect(interpreter.stepCount).toBe(500001);
+	});
+
+	test.each([
+		[1,31], ['x',51], [true,61],
+	])('restコピーの入れ子合併は成功した枝で短絡する: %s', async (value, expectedSteps) => {
+		const h = Array(10).fill(value);
+		const interpreter = new Interpreter({h});
+		await interpreter.exec(parse('let [[...r]]:(number|(string|boolean))[][]=[h];').program);
+		expect(interpreter.stepCount).toBe(expectedSteps);
+		expect(interpreter.getGlobal('r')).toEqual(h);
 	});
 
 	test('string分割は書記素単位で要素とrestを取り出す', async () => {

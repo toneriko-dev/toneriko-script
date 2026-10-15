@@ -515,6 +515,7 @@ export class Interpreter {
 			const copiedCheck = copiedArrayType(restPlan?.check ?? projectType(plan.check, null, true));
 			const label = patternLabel(pattern);
 			const diagnosticName = (name: string) => patternDiagnosticName(pattern, label, name);
+			const copyStep = () => this.tick(execution, pos);
 
 			let exhausted = false;
 			let index = 0;
@@ -526,7 +527,7 @@ export class Interpreter {
 					while (!exhausted) {
 						const next = items.next(); exhausted = !!next.done;
 						if (!next.done) {
-							if (copiedCheck) checkCopiedElement(copiedCheck.element, next.value, label, index, pos, diagnosticName);
+							if (copiedCheck) checkCopiedElement(copiedCheck.element, next.value, label, index, pos, diagnosticName, copyStep);
 							rest.push(next.value); index++;
 						}
 						if (execution.clock >= 64) yield this.checkpoint();

@@ -172,8 +172,12 @@ export function copiedArrayType(check: TypeCheck): Extract<TypeCheck, {kind:'arr
 }
 
 /** コピーの取得直後に外形を確かめ、途中で譲らず実際に束縛する値を守る。 */
-export function checkCopiedElement(check: TypeCheck, value: Value, name: string, index: number, pos: A.Pos, diagnosticName: (name: string) => string): void {
-	if (!matchesOuter(check, value)) fail({ name: diagnosticName(`${name}[${index}]`), check, value }, pos);
+export function checkCopiedElement(check: TypeCheck, value: Value, name: string, index: number, pos: A.Pos, diagnosticName: (name: string) => string, tick: () => void): void {
+	// 要素自体はコピー走査の予算を使い、合併の実照合枝だけ追加で課金する。
+	const matched = check.kind === 'union' || check.kind === 'projection'
+		? matchesShallow(check, value, () => { tick(); return false; }).next().value === true
+		: matchesOuter(check, value);
+	if (!matched) fail({ name: diagnosticName(`${name}[${index}]`), check, value }, pos);
 }
 
 /** 合併の枝にも同じ予算を使い、要素の検査では入れ子の外形までに留める。 */

@@ -1,3 +1,4 @@
+import { nodeExecutable } from '../../scripts/v2-node.mjs';
 import * as assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { describe, test } from 'vitest';
@@ -635,7 +636,7 @@ describe('インタプリタに渡す前の診断', () => {
 	] as const;
 	for (const [source, valid] of declarations) {
 		test(`モジュールの宣言規則: ${source}`, () => {
-			const reference = spawnSync('node', ['--input-type=module', '--check'], { input: source, encoding: 'utf8' });
+			const reference = spawnSync(nodeExecutable, ['--input-type=module', '--check'], { input: source, encoding: 'utf8' });
 			assert.equal(reference.error, undefined);
 			assert.equal(reference.status === 0, valid, reference.stderr);
 			if (valid) parse(source);

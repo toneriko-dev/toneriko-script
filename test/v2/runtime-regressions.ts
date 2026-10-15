@@ -1,3 +1,4 @@
+import { nodeExecutable } from '../../scripts/v2-node.mjs';
 import { spawnSync } from 'node:child_process';
 import { describe, expect, test } from 'vitest';
 import { Interpreter } from '../../src/v2/interpreter.js';
@@ -96,7 +97,7 @@ const cases: [string, string, unknown[]][] = [
 describe('v2 の評価順と束縛の回帰検査', () => {
 	for (const [name, source, expected] of cases) {
 		test(name, async () => {
-			const reference = spawnSync('node', ['--input-type=module', '--eval', `const output = []; const out = value => output.push(value);\n${source}\nconsole.log(JSON.stringify(output));`], { encoding: 'utf8', timeout: 5000 });
+			const reference = spawnSync(nodeExecutable, ['--input-type=module', '--eval', `const output = []; const out = value => output.push(value);\n${source}\nconsole.log(JSON.stringify(output));`], { encoding: 'utf8', timeout: 5000 });
 			expect(reference.error).toBeUndefined();
 			expect(reference.status, reference.stderr).toBe(0);
 			expect(JSON.parse(reference.stdout)).toEqual(expected);

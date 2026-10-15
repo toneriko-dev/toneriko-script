@@ -1,3 +1,4 @@
+import { invalidateHostArrays, privateObject } from './array-trust.js';
 import { isArrayIterator, nextArrayIterator } from '../stdlib/arrays.js';
 import { standardMethod } from '../stdlib/index.js';
 import { isStdFunction } from '../stdlib/core.js';
@@ -203,6 +204,8 @@ export class PropertyAccess {
 			throw runtimeError('READONLY_PROPERTY', pos, { key }, 'TypeError');
 		}
 		const normalized = this.normalize(next, pos);
+		// ホストが保持できる入れ物への代入も、参照の公開として扱います。
+		if (normalized !== null && typeof normalized === 'object' && !privateObject(value)) invalidateHostArrays();
 		if (Array.isArray(value)) {
 			if (key === 'length') {
 				if (typeof normalized !== 'number' || !Number.isInteger(normalized) || normalized < 0 || normalized > 0xffffffff) throw runtimeError('INVALID_ARRAY_LENGTH', pos, {}, 'RangeError');

@@ -1,8 +1,12 @@
+import { arrayRevision, trustedArray, trustArray, safeArrayPrototype, privateObject, invalidateHostArrays } from '../runtime/array-trust.js';
 import { type StdFunction, type StdDefinition, type StdContext, type StdFrame, requireArray, requireNumber, isStdFunction, makeFunction } from './core.js';
 import { scriptObject, scriptObjects, isScriptFunction, type Value } from '../runtime/brands.js';
 import type { PropertyAccess } from '../runtime/values.js';
 import { runtimeError } from '../runtime/errors.js';
 import type { Pos } from '../ast.js';
+
+const nativeShift = Array.prototype.shift;
+const nativeUnshift = Array.prototype.unshift;
 
 const iteratorStates = new WeakMap<object, { array: Value[]; index: number; done: boolean }>();
 export function isArrayIterator(value: unknown): value is { readonly next: StdFunction } { return typeof value === 'object' && value !== null && iteratorStates.has(value); }
@@ -43,6 +47,32 @@ function* copy(ctx: StdContext, array: Value[], start = 0, end = array.length): 
 	for (let i = start; i < end; i++) { result.push(ctx.properties.get(array, i, ctx.pos)); yield* step(ctx, i); }
 	return scriptObject(result);
 }
+// 密で変更可能な own data property だけを確認した配列を、同じホスト世代内で再利用します。
+function* nativeArray(ctx: StdContext, xs: Value[]): Generator<any, boolean, any> {
+	if (Object.getPrototypeOf(xs) !== Array.prototype || !safeArrayPrototype()) return false;
+	if (trustedArray(xs)) return true;
+	const revision = arrayRevision();
+	if (!Object.getOwnPropertyDescriptor(xs, 'length')!.writable || !Object.isExtensible(xs)) return false;
+	for (let i = 0; i < xs.length; i++) {
+		const descriptor = Object.getOwnPropertyDescriptor(xs, String(i));
+		if (!descriptor) throw runtimeError('SPARSE_ARRAY', ctx.pos);
+		if (!('value' in descriptor)) throw runtimeError('ACCESSOR_PROPERTY', ctx.pos, { key: String(i) }, 'TypeError');
+		if (!descriptor.writable || !descriptor.configurable) return false;
+		ctx.properties.normalize(descriptor.value, ctx.pos);
+		yield* step(ctx, i);
+		// 検査中にホストへ渡った場合は、検査済みの添字も変わり得ます。
+		if (revision !== arrayRevision()) return false;
+	}
+	trustArray(xs); return true;
+}
+function* prepend(ctx: StdContext, xs: Value[], items: Value[]): StdFrame {
+	if (!Object.getOwnPropertyDescriptor(xs, 'length')!.writable) throw runtimeError('READONLY_PROPERTY', ctx.pos, { key: 'length' }, 'TypeError');
+	if (!privateObject(xs) && items.some(value => value !== null && typeof value === 'object')) invalidateHostArrays();
+	if (yield* nativeArray(ctx, xs)) return nativeUnshift.call(xs, ...items);
+	const old = (yield* copy(ctx, xs)) as Value[];
+	for (let i = 0; i < items.length + old.length; i++) { ctx.properties.set(xs, i, i < items.length ? items[i]! : old[i - items.length]!, ctx.pos); yield* step(ctx, i); }
+	return xs.length;
+}
 function noThis(ctx: StdContext, value: Value | undefined): void { if (value != null) throw runtimeError('UNSUPPORTED_VALUE', ctx.pos, {}, 'TypeError'); }
 const a = (name: string, type = 'any', optional = false, rest = false) => ({ name, type, ...(optional ? { optional } : {}), ...(rest ? { rest } : {}) });
 const def = (name: string, args: StdDefinition['args'], returns: string, ja: string, en: string, implementation: StdDefinition['implementation']): StdDefinition => ({ name, args, returns, receiver: 'array', description: { ja, en }, implementation });
@@ -53,17 +83,22 @@ export const arrayDefinitions: StdDefinition[] = [
 	}),
 	def('shift', [], 'any', '先頭の要素を取り除いて返します。', 'Removes and returns the first element.', function* (ctx, r) {
 		const xs = requireArray(ctx, r); if (!xs.length) return null;
-		// スクリプトが作る密な配列は、ホストの要素移動を一つの操作として扱います。
-		if (scriptObjects.has(xs) && Object.getPrototypeOf(xs) === Array.prototype) return xs.shift()!;
+		// 検査済みの配列は、保存した組み込み関数で移動します。
+		if (yield* nativeArray(ctx, xs)) return ctx.properties.normalize(nativeShift.call(xs), ctx.pos);
 		const first = ctx.properties.get(xs, 0, ctx.pos);
 		for (let i = 1; i < xs.length; i++) { ctx.properties.set(xs, i - 1, ctx.properties.get(xs, i, ctx.pos), ctx.pos); yield* step(ctx, i); }
 		ctx.properties.set(xs, 'length', xs.length - 1, ctx.pos); return first;
 	}),
 	def('unshift', [a('items', 'any[]', false, true)], 'number', '先頭に値を追加し、長さを返します。', 'Prepends values and returns the length.', function* (ctx, r, args) {
 		const xs = requireArray(ctx, r);
-		if (scriptObjects.has(xs) && Object.getPrototypeOf(xs) === Array.prototype) return Array.prototype.unshift.apply(xs, args);
-		const old = (yield* copy(ctx, xs)) as Value[];
-		for (let i = 0; i < args.length + old.length; i++) { ctx.properties.set(xs, i, i < args.length ? args[i]! : old[i - args.length]!, ctx.pos); yield* step(ctx, i); }
+		if (!args.length) return yield* prepend(ctx, xs, []);
+		// ホストの引数スタック上限を超えず、追加順を保つため末尾の塊から挿入します。
+		for (let end = args.length; end > 0;) {
+			const start = Math.max(0, end - 4096);
+			yield* prepend(ctx, xs, args.slice(start, end));
+			for (let i = start; i < end; i++) yield* step(ctx, i);
+			end = start;
+		}
 		return xs.length;
 	}),
 	def('slice', [a('start', 'number', true), a('end', 'number', true)], 'any[]', '指定した範囲を新しい配列にします。', 'Copies the selected range into a new array.', function* (ctx, r, args) {

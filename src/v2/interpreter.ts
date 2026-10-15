@@ -1,3 +1,4 @@
+import { invalidateHostArrays, invalidateYieldArrays } from './runtime/array-trust.js';
 import { errorDefinition } from './stdlib/basics.js';
 import { RuntimeServices, type ServiceOptions } from './stdlib/services.js';
 import { standardGlobals } from './stdlib/index.js';
@@ -66,10 +67,11 @@ export class Interpreter {
 
 	constructor(globals: Record<string, unknown> = {}, private readonly options: InterpreterOptions = {}) {
 		this.services = new RuntimeServices(options, this.controller.signal, (fn, args, pos) => {
+			invalidateHostArrays();
 			const execution = this.execution();
 			return this.run(this.invoke(fn, args, null, execution, pos), execution);
 		});
-		this.now = options.now ?? (() => performance.now());
+		this.now = options.now ? () => { invalidateHostArrays(); try { return options.now!(); } finally { invalidateHostArrays(); } } : () => performance.now();
 		this.yieldInterval = options.yieldInterval ?? 8;
 		this.maxBusyTime = options.maxBusyTime ?? 5000;
 		this.maxCallDepth = options.maxCallDepth ?? 10000;
@@ -91,13 +93,16 @@ export class Interpreter {
 	}
 
 	async exec(program: A.Program): Promise<void> {
+		invalidateYieldArrays();
 		const execution = this.execution();
-		await this.run(this.sequence(program.body, this.global, execution, true), execution);
+		try { await this.run(this.sequence(program.body, this.global, execution, true), execution); }
+		catch (error) { invalidateHostArrays(); throw error; }
 	}
-	getGlobal(name: string): Value { return this.global.read(name, origin); }
+	getGlobal(name: string): Value { invalidateHostArrays(); return this.global.read(name, origin); }
 	async call(fn: Value, args: Value[]): Promise<Value> {
+		invalidateHostArrays();
 		const execution = this.execution();
-		return this.run(this.invoke(fn, args, null, execution, origin), execution);
+		try { return await this.run(this.invoke(fn, args, null, execution, origin), execution); } finally { invalidateHostArrays(); }
 	}
 	abort(): void { this.stop('EXECUTION_ABORTED', origin); }
 
@@ -169,8 +174,13 @@ export class Interpreter {
 					this.checkTime(execution.pos);
 					if (this.yieldInterval !== 0 && this.now() - this.lastYield >= this.yieldInterval) {
 						this.yielding++;
-						try { await this.wait(this.yieldToHost()); }
-						finally { this.yielding--; }
+						try {
+							if (this.options.yieldToHost) invalidateHostArrays();
+							await this.wait(this.yieldToHost());
+						} finally {
+							if (this.options.yieldToHost) invalidateHostArrays();
+							invalidateYieldArrays(); this.yielding--;
+						}
 						this.lastClock = this.lastYield = this.now();
 						this.armIdle();
 					}
@@ -189,6 +199,7 @@ export class Interpreter {
 					this.checkTime(result.value.pos);
 					try { value = await this.wait(result.value.wait); }
 					catch (error) { value = error; throwing = true; }
+					finally { invalidateYieldArrays(); }
 					this.resume();
 				} else { frames.push(result.value); value = undefined; }
 			}
@@ -508,8 +519,9 @@ export class Interpreter {
 		this.checkTime(pos);
 		const context: HostContext = {
 			call: (callback, arguments_) => {
+				invalidateHostArrays();
 				this.resume();
-				return this.run(this.invoke(callback, arguments_, null, execution, pos), execution, true);
+				return this.run(this.invoke(callback, arguments_, null, execution, pos), execution, true).finally(invalidateHostArrays);
 			},
 			signal: this.controller.signal,
 		};
@@ -518,8 +530,10 @@ export class Interpreter {
 			throw new ScriptThrown(execution.properties.normalize(error, pos), pos, scriptErrorDiagnostic(error));
 		};
 		let result: unknown;
+		invalidateHostArrays();
 		try { result = hostBodies.has(fn) ? hostBodies.get(fn)!(args, context) : Reflect.apply(fn, receiver, args); }
 		catch (error) { hostException(error); }
+		finally { invalidateHostArrays(); }
 		this.checkTime(pos);
 		let pending: Promise<{ value: unknown }> | null = null;
 		try { pending = this.promiseResult(result); }

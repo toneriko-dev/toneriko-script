@@ -1,3 +1,4 @@
+import { invalidateHostArrays } from '../runtime/array-trust.js';
 import type { Pos } from '../ast.js';
 import type { Value } from '../runtime/brands.js';
 import { scriptObject } from '../runtime/brands.js';
@@ -29,7 +30,8 @@ export class RuntimeServices {
 					if (this.signal.reason?.code === 'EXECUTION_ABORTED' || this.reportedStop) return;
 					this.reportedStop = true;
 				}
-				(this.options.onUnhandledError ?? console.error)(error);
+				invalidateHostArrays();
+				try { (this.options.onUnhandledError ?? console.error)(error); } finally { invalidateHostArrays(); }
 			});
 		};
 		this.timers.set(id, repeat ? setInterval(fire, delay) : setTimeout(fire, delay));
@@ -84,7 +86,7 @@ export const serviceDefinitions: StdDefinition[] = [
 			else { if (/[A-Za-z\]]/.test(format[i]!)) rangeError(ctx); out.push(format[i++]!); }
 		} return out.join('');
 	} },
-	{ name: 'console.log', receiver: 'global', args: [{ name: 'values', type: 'any[]', rest: true }], returns: 'void', description: { ja: '値を文字列化せずホストの出力へ渡します。', en: 'Passes values to the host output without stringifying them.' }, *implementation(ctx, _r, args) { const handler = ctx.services!.options.onConsoleLog; if (handler) handler(args); else console.log(...args); return null; } },
+	{ name: 'console.log', receiver: 'global', args: [{ name: 'values', type: 'any[]', rest: true }], returns: 'void', description: { ja: '値を文字列化せずホストの出力へ渡します。', en: 'Passes values to the host output without stringifying them.' }, *implementation(ctx, _r, args) { const handler = ctx.services!.options.onConsoleLog; invalidateHostArrays(); try { if (handler) handler(args); else console.log(...args); } finally { invalidateHostArrays(); } return null; } },
 	{ name: 'sleep', receiver: 'global', args: [arg('ms', 'number')], returns: 'void', description: { ja: '指定したミリ秒だけ待ちます。', en: 'Waits for the specified number of milliseconds.' }, *implementation(ctx, _r, args) { const ms = finite(ctx, args[0]); if (ms < 0) rangeError(ctx); return yield ctx.wait!(ctx.services!.sleep(ms)); } },
 	{ name: 'range', receiver: 'global', args: [arg('start', 'number'), arg('end', 'number'), arg('step', 'number', true)], returns: 'number[]', description: { ja: '終端を含まない整数の範囲を配列にします。', en: 'Creates an integer range excluding the end.' }, *implementation(ctx, _r, args) {
 		const start = requireNumber(ctx, args[0]), end = requireNumber(ctx, args[1]), step = args[2] === undefined ? 1 : requireNumber(ctx, args[2]);

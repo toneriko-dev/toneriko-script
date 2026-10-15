@@ -4,8 +4,15 @@ export type Binding = { mutable: boolean; annotation?: A.TypeAnnotation; global?
 export class Scope {
 	readonly bindings = new Map<string, Binding>();
 	constructor(readonly parent?: Scope) {}
-	resolve(name: string): Binding | undefined { return this.bindings.get(name) ?? this.parent?.resolve(name); }
-	names(): string[] { return [...new Set([...this.bindings.keys(), ...(this.parent?.names() ?? [])])]; }
+	resolve(name: string): Binding | undefined {
+		for (let scope: Scope | undefined = this; scope; scope = scope.parent) { const binding = scope.bindings.get(name); if (binding) return binding; }
+		return undefined;
+	}
+	names(): string[] {
+		const names = new Set<string>();
+		for (let scope: Scope | undefined = this; scope; scope = scope.parent) for (const name of scope.bindings.keys()) names.add(name);
+		return [...names];
+	}
 }
 
 export function propertyName(node: A.Identifier | A.Literal | A.Expression): string | undefined {
@@ -19,7 +26,10 @@ export function project(annotation: A.TypeAnnotation | undefined, key: string, a
 		const types = annotation.types.map(type => project(type, key, array));
 		return types.every((type): type is A.TypeAnnotation => !!type) ? { ...annotation, types } : undefined;
 	}
-	if (array && annotation.type === 'ArrayTypeAnnotation') return annotation.elementType;
+	if (annotation.type === 'ArrayTypeAnnotation') {
+		if (array || /^(0|[1-9][0-9]*)$/.test(key) && Number(key) < 4294967295) return annotation.elementType;
+		return { type: 'KeywordTypeAnnotation', name: key === 'length' ? 'number' : 'any', loc: annotation.loc };
+	}
 	if (!array && annotation.type === 'ObjectTypeAnnotation') {
 		const property = annotation.properties.find(item => propertyName(item.key) === key);
 		if (!property) return undefined;
@@ -39,12 +49,13 @@ export function bindPattern(scope: Scope, pattern: A.Pattern | A.MemberExpressio
 			for (const [index, item] of pattern.elements.entries()) if (item) bindPattern(scope, item, mutable, item.type === 'RestElement' ? annotation : project(annotation, String(index), true));
 			break;
 		case 'ObjectPattern': {
-			const used = new Set(pattern.properties.filter(item => item.type === 'Property' && !item.computed).map(item => propertyName((item as A.Property).key)));
+			const dynamic = pattern.properties.some(item => item.type === 'Property' && item.computed && item.key.type !== 'Literal');
+			const used = new Set(pattern.properties.filter(item => item.type === 'Property' && (!item.computed || item.key.type === 'Literal')).map(item => propertyName((item as A.Property).key)));
 			for (const item of pattern.properties) {
 				if (item.type === 'RestElement') {
 					let rest = annotation;
 					while (rest?.type === 'ParenthesizedTypeAnnotation') rest = rest.typeAnnotation;
-					bindPattern(scope, item, mutable, rest?.type === 'ObjectTypeAnnotation' ? { ...rest, properties: rest.properties.filter(property => !used.has(propertyName(property.key))) } : undefined);
+					bindPattern(scope, item, mutable, !dynamic && rest?.type === 'ObjectTypeAnnotation' ? { ...rest, properties: rest.properties.filter(property => !used.has(propertyName(property.key))) } : undefined);
 				} else bindPattern(scope, item.value as A.Pattern, mutable, !item.computed || item.key.type === 'Literal' ? project(annotation, propertyName(item.key)!) : undefined);
 			}
 			break;

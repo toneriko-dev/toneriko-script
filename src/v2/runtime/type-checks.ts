@@ -55,7 +55,11 @@ function* resolveType(check: TypeCheck, tick: () => boolean): Generator<void, Ty
 		}
 		result = { kind: 'union', types };
 	} else if (operation.kind === 'key') {
-		if (source.kind === 'array') result = operation.rest ? source : source.element;
+		if (source.kind === 'array') {
+			if (operation.rest) result = source;
+			else if (operation.key === null || /^(0|[1-9][0-9]*)$/.test(operation.key) && Number(operation.key) < 4294967295) result = source.element;
+			else result = { kind: operation.key === 'length' ? 'number' : 'any' };
+		}
 		else if (source.kind === 'object' && operation.key !== null) {
 			const property = source.byKey.get(operation.key);
 			result = property ? property.optional ? { kind: 'union', types: [property.check, { kind: 'null' }] } : property.check : { kind: 'any' };
@@ -90,7 +94,12 @@ export function typeName(check: TypeCheck): string {
 		if (typeof part === 'string') { parts.push(part); continue; }
 		switch (part.kind) {
 			case 'projection': pending.push(resolvedType(part)); break;
-			case 'array': pending.push(')[]', part.element, '('); break;
+			case 'array': {
+				const element = part.element.kind === 'projection' ? resolvedType(part.element) : part.element;
+				if (element.kind === 'union') pending.push(')[]', element, '(');
+				else pending.push('[]', element);
+				break;
+			}
 			case 'object':
 				pending.push(' }');
 				for (let i = part.properties.length - 1; i >= 0; i--) {
@@ -201,10 +210,13 @@ function* mismatch(check: TypeCheck, value: Value, name: string, properties: Pro
 	return null;
 }
 
-export function* checkValue(check: TypeCheck, value: Value, name: string, properties: PropertyAccess, pos: A.Pos, tick: () => void): Generator<void, void> {
+export function* checkValue(check: TypeCheck, value: Value, name: string, properties: PropertyAccess, pos: A.Pos, tick: () => void, diagnosticName?: (name: string) => string): Generator<void, void> {
 	let steps = 0;
 	const step = () => { tick(); return ++steps % 64 === 0; };
 	step();
 	const failure = yield* mismatch(check, value, name, properties, pos, step);
-	if (failure) fail(failure, pos);
+	if (failure) {
+		if (diagnosticName) failure.name = diagnosticName(failure.name);
+		fail(failure, pos);
+	}
 }

@@ -2,6 +2,25 @@ import { expect, test } from 'vitest';
 import { diagnostic, formatDiagnostic } from '../../src/v2/diagnostics.js';
 import type { CatalogEntry } from '../../src/v2/catalog.js';
 import { catalog } from '../../src/v2/stdlib/index.js';
+import { check } from '../../src/v2/checker/index.js';
+import { parse } from '../../src/v2/parser/index.js';
+import { Interpreter, RuntimeError } from '../../src/v2/interpreter.js';
+
+test('欠如プロパティの診断は日英とも値nullと区別する', async () => {
+	const program = parse('let x: {a:number} = {};').program;
+	const diagnostics = check(program);
+	let failure: unknown;
+	try { await new Interpreter().exec(program); } catch (error) { failure = error; }
+	expect(failure).toBeInstanceOf(RuntimeError);
+	expect(diagnostics).toHaveLength(1);
+	for (const item of [diagnostics[0]!, failure as RuntimeError]) {
+		expect(item.code).toBe('TYPE_ANNOTATION_MISMATCH');
+		expect(formatDiagnostic(item, 'ja')).toContain('x.a は number と書かれていますが、プロパティがありません。');
+		expect(formatDiagnostic(item, 'en')).toContain('x.a is annotated as number, but the property is missing.');
+		expect(formatDiagnostic(item, 'ja')).not.toContain('null');
+	}
+	expect((failure as RuntimeError).message).toContain('プロパティがありません。');
+});
 
 test('型の診断を日英と範囲付きで表示する', () => {
 	const loc = { start: { line: 3, column: 5 }, end: { line: 3, column: 11 } };

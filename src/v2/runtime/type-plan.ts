@@ -77,10 +77,11 @@ export class TypePlan {
 				for (const part of pattern.elements) if (part) this.pattern(part, check ? projectType(check, null, part.type === 'RestElement') : undefined);
 				break;
 			case 'ObjectPattern': {
-				const removed = new Set(pattern.properties.flatMap(property => property.type === 'RestElement' || property.computed ? [] : [property.key.type === 'Identifier' ? property.key.name : String((property.key as A.Literal).value)]));
+				const dynamic = pattern.properties.some(property => property.type !== 'RestElement' && property.computed && property.key.type !== 'Literal');
+				const removed = new Set(pattern.properties.flatMap(property => property.type === 'RestElement' || property.computed && property.key.type !== 'Literal' ? [] : [property.key.type === 'Identifier' ? property.key.name : String((property.key as A.Literal).value)]));
 				for (const property of pattern.properties) {
 					if (property.type === 'RestElement') {
-						const rest = check ? restType(check, removed) : undefined;
+						const rest = check && !dynamic ? restType(check, removed) : undefined;
 						this.pattern(property, rest);
 					} else {
 						const key = !property.computed ? property.key.type === 'Identifier' ? property.key.name : String((property.key as A.Literal).value) : property.key.type === 'Literal' ? String(property.key.value) : null;

@@ -1,11 +1,11 @@
 import type { Pos } from '../ast.js';
-import { messages, type DiagnosticCode } from '../messages.js';
+import { diagnosticTranslation, type DiagnosticCode } from '../messages.js';
 
 export class RuntimeError extends Error {
 	readonly severity = 'error' as const;
 	readonly hint: string;
 	constructor(readonly code: DiagnosticCode, readonly pos: Pos, readonly params: Record<string, string | number> = {}, name = 'TonerikoScriptRuntimeError') {
-		const text = messages[code].ja;
+		const text = diagnosticTranslation(code, 'ja', params);
 		const replace = (s: string) => s.replace(/\{(\w+)\}/g, (_, key: string) => String(params[key] ?? key));
 		super(replace(text.message) + (code === 'TYPE_ANNOTATION_MISMATCH' ? ` (${pos.line} 行目、${pos.column} 列目)` : ''));
 		this.pos = { line: pos.line, column: pos.column };

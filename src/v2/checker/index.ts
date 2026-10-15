@@ -6,7 +6,9 @@ import { fallsThrough } from './control-flow.js';
 import { Scope, bindPattern, declare, propertyName, project } from './scopes.js';
 
 export type CheckOptions = { globals?: readonly string[]; hostCatalog?: readonly CatalogEntry[] };
-type Match = boolean | undefined;
+type Segment = string | number;
+type LiteralMismatch = { annotation: A.TypeAnnotation; value?: A.Expression; at: A.Node; path: Segment[] };
+type Match = true | undefined | LiteralMismatch;
 
 function typeName(type: A.TypeAnnotation): string {
 	const parts: string[] = [];
@@ -48,24 +50,45 @@ function literalKind(node: A.Expression): string | undefined {
 	if (node.type === 'UnaryExpression' && (node.operator === '+' || node.operator === '-') && node.argument.type === 'Literal' && typeof node.argument.value === 'number') return 'number';
 	return undefined;
 }
-function literalMatch(type: A.TypeAnnotation, value: A.Expression, depth = 1): Match {
-	if (type.type === 'ParenthesizedTypeAnnotation') return literalMatch(type.typeAnnotation, value, depth);
+function literalMatch(type: A.TypeAnnotation, value: A.Expression, depth = 1, keys: Segment[] = []): Match {
+	if (type.type === 'ParenthesizedTypeAnnotation') return literalMatch(type.typeAnnotation, value, depth, keys);
 	if (type.type === 'UnionTypeAnnotation') {
-		const matches = type.types.map(item => literalMatch(item, value, depth));
-		return matches.includes(true) ? true : matches.includes(undefined) ? undefined : false;
+		const matches = type.types.map(item => literalMatch(item, value, depth, keys));
+		return matches.includes(true) ? true : matches.includes(undefined) ? undefined : { annotation: type, value, at: value, path: keys };
 	}
 	if (type.type === 'KeywordTypeAnnotation' && type.name === 'any') return true;
 	const kind = literalKind(value);
 	if (!kind) return undefined;
-	if (type.type === 'KeywordTypeAnnotation') return kind === (type.name === 'void' ? 'null' : type.name);
-	if (type.type === 'FunctionTypeAnnotation') return kind === 'Function';
+	const failure = { annotation: type, value, at: value, path: keys };
+	if (type.type === 'KeywordTypeAnnotation') return kind === (type.name === 'void' ? 'null' : type.name) ? true : failure;
+	if (type.type === 'FunctionTypeAnnotation') return kind === 'Function' ? true : failure;
 	if (type.type === 'ArrayTypeAnnotation') {
-		if (value.type !== 'ArrayExpression') return false;
+		if (value.type !== 'ArrayExpression') return failure;
 		if (!depth) return true;
-		return value.elements.some(item => item && item.type !== 'SpreadElement' && literalMatch(type.elementType, item, depth - 1) === false) ? false : true;
+		let knownIndex = true;
+		for (const [index, item] of value.elements.entries()) {
+			if (item?.type === 'SpreadElement') { knownIndex = false; continue; }
+			if (item) {
+				const result = literalMatch(type.elementType, item, depth - 1, [...keys, knownIndex ? index : '?']);
+				if (result !== true && result !== undefined) return result;
+			}
+		}
+		return true;
 	}
-	if (value.type !== 'ObjectExpression') return false;
+	if (value.type !== 'ObjectExpression') return failure;
 	if (!depth) return true;
+	const { properties, uncertain } = literalProperties(value);
+	for (const property of type.properties) {
+		const key = propertyName(property.key)!;
+		const item = properties.get(key);
+		if (item) {
+			const result = literalMatch(property.typeAnnotation, item, depth - 1, [...keys, key]);
+			if (result !== true && result !== undefined) return result;
+		} else if (!property.optional && !uncertain) return { annotation: property.typeAnnotation, at: value, path: [...keys, key] };
+	}
+	return true;
+}
+function literalProperties(value: A.ObjectExpression): { properties: Map<string, A.Expression>; uncertain: boolean } {
 	const properties = new Map<string, A.Expression>();
 	let uncertain = false;
 	for (const item of value.properties) {
@@ -74,12 +97,43 @@ function literalMatch(type: A.TypeAnnotation, value: A.Expression, depth = 1): M
 			properties.clear(); uncertain = true;
 		} else properties.set(propertyName(item.key)!, item.value as A.Expression);
 	}
-	for (const property of type.properties) {
-		const item = properties.get(propertyName(property.key)!);
-		if (item ? literalMatch(property.typeAnnotation, item, depth - 1) === false : !property.optional && !uncertain) return false;
-	}
-	return true;
+	return { properties, uncertain };
 }
+function patternName(pattern: A.Pattern | A.MemberExpression): string {
+	switch (pattern.type) {
+		case 'Identifier': return pattern.name;
+		case 'AssignmentPattern': return patternName(pattern.left);
+		case 'RestElement': return `...${patternName(pattern.argument)}`;
+		case 'ArrayPattern': return `[${pattern.elements.map(item => item ? patternName(item) : '').join(', ')}]`;
+		case 'ObjectPattern': return `{ ${pattern.properties.map(item => patternName(item.type === 'RestElement' ? item : item.value as A.Pattern)).join(', ')} }`;
+		case 'MemberExpression': return 'property';
+	}
+}
+function mismatchName(name: string, path: readonly Segment[], pattern?: A.Pattern | A.MemberExpression): string {
+	const keys = [...path];
+	let index = 0;
+	while (pattern) {
+		if (pattern.type === 'AssignmentPattern' || pattern.type === 'RestElement') { pattern = pattern.type === 'AssignmentPattern' ? pattern.left : pattern.argument; continue; }
+		if (pattern.type === 'Identifier') { name = pattern.name; break; }
+		if (index >= keys.length) break;
+		const key = keys[index]!;
+		let next: A.Pattern | A.MemberExpression | undefined | null;
+		if (pattern.type === 'ArrayPattern' && typeof key === 'number') {
+			const restIndex = pattern.elements.findIndex(item => item?.type === 'RestElement');
+			if (restIndex >= 0 && key >= restIndex) { pattern = (pattern.elements[restIndex] as A.RestElement).argument; keys[index] = key - restIndex; continue; }
+			next = pattern.elements[key];
+		}
+		else if (pattern.type === 'ObjectPattern') {
+			const property = pattern.properties.find(item => item.type === 'Property' && (!item.computed || item.key.type === 'Literal') && propertyName(item.key) === String(key));
+			if (property?.type === 'Property') next = property.value as A.Pattern;
+			else { const rest = pattern.properties.find(item => item.type === 'RestElement'); if (rest?.type === 'RestElement') { pattern = rest.argument; continue; } }
+		}
+		if (!next) break;
+		pattern = next; index++;
+	}
+	return name + keys.slice(index).map(key => typeof key === 'number' || key === '?' ? `[${key}]` : `.${key}`).join('');
+}
+
 function valueSummary(value: A.Expression): string {
 	if (value.type === 'Literal') return JSON.stringify(value.value).slice(0, 120);
 	if (value.type === 'UnaryExpression') return value.operator + valueSummary(value.argument);
@@ -95,18 +149,22 @@ function distance(left: string, right: string): number {
 	return previous[right.length]!;
 }
 function path(node: A.Expression): string | undefined {
-	if (node.type === 'Identifier') return node.name;
-	if (node.type === 'MemberExpression') {
-		const parent = path(node.object);
+	const keys: string[] = [];
+	while (node.type === 'MemberExpression') {
 		const key = !node.computed || node.property.type === 'Literal' ? propertyName(node.property) : undefined;
-		return parent && key !== undefined ? `${parent}.${key}` : undefined;
+		if (key === undefined) return undefined;
+		keys.push(key); node = node.object;
 	}
-	return undefined;
+	if (node.type !== 'Identifier') return undefined;
+	keys.push(node.name);
+	return keys.reverse().join('.');
 }
 
 /** 明示された注釈と構文だけを検査し、変数の値から型や呼出し先を推論しません。 */
 export function check(program: A.Program, options: CheckOptions = {}): Diagnostic[] {
 	const output: Diagnostic[] = [];
+	const reportedMismatches = new Set<string>();
+	const pending: (() => void)[] = [];
 	const entries = new Map<string, CatalogEntry>();
 	const overridden = new Set([...(options.globals ?? []), ...(options.hostCatalog ?? []).filter(entry => entry.receiver === 'global').map(entry => entry.name.split('.')[0]!)]);
 	for (const entry of catalog) if (entry.receiver !== 'global' || !overridden.has(entry.name.split('.')[0]!)) entries.set(`${entry.receiver}:${entry.name}`, entry);
@@ -127,16 +185,27 @@ export function check(program: A.Program, options: CheckOptions = {}): Diagnosti
 		else emit('UNBOUND_IDENTIFIER', node, { name: node.name });
 	}
 	function invalidate(node: A.Expression, scope: Scope): void {
-		if (node.type === 'MemberExpression') { invalidate(node.object, scope); return; }
+		while (node.type === 'MemberExpression' || node.type === 'ChainExpression') node = node.type === 'MemberExpression' ? node.object : node.expression;
 		if (node.type === 'Identifier' && scope.resolve(node.name)?.global) unsafe.add(node.name);
 	}
-	function mismatch(type: A.TypeAnnotation | undefined, value: A.Expression, name: string): void {
-		if (!collecting && type && literalMatch(type, value) === false) emit('TYPE_ANNOTATION_MISMATCH', value, { name, expected: typeName(type), actual: literalKind(value)!, value: valueSummary(value) });
+	function mismatch(type: A.TypeAnnotation | undefined, value: A.Expression, name: string, pattern?: A.Pattern | A.MemberExpression): boolean {
+		if (collecting || !type) return false;
+		const result = literalMatch(type, value);
+		if (result === true || result === undefined) return false;
+		const params = { name: mismatchName(name, result.path, pattern), expected: typeName(result.annotation), actual: result.value ? literalKind(result.value)! : 'missing', value: result.value ? valueSummary(result.value) : 'null' };
+		const key = JSON.stringify([result.at.loc.start, params]);
+		if (!reportedMismatches.has(key)) { reportedMismatches.add(key); emit('TYPE_ANNOTATION_MISMATCH', result.at, params); }
+		return true;
 	}
+
 	function bindingExpressions(pattern: A.Pattern | A.MemberExpression, scope: Scope, inherited?: A.TypeAnnotation): void {
 		const annotation = 'typeAnnotation' in pattern ? pattern.typeAnnotation ?? inherited : inherited;
 		switch (pattern.type) {
-			case 'AssignmentPattern': mismatch(annotation ?? ('typeAnnotation' in pattern.left ? pattern.left.typeAnnotation : undefined), pattern.right, pattern.left.type === 'Identifier' ? pattern.left.name : 'pattern'); expression(pattern.right, scope); bindingExpressions(pattern.left, scope, annotation); break;
+			case 'AssignmentPattern': {
+				const failed = mismatch(annotation ?? ('typeAnnotation' in pattern.left ? pattern.left.typeAnnotation : undefined), pattern.right, patternName(pattern.left), pattern.left);
+				if (!failed && pattern.left.type !== 'Identifier') initialBindings(pattern.left, pattern.right, scope);
+				expression(pattern.right, scope); bindingExpressions(pattern.left, scope, annotation); break;
+			}
 			case 'RestElement': bindingExpressions(pattern.argument, scope, annotation); break;
 			case 'ArrayPattern': for (const [index, item] of pattern.elements.entries()) if (item) bindingExpressions(item, scope, item.type === 'RestElement' ? annotation : project(annotation, String(index), true)); break;
 			case 'ObjectPattern': for (const item of pattern.properties) {
@@ -147,34 +216,81 @@ export function check(program: A.Program, options: CheckOptions = {}): Diagnosti
 			case 'Identifier': break;
 		}
 	}
-	function write(pattern: A.Pattern | A.MemberExpression, scope: Scope, value?: A.Expression): void {
+	function initialBindings(pattern: A.Pattern | A.MemberExpression, value: A.Expression | undefined, scope: Scope): void {
+		if (!value || collecting) return;
+		const absent = (node: A.Node): A.Literal => ({ type: 'Literal', value: null, raw: 'null', loc: node.loc });
+		switch (pattern.type) {
+			case 'Identifier': mismatch(scope.resolve(pattern.name)?.annotation, value, pattern.name); break;
+			case 'AssignmentPattern': initialBindings(pattern.left, value.type === 'Literal' && value.value === null ? pattern.right : value, scope); break;
+			case 'RestElement': initialBindings(pattern.argument, value, scope); break;
+			case 'MemberExpression': break;
+			case 'ArrayPattern': {
+				if (value.type !== 'ArrayExpression') break;
+				let known = true;
+				for (const [index, item] of pattern.elements.entries()) {
+					const element = value.elements[index];
+					if (element?.type === 'SpreadElement') known = false;
+					if (!item || !known) continue;
+					if (item.type === 'RestElement') {
+						const elements = value.elements.slice(index);
+						if (!elements.some(part => part?.type === 'SpreadElement')) initialBindings(item.argument, { ...value, elements }, scope);
+					} else initialBindings(item, element && element.type !== 'SpreadElement' ? element : absent(item), scope);
+				}
+				break;
+			}
+			case 'ObjectPattern': {
+				const literal = value.type === 'ObjectExpression' ? literalProperties(value) : undefined;
+				const excluded = new Set<string>();
+				let dynamic = false;
+				for (const item of pattern.properties) {
+					if (item.type === 'RestElement') {
+						if (literal && !literal.uncertain && !dynamic) {
+							const properties: A.Property[] = [...literal.properties].filter(([key]) => !excluded.has(key)).map(([key, child]) => ({ type: 'Property', key: { type: 'Literal', value: key, raw: JSON.stringify(key), loc: value.loc }, value: child, kind: 'init', method: false, shorthand: false, computed: false, loc: value.loc }));
+							initialBindings(item.argument, { type: 'ObjectExpression', properties, loc: value.loc }, scope);
+						}
+						continue;
+					}
+					const key = !item.computed || item.key.type === 'Literal' ? propertyName(item.key) : undefined;
+					if (key === undefined) { dynamic = true; continue; }
+					excluded.add(key);
+					let child: A.Expression | undefined;
+					if (literal) child = literal.properties.get(key) ?? (literal.uncertain ? undefined : absent(item.value));
+					else if (value.type === 'ArrayExpression') {
+						if (key === 'length' && !value.elements.some(part => part?.type === 'SpreadElement')) child = { type: 'Literal', value: value.elements.length, raw: String(value.elements.length), loc: value.loc };
+						else if (/^(0|[1-9][0-9]*)$/.test(key) && Number(key) < 4294967295) {
+							const index = Number(key);
+							if (!value.elements.slice(0, index + 1).some(part => part?.type === 'SpreadElement')) {
+								const element = value.elements[index];
+								child = element && element.type !== 'SpreadElement' ? element : absent(item.value);
+							}
+						}
+					}
+					initialBindings(item.value as A.Pattern, child, scope);
+				}
+				break;
+			}
+		}
+	}
+	function write(pattern: A.Pattern | A.MemberExpression, scope: Scope): void {
 		switch (pattern.type) {
 			case 'Identifier': {
 				reference(pattern, scope);
 				const binding = scope.resolve(pattern.name);
 				if (binding && !binding.mutable) emit('CONST_ASSIGNMENT', pattern, { name: pattern.name });
-				if (value) mismatch(binding?.annotation, value, pattern.name);
 				invalidate(pattern, scope);
 				break;
 			}
 			case 'MemberExpression': invalidate(pattern, scope); expression(pattern.object, scope, true); if (pattern.computed) expression(pattern.property, scope); break;
-			case 'AssignmentPattern': expression(pattern.right, scope); write(pattern.left, scope, value?.type === 'Literal' && value.value === null ? pattern.right : value); break;
+			case 'AssignmentPattern': expression(pattern.right, scope); write(pattern.left, scope); break;
 			case 'RestElement': write(pattern.argument, scope); break;
-			case 'ArrayPattern': for (const [index, item] of pattern.elements.entries()) if (item) {
-				const element = value?.type === 'ArrayExpression' && !value.elements.slice(0, index + 1).some(part => part?.type === 'SpreadElement') ? value.elements[index] : undefined;
-				write(item, scope, element && element.type !== 'SpreadElement' ? element : undefined);
-			} break;
+			case 'ArrayPattern': for (const item of pattern.elements) if (item) write(item, scope); break;
 			case 'ObjectPattern': for (const item of pattern.properties) {
 				if (item.type === 'RestElement') write(item.argument, scope);
-				else {
-					if (item.computed) expression(item.key as A.Expression, scope);
-					const key = !item.computed || item.key.type === 'Literal' ? propertyName(item.key) : undefined;
-					const property = value?.type === 'ObjectExpression' && value.properties.every(part => part.type === 'Property' && (!part.computed || part.key.type === 'Literal')) ? value.properties.filter((part): part is A.Property => part.type === 'Property' && propertyName(part.key) === key).at(-1) : undefined;
-					write(item.value as A.Pattern, scope, property?.value as A.Expression | undefined);
-				}
+				else { if (item.computed) expression(item.key as A.Expression, scope); write(item.value as A.Pattern, scope); }
 			} break;
 		}
 	}
+
 	function arity(node: A.CallExpression | A.NewExpression, scope: Scope): void {
 		if (collecting) return;
 		let definition: CatalogEntry | undefined;
@@ -209,10 +325,11 @@ export function check(program: A.Program, options: CheckOptions = {}): Diagnosti
 		for (const param of node.params) bindPattern(scope, param, true);
 		// 引数の既定値から本体内の宣言は見えません。
 		for (const param of node.params) bindingExpressions(param, scope);
-		if (node.body.type === 'BlockStatement') { declare(scope, node.body.body); for (const item of node.body.body) statement(item, scope); }
+		if (node.body.type === 'BlockStatement') block(node.body.body, scope);
 		else expression(node.body, scope);
 	}
-	function expression(node: A.Expression, scope: Scope, direct = false): void {
+	function expression(node: A.Expression, scope: Scope, direct = false): void { pending.push(() => visitExpression(node, scope, direct)); }
+	function visitExpression(node: A.Expression, scope: Scope, direct: boolean): void {
 		switch (node.type) {
 			case 'Identifier': reference(node, scope); if (!direct) invalidate(node, scope); break;
 			case 'Literal': break;
@@ -220,11 +337,11 @@ export function check(program: A.Program, options: CheckOptions = {}): Diagnosti
 			case 'ArrayExpression': for (const item of node.elements) if (item) expression(item.type === 'SpreadElement' ? item.argument : item, scope); break;
 			case 'ObjectExpression': for (const item of node.properties) { if (item.type === 'SpreadElement') expression(item.argument, scope); else { if (item.computed) expression(item.key as A.Expression, scope); expression(item.value as A.Expression, scope); } } break;
 			case 'TemplateLiteral': for (const item of node.expressions) expression(item, scope); break;
-			case 'AssignmentExpression': write(node.left, scope, node.operator === '=' ? node.right : undefined); expression(node.right, scope); break;
+			case 'AssignmentExpression': write(node.left, scope); if (node.operator === '=') initialBindings(node.left, node.right, scope); expression(node.right, scope); break;
 			case 'UpdateExpression': write(node.argument, scope); break;
 			case 'MemberExpression': if (!direct && !entries.has(`global:${path(node)}`)) invalidate(node, scope); expression(node.object, scope, true); if (node.computed) expression(node.property, scope); break;
 			case 'CallExpression': case 'NewExpression': arity(node, scope); expression(node.callee, scope, true); for (const arg of node.arguments) expression(arg.type === 'SpreadElement' ? arg.argument : arg, scope); break;
-			case 'UnaryExpression': if (node.operator === 'delete') invalidate(node.argument, scope); expression(node.argument, scope); break;
+			case 'UnaryExpression': if (node.operator === 'typeof' && node.argument.type === 'Identifier') break; if (node.operator === 'delete') invalidate(node.argument, scope); expression(node.argument, scope); break;
 			case 'AwaitExpression': expression(node.argument, scope); break;
 			case 'ChainExpression': expression(node.expression, scope, direct); break;
 			case 'BinaryExpression': case 'LogicalExpression': expression(node.left, scope); expression(node.right, scope); break;
@@ -232,13 +349,18 @@ export function check(program: A.Program, options: CheckOptions = {}): Diagnosti
 		}
 	}
 	function block(body: readonly A.Statement[], parent: Scope): void { const scope = new Scope(parent); declare(scope, body); for (const item of body) statement(item, scope); }
-	function statement(node: A.Statement, scope: Scope): void {
+	function statement(node: A.Statement, scope: Scope): void { pending.push(() => visitStatement(node, scope)); }
+	function visitStatement(node: A.Statement, scope: Scope): void {
 		switch (node.type) {
 			case 'EmptyStatement': case 'BreakStatement': case 'ContinueStatement': break;
 			case 'ExpressionStatement': expression(node.expression, scope); break;
 			case 'VariableDeclaration': for (const item of node.declarations) {
 				bindingExpressions(item.id, scope);
-				if (item.init) { mismatch('typeAnnotation' in item.id ? item.id.typeAnnotation : undefined, item.init, item.id.type === 'Identifier' ? item.id.name : 'pattern'); expression(item.init, scope); }
+				if (item.init) {
+					const failed = mismatch('typeAnnotation' in item.id ? item.id.typeAnnotation : undefined, item.init, patternName(item.id), item.id);
+					if (!failed && item.id.type !== 'Identifier') initialBindings(item.id, item.init, scope);
+					expression(item.init, scope);
+				}
 			} break;
 			case 'FunctionDeclaration': functionBody(node, scope); break;
 			case 'BlockStatement': block(node.body, scope); break;
@@ -274,7 +396,7 @@ export function check(program: A.Program, options: CheckOptions = {}): Diagnosti
 				if (node.handler) {
 					const caught = new Scope(scope);
 					if (node.handler.param) { bindPattern(caught, node.handler.param, true); bindingExpressions(node.handler.param, caught); }
-					declare(caught, node.handler.body.body); for (const item of node.handler.body.body) statement(item, caught);
+					block(node.handler.body.body, caught);
 				}
 				if (node.finalizer) statement(node.finalizer, scope); break;
 			}
@@ -282,7 +404,9 @@ export function check(program: A.Program, options: CheckOptions = {}): Diagnosti
 	}
 	// 名前空間の変更は閉包や後続の文にもあり得るため、診断より先に全体を調べます。
 	block(program.body, globals);
+	while (pending.length) pending.pop()!();
 	collecting = false;
 	block(program.body, globals);
+	while (pending.length) pending.pop()!();
 	return output.sort((a, b) => a.pos.line - b.pos.line || a.pos.column - b.pos.column);
 }

@@ -1,6 +1,7 @@
 import * as assert from 'node:assert/strict';
 import { describe, test } from 'vitest';
 import { parse } from '../../src/v2/parser/index.js';
+import { Interpreter } from '../../src/v2/interpreter.js';
 import { check, type CheckOptions } from '../../src/v2/checker/index.js';
 import { formatDiagnostic } from '../../src/v2/diagnostics.js';
 import { catalog } from '../../src/v2/stdlib/index.js';
@@ -113,4 +114,97 @@ test('長い配列型の不一致もスタックを消費せず診断する', ()
 	assert.equal(result.length, 1);
 	assert.equal(result[0]!.code, 'TYPE_ANNOTATION_MISMATCH');
 	assert.equal(result[0]!.params.expected, annotation);
+});
+
+describe('クロスレビューの回帰', () => {
+	test('typeof の直接の未宣言識別子を許可する', () => {
+		assert.deepEqual(codes('typeof missing; typeof Mk === "object";'), []);
+		assert.deepEqual(codes('typeof missing.value;'), ['UNBOUND_IDENTIFIER']);
+		assert.deepEqual(codes('missing;'), ['UNBOUND_IDENTIFIER']);
+	});
+
+	test('静的な計算キーを rest の型から除外する', () => {
+		assert.deepEqual(codes('let {["x"]: x, ...rest}: {x: number, y: string} = {x: 1, y: "ok"}; rest = {y: "ok"};'), []);
+		assert.deepEqual(codes('let {[1]: x, ...rest}: {1: number, y: string} = {1: 1, y: "ok"}; rest = {y: "ok"};'), []);
+		assert.deepEqual(codes('let {["x"]: x, ...rest}: {x: number, y: string} = {x: 1, y: "ok"}; rest = {y: 1};'), ['TYPE_ANNOTATION_MISMATCH']);
+	});
+
+	test('動的な計算キーを持つ rest の型は推論しない', () => {
+		assert.deepEqual(codes('const key = "x"; let {[key]: x, ...rest}: {x: number, y: string} = {x: 1, y: "ok"}; rest = {y: "ok"};'), []);
+		assert.deepEqual(codes('const key = "x"; let {[key]: x, ...rest}: {x: number, y: string} = {x: 1, y: "ok"}; rest = {y: 1};'), []);
+	});
+
+	test('配列の object 分割では length と添字とその他を区別する', () => {
+		assert.deepEqual(codes('let {length, 0: first, push}: string[] = ["a"]; length = 2; first = "b"; push = 1;'), []);
+		const result = diagnostics('let {length, 0: first}: string[] = ["a"]; length = "bad"; first = 2;');
+		assert.deepEqual(result.map(item => [item.params.name, item.params.expected]), [['length', 'number'], ['first', 'string']]);
+		assert.deepEqual(codes('let {"01": other}: string[] = ["a"]; other = 2;'), []);
+	});
+
+	test('分割で欠けた値を null として既定値の後に検査する', () => {
+		const result = diagnostics('let [a, b]: number[] = [1];');
+		assert.equal(result.length, 1);
+		assert.deepEqual(result[0]!.params, { name: 'b', expected: 'number', actual: 'null', value: 'null' });
+		assert.deepEqual(codes('let [a, b = 2]: number[] = [1];'), []);
+		assert.deepEqual(codes('let [a, b = "bad"]: number[] = [1];'), ['TYPE_ANNOTATION_MISMATCH']);
+		assert.deepEqual(codes('let {x = 2}: {x?: number} = {};'), []);
+		assert.deepEqual(codes('let [a, b]: number[] = unknown;', { globals: ['unknown'] }), []);
+		assert.deepEqual(codes('let a: number = 1; [a] = [];'), ['TYPE_ANNOTATION_MISMATCH']);
+		assert.deepEqual(codes('let a: number = 1; [a = 2] = [];'), []);
+	});
+
+	test('投影した初期束縛もそれぞれ浅く検査する', () => {
+		const result = diagnostics('let {items}: {items: number[]} = {items: ["bad"]};');
+		assert.equal(result.length, 1);
+		assert.equal(result[0]!.params.name, 'items[0]');
+		assert.equal(result[0]!.params.expected, 'number');
+		assert.deepEqual(codes('let {items}: {items: number[][]} = {items: [["shallow"]]};'), []);
+		assert.deepEqual(codes('let {child: {n}}: {child: {n: number}} = {child: {}};'), ['TYPE_ANNOTATION_MISMATCH']);
+		assert.deepEqual(codes('let {child: {n = 2}}: {child: {n: number}} = {child: {}};'), []);
+	});
+
+	test('型不一致の診断は容器ではなく失敗した葉を示す', () => {
+		for (const [source, name] of [
+			['let x: number[] = [1, "a"];', 'x[1]'],
+			['let x: {a: number} = {a: "a"};', 'x.a'],
+			['let {a: x}: {a: number} = {a: "a"};', 'x'],
+			['let [a, b]: number[] = [1, "a"];', 'b'],
+			['let [a, ...rest]: number[] = [1, 2, "a"];', 'rest[1]'],
+			['let {a, ...rest}: {a: number, b: number} = {a: 1, b: "a"};', 'rest.b'],
+		] as const) {
+			const result = diagnostics(source);
+			assert.equal(result.length, 1, source);
+			assert.deepEqual(result[0]!.params, { name, expected: 'number', actual: 'string', value: '"a"' }, source);
+		}
+	});
+
+	test('欠けたプロパティの診断は missing を示す', () => {
+		const result = diagnostics('let {a: x}: {a: number} = {};');
+		assert.equal(result.length, 1);
+		assert.equal(result[0]!.params.name, 'x');
+		assert.equal(result[0]!.params.actual, 'missing');
+	});
+
+	test('truthy リテラルと省略条件のループは fallthrough しない', () => {
+		for (const loop of ['while (1) {}', 'while (-1) {}', 'while ("x") {}', 'for (;;) {}', 'do {} while (1);']) assert.deepEqual(codes(`switch (0) {case 0: ${loop} case 1: break;}`), []);
+		for (const loop of ['while (0) {}', 'while (-0) {}', 'while ("") {}', 'while (1) {break;}', 'for (;;) {break;}']) assert.deepEqual(codes(`switch (0) {case 0: ${loop} case 1: break;}`), ['CASE_FALLTHROUGH']);
+	});
+});
+
+
+for (const [label, source, expected] of [
+	['二項式', `let result = ${'1 + '.repeat(29_999)}1;`, 30_000],
+	['member', `let x = {}; x.next = x; let result = x${'.next'.repeat(30_000)} === x;`, true],
+	['call', `function f() { return f; } let result = f${'()'.repeat(30_000)} === f;`, true],
+] as const) test(`実行できる 30000 段の ${label} をスタック超過なく検査する`, async () => {
+	const { program } = parse(source);
+	assert.deepEqual(check(program), []);
+	const interpreter = new Interpreter({}, { maxSteps: 1_000_000 });
+	await interpreter.exec(program);
+	assert.equal(interpreter.getGlobal('result'), expected);
+});
+
+test('長い else-if の fallthrough 判定もスタック超過しない', () => {
+	const branches = 'if (false) break; else '.repeat(10_000);
+	assert.deepEqual(codes(`switch (0) {case 0: ${branches} break; case 1: break;}`), []);
 });

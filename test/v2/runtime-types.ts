@@ -14,6 +14,15 @@ async function execute(source: string, globals: Record<string, unknown> = {}) {
 }
 
 const accepted: [string, string, unknown[]][] = [
+	['入れ子分割の既定値を適用して構造を検査', 'let {outer:{child:{x}={x:1}}}:{outer:{child:{x:number}}}={outer:{}};out(x);', [1]],
+	['static computed stringのrest除外', 'let {["x"]:x,...rest}:{x:number,y:string}={x:1,y:"ok"};rest={y:"ok"};out(rest.y);', ['ok']],
+	['static computed numberのrest除外', 'let {[1]:x,...rest}:{1:number,y:string}={1:1,y:"ok"};rest={y:"ok"};out(rest.y);', ['ok']],
+	['dynamic computedのrestは型を確定しない', 'let key="x";let {[key]:x,...rest}:{x:number,y:string}={x:1,y:"ok"};rest={y:1};out(rest.y);', [1]],
+	['配列object分割のlengthはnumber', 'let {length}:string[]=["a"];length=2;out(length);', [2]],
+	['配列object分割の非indexはany', 'let {push}:string[]=["a"];push=1;out(push);', [1]],
+	['不足配列要素は既定値の後に検査', 'let [a,b=2]:number[]=[1];out([a,b]);', [[1,2]]],
+	['不足object要素は既定値の後に検査', 'let {child:{n=2}}:{child:{n:number}}={child:{}};out(n);', [2]],
+
 	['原始型と合併型', 'let n:number=2; let s:string="x"; let b:boolean=true; let z:null=null; let u:string|null=null; u="a"; let a:any={}; out([n,s,b,z,u]);', [[2, 'x', true, null, 'a']]],
 	['初期値を省いた変数', 'let n:number; n=2; let a:number[]; a=[2]; out([n,a]);', [[2, [2]]]],
 	['関数型', 'let f:Function=()=>3; let h:Function=out; let s:Function=range; out(f());', [3]],
@@ -27,7 +36,6 @@ const accepted: [string, string, unknown[]][] = [
 	['合併の各枝は同じ深さ', 'let x:({n:number}|{s:string})={s:"a"}; let a:(number|string)[]=[1,"a"]; out([x.s,a]);', [['a',[1,'a']]]],
 	['配列分割の投影', 'let [x,...xs]:number[]=[1,2,3]; x=4; xs=[5]; out([x,xs]);', [[4,[5]]]],
 	['入れ子投影とrest', 'let {a:{x},...rest}:{a:{x:number},y:string}={a:{x:1},y:"a"}; x=2; rest={y:"b"}; out([x,rest.y]);', [[2,'b']]],
-	['投影の初期化で親より深く検査しない', 'let {items}:{items:number[]}={items:["bad"]}; out(items[0]);', ['bad']],
 	['動的restから取得したキーを除く', 'let k="x";let {[k]:x,...rest}:{x:number,y:string}={x:1,y:"a"};rest={y:"b"};out(rest.y);', ['b']],
 	['分割既定値', 'let {x=2}:{x?:number}={}; out(x);', [2]],
 	['プロパティ更新は次の境界で検査', 'let x:number[]=[1]; x[0]="bad"; out(x[0]);', ['bad']],
@@ -38,6 +46,13 @@ const accepted: [string, string, unknown[]][] = [
 ];
 
 const rejected: [string, string][] = [
+	['投影後の配列束縛も直下まで検査', 'let {items}:{items:number[]}={items:["bad"]};'],
+	['不足配列要素の束縛を検査', 'let [a,b]:number[]=[1];'],
+	['不足object要素の束縛を検査', 'let {child:{n}}:{child:{n:number}}={child:{}};'],
+	['配列object分割lengthの文字列を拒否', 'let {length}:string[]=["a"];length="bad";'],
+	['配列object分割indexは要素型', 'let {0:x}:string[]=["a"];x=2;'],
+	['static computed restの残存propertyを検査', 'let {["x"]:x,...rest}:{x:number,y:string}={x:1,y:"ok"};rest={y:1};'],
+
 	['初期値', 'let x:number="bad";'],
 	['単純代入', 'let x:number=1;x="bad";'],
 	['複合代入', 'let x:number=1;x+="bad";'],
@@ -60,13 +75,13 @@ const rejected: [string, string][] = [
 	['合併型', 'let x:number|string=true;'],
 	['動的キー投影の再代入', 'let k="x";let {[k]:x}:{x:number,y:string}={x:1,y:"a"};x="bad";'],
 	['リテラルcomputedキー投影', 'let {["x"]:x}:{x:number}={x:1};x="bad";'],
-	['動的rest投影の再代入', 'let k="x";let {[k]:x,...rest}:{x:number,y:string}={x:1,y:"a"};rest={y:1};'],
 	['unionのrest投影', 'let {x,...rest}:({x:number,y:string}|{x:number,y:boolean})={x:1,y:true};rest={y:1};'],
-	['浅い分割初期値の更新でも投影型を検査', 'let {a:{x}}:{a:{x:string|boolean}}={a:{x:1}};x++;'],
-	['ローカルの浅い分割初期値の更新でも投影型を検査', 'function f(){let {a:{x}}:{a:{x:string|boolean}}={a:{x:1}};x++;}f();'],
+	['入れ子分割初期値を投影型で検査', 'let {a:{x}}:{a:{x:string|boolean}}={a:{x:1}};x++;'],
+	['ローカルの入れ子分割初期値を投影型で検査', 'function f(){let {a:{x}}:{a:{x:string|boolean}}={a:{x:1}};x++;}f();'],
 	['分割後の再代入', 'let {x}:{x:number}={x:1};x="bad";'],
 	['配列分割後の再代入', 'let [x]:number[]=[1];x="bad";'],
 	['rest投影の再代入', 'let [x,...xs]:number[]=[1];xs=["bad"];'],
+	['入れ子分割の既定値は構造全体も検査', 'let {child:{x}={x:1}}:{child?:{x:number,y:number}}={};'],
 	['分割既定値の検査', 'let {x="bad"}:{x?:number}={};'],
 	['for反復の型保持', 'for(let i:number=0;i<2;i++){i="bad";}'],
 	['for ofの初期化', 'for(let x:number of [1,"bad"]){}'],
@@ -172,7 +187,7 @@ describe('実行時の型注釈', () => {
 		await expect(receiver.call(owner.getGlobal('f'), ['bad'])).resolves.toBe('bad');
 	});
 
-	test('別Interpreterへ渡しても捕捉済み束縛の型契約を維持する', async () => {
+	test('同じProgramをprepareした型ありInterpreterでは捕捉済み束縛も検査される', async () => {
 		const program = parse('let x:number=1;function f(value){x=value;return x;}').program;
 		const owner = new Interpreter();
 		const receiver = new Interpreter();
@@ -180,6 +195,28 @@ describe('実行時の型注釈', () => {
 		receiver.prepareProgram(program);
 		await expect(receiver.call(owner.getGlobal('f'), ['bad'])).rejects.toMatchObject({code:'TYPE_ANNOTATION_MISMATCH'});
 		expect(owner.getGlobal('x')).toBe(1);
+	});
+
+	test('型なしの別Interpreterでは捕捉済み束縛の検査を保証しない', async () => {
+		const owner = new Interpreter();
+		await owner.exec(parse('let x:number=1;function f(value){x=value;return x;}').program);
+		const receiver = new Interpreter();
+		await expect(receiver.call(owner.getGlobal('f'), ['bad'])).resolves.toBe('bad');
+		expect(owner.getGlobal('x')).toBe('bad');
+	});
+
+	test.each([
+		['let [a,b]:number[]=[1];', 'b', 'number'],
+		['let [a,...rest]:number[]=[1,2,"a"];', 'rest[1]', 'number'],
+		['let {a,...rest}:{a:number,b:number}={a:1,b:"a"};', 'rest.b', 'number'],
+		['let [a,b]:number[]=[1,"bad"];', 'b', 'number'],
+		['let {a:x}:{a:number}={a:"bad"};', 'x', 'number'],
+		['let {a:x}:{a:number}={};', 'x', 'number'],
+		['let xs:number[]="bad";', 'xs', 'number[]'],
+		['let xs:(number|string)[]="bad";', 'xs', '(number | string)[]'],
+		['let xs:number[][]="bad";', 'xs', 'number[][]'],
+	])('診断に束縛名と簡潔な型名を示す: %s', async (source, name, expected) => {
+		await expect(execute(source)).rejects.toMatchObject({ code:'TYPE_ANNOTATION_MISMATCH', params:{name,expected} });
 	});
 
 	test('ホストからのcallとHostContext.call', async () => {

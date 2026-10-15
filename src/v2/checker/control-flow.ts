@@ -17,9 +17,20 @@ function mayThrow(node: A.Statement): boolean {
 		case 'ExpressionStatement': return node.expression.type !== 'Literal' && node.expression.type !== 'ArrowFunctionExpression';
 		case 'BlockStatement': return node.body.some(mayThrow);
 		case 'LabeledStatement': return mayThrow(node.body);
-		case 'IfStatement': return node.test.type !== 'Literal' || mayThrow(node.consequent) || !!node.alternate && mayThrow(node.alternate);
+		case 'IfStatement': {
+			let branch: A.Statement | null = node;
+			while (branch?.type === 'IfStatement') {
+				if (branch.test.type !== 'Literal' || mayThrow(branch.consequent)) return true;
+				branch = branch.alternate;
+			}
+			return branch !== null && mayThrow(branch);
+		}
 		default: return true;
 	}
+}
+function truthyLiteral(node: A.Expression | null | undefined): boolean {
+	if (node?.type === 'Literal') return Boolean(node.value);
+	return node?.type === 'UnaryExpression' && (node.operator === '+' || node.operator === '-') && node.argument.type === 'Literal' && typeof node.argument.value === 'number' && Boolean(node.argument.value);
 }
 function completions(node: A.Statement, labels: readonly string[] = []): Set<Completion> {
 	switch (node.type) {
@@ -28,7 +39,16 @@ function completions(node: A.Statement, labels: readonly string[] = []): Set<Com
 		case 'BreakStatement': return new Set([`break:${node.label?.name ?? ''}`]);
 		case 'ContinueStatement': return new Set([`continue:${node.label?.name ?? ''}`]);
 		case 'BlockStatement': return sequence(node.body);
-		case 'IfStatement': return new Set([...completions(node.consequent), ...(node.alternate ? completions(node.alternate) : ['normal'])]);
+		case 'IfStatement': {
+			const result = new Set<Completion>();
+			let branch: A.Statement | null = node;
+			while (branch?.type === 'IfStatement') {
+				for (const value of completions(branch.consequent)) result.add(value);
+				branch = branch.alternate;
+			}
+			for (const value of branch ? completions(branch) : ['normal']) result.add(value);
+			return result;
+		}
 		case 'LabeledStatement': {
 			const result = completions(node.body, [...labels, node.label.name]);
 			if (result.delete(`break:${node.label.name}`)) result.add('normal');
@@ -41,7 +61,7 @@ function completions(node: A.Statement, labels: readonly string[] = []): Set<Com
 			if (result.delete('continue:')) repeats = true;
 			for (const label of labels) if (result.delete(`continue:${label}`)) repeats = true;
 			const test = node.type === 'ForOfStatement' ? undefined : node.test;
-			const forever = node.type === 'ForStatement' && test === null || test?.type === 'Literal' && test.value === true;
+			const forever = node.type === 'ForStatement' && test === null || truthyLiteral(test);
 			if (forever) result.delete('normal');
 			if (exits || !forever && (node.type !== 'DoWhileStatement' || repeats)) result.add('normal');
 			return result;

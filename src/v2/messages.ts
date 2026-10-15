@@ -143,3 +143,9 @@ export const messages = {
 } satisfies Record<string, Message>;
 
 export type DiagnosticCode = keyof typeof messages;
+
+export function diagnosticTranslation(code: DiagnosticCode, language: 'ja' | 'en', params: Record<string, string | number>): Translation {
+	const translation = messages[code][language];
+	if (code !== 'TYPE_ANNOTATION_MISMATCH' || params['actual'] !== 'missing') return translation;
+	return { ...translation, message: language === 'ja' ? '{name} は {expected} と書かれていますが、プロパティがありません。' : '{name} is annotated as {expected}, but the property is missing.' };
+}

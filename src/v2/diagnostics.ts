@@ -1,5 +1,5 @@
 import type { Pos, Loc } from './ast.js';
-import { messages, type DiagnosticCode } from './messages.js';
+import { messages, diagnosticTranslation, type DiagnosticCode } from './messages.js';
 
 export type { DiagnosticCode } from './messages.js';
 
@@ -17,7 +17,7 @@ function interpolate(text: string, params: Diagnostic['params']): string {
 }
 
 export function formatDiagnostic(diagnostic: Diagnostic, language: 'ja' | 'en'): string {
-	const translation = messages[diagnostic.code][language];
+	const translation = diagnosticTranslation(diagnostic.code, language, diagnostic.params);
 	const position = language === 'ja' ? `(${diagnostic.pos.line} 行目、${diagnostic.pos.column} 列目)` : `(line ${diagnostic.pos.line}, column ${diagnostic.pos.column})`;
 	return `${interpolate(translation.message, diagnostic.params)} ${position} ${interpolate(translation.hint, diagnostic.params)}`;
 }

@@ -35,6 +35,37 @@ function typedIteration(this: Environment): Environment {
 	next.iteration = typedIteration;
 	return next;
 }
+function patternLabel(pattern: A.Pattern | A.MemberExpression): string {
+	if (pattern.type === 'Identifier') return pattern.name;
+	if (pattern.type === 'AssignmentPattern') return patternLabel(pattern.left);
+	if (pattern.type === 'RestElement') return patternLabel(pattern.argument);
+	const names = boundNames(pattern).join(', ');
+	return pattern.type === 'ArrayPattern' ? `[${names}]` : `{${names}}`;
+}
+
+/** 親の直下検査で失敗した要素も、分割先が分かればその束縛名で示す。 */
+function patternDiagnosticName(pattern: A.Pattern | A.MemberExpression, label: string, failure: string): string {
+	if (pattern.type === 'ArrayPattern') {
+		const suffix = failure.startsWith(label) ? failure.slice(label.length) : '';
+		const index = /^\[[0-9]+\]$/.test(suffix) ? Number(suffix.slice(1, -1)) : -1;
+		for (let i = 0; i < pattern.elements.length; i++) {
+			const part = pattern.elements[i];
+			if (part?.type === 'RestElement' && index >= i) return `${patternLabel(part)}[${index - i}]`;
+			if (part && failure === `${label}[${i}]`) return patternLabel(part);
+		}
+	} else if (pattern.type === 'ObjectPattern') {
+		for (const property of pattern.properties) {
+			if (property.type === 'RestElement' || property.computed && property.key.type !== 'Literal') continue;
+			const key = property.key.type === 'Identifier' ? property.key.name : String((property.key as A.Literal).value);
+			if (failure === `${label}.${key}`) return patternLabel(property.value as A.Pattern);
+		}
+		const rest = pattern.properties.find(property => property.type === 'RestElement');
+		const dynamic = pattern.properties.some(property => property.type !== 'RestElement' && property.computed && property.key.type !== 'Literal');
+		if (rest && !dynamic && failure.startsWith(`${label}.`)) return patternLabel(rest) + failure.slice(label.length);
+	}
+	return failure;
+}
+
 /** 別の実行器と共有する AST から注釈を外し、深い構文木も反復で複製する。 */
 function detachAnnotations<T extends object>(root: T): T {
 	const result = (Array.isArray(root) ? [] : {}) as T;
@@ -325,8 +356,8 @@ export class Interpreter {
 		if (++execution.clock % 64 === 0) this.checkTime(pos);
 	}
 
-	private *checkType(check: TypeCheck, value: Value, name: string, execution: Execution, pos: A.Pos): Frame {
-		for (const _ of checkValue(check, value, name, execution.properties, pos, () => this.tick(execution, pos))) yield this.checkpoint();
+	private *checkType(check: TypeCheck, value: Value, name: string, execution: Execution, pos: A.Pos, diagnosticName?: (name: string) => string): Frame {
+		for (const _ of checkValue(check, value, name, execution.properties, pos, () => this.tick(execution, pos), diagnosticName)) yield this.checkpoint();
 		return null;
 	}
 
@@ -432,7 +463,10 @@ export class Interpreter {
 			reference = reference === undefined ? yield this.bindingReference(pattern, env, execution) : reference;
 			const assigned = value === null ? yield this.evaluate(pattern.right, env, execution) : value;
 			const projected = this.runtimePatterns.get(env)?.get(pattern.left) ?? this.typePlan.patterns.get(pattern.left);
-			if (value === null && projected && !projected.explicit) yield this.checkType(projected.check, assigned, pattern.left.type === 'Identifier' ? pattern.left.name : 'value', execution, pos);
+			if (value === null && projected && !projected.explicit && pattern.left.type !== 'Identifier') {
+				const label = patternLabel(pattern.left);
+				yield this.checkType(projected.check, assigned, label, execution, pos, name => patternDiagnosticName(pattern.left, label, name));
+			}
 			if (reference) this.write(reference, assigned, execution, pos);
 			else yield this.bind(pattern.left, assigned, env, execution, initialize);
 			return null;
@@ -441,24 +475,28 @@ export class Interpreter {
 			this.tick(execution, pos);
 			const binding = initialize ? env.bindings.get(pattern.name) : env.resolve(pattern.name);
 			const check = (binding as TypedBinding | undefined)?.[BINDING_TYPE];
-			if (check && (!initialize || plan?.explicit)) {
+			if (check) {
 				if (isComposite(check)) yield this.checkType(check, value, pattern.name, execution, pos);
 				else { this.tick(execution, pos); checkScalar(check, value, pattern.name, pos); }
 			}
 			this.writeChecked(env, pattern.name, value, pos, initialize);
 			return null;
 		}
-		if (plan?.explicit) yield this.checkType(plan.check, value, 'value', execution, pos);
+		if (plan?.explicit) {
+			const label = patternLabel(pattern);
+			yield this.checkType(plan.check, value, label, execution, pos, name => patternDiagnosticName(pattern, label, name));
+		}
 		if (pattern.type === 'ObjectPattern' && plan) {
 			this.tick(execution, pos);
 			if (value === null) throw runtimeError('NULL_PROPERTY_ACCESS', pos, {}, 'TypeError');
 			yield this.prepared(value, execution, pos);
 			const excluded = new Set<string>();
+			const dynamic = pattern.properties.some(property => property.type !== 'RestElement' && property.computed && property.key.type !== 'Literal');
 			for (const property of pattern.properties) {
 				if (property.type === 'RestElement') {
 					const target: Reference | null = yield this.bindingReference(property, env, execution);
 					const rest = scriptObject(Object.create(null));
-					const check = restType(plan.check, excluded);
+					const check = dynamic ? undefined : restType(plan.check, excluded);
 					if (initialize && check) this.registerPattern(property.argument, env, this.typePlan.project(property.argument, check));
 					for (const [key, item] of execution.properties.entriesIterator(value, pos)) {
 						if (!excluded.has(key)) rest[key] = item;

@@ -6,6 +6,7 @@ function entry(message: string, hint: string, english: string, englishHint: stri
 }
 
 export const runtimeMessages = {
+	UNCAUGHT_EXCEPTION: entry('例外が捕捉されずに実行が終了しました。', 'try/catch で例外を処理します。', 'Execution ended with an uncaught exception.', 'Handle the exception with try/catch.'),
 	TDZ_ACCESS: entry("{name} はまだ初期化されていません。", "宣言の後で使います。", "{name} is not initialized.", "Use it after its declaration."),
 	UNBOUND_IDENTIFIER: entry("{name} は宣言されていません。", "使う前に宣言します。", "{name} is not declared.", "Declare it before use."),
 	CONST_ASSIGNMENT: entry("{name} は再代入できません。", "値を変える変数は let で宣言します。", "Cannot reassign {name}.", "Use let for a mutable binding."),

@@ -173,7 +173,7 @@ export function copiedArrayType(check: TypeCheck): Extract<TypeCheck, {kind:'arr
 
 /** コピーの取得直後に外形を確かめ、途中で譲らず実際に束縛する値を守る。 */
 export function checkCopiedElement(check: TypeCheck, value: Value, name: string, index: number, pos: A.Pos, diagnosticName: (name: string) => string, tick: () => void): void {
-	// 要素自体はコピー走査の予算を使い、合併の実照合枝だけ追加で課金する。
+	// 要素自体はコピー走査の予算を使い、合併の2つ目以降の実照合枝だけ追加で課金する。
 	const matched = check.kind === 'union' || check.kind === 'projection'
 		? matchesShallow(check, value, () => { tick(); return false; }).next().value === true
 		: matchesOuter(check, value);
@@ -181,16 +181,20 @@ export function checkCopiedElement(check: TypeCheck, value: Value, name: string,
 }
 
 /** 合併の枝にも同じ予算を使い、要素の検査では入れ子の外形までに留める。 */
-function* matchesShallow(check: TypeCheck, value: Value, tick: () => boolean): Generator<void, boolean> {
+function* matchesShallow(check: TypeCheck, value: Value, tick: () => boolean, state = { first: true }): Generator<void, boolean> {
 	const resolved = yield* resolveType(check, tick);
 	if (!resolved) return true;
 	check = resolved;
-	if (check.kind !== 'union') return matchesOuter(check, value);
-	for (const part of check.types) {
-		const pause = tick();
-		const matched = yield* matchesShallow(part, value, tick);
+	if (check.kind !== 'union') {
+		// 入れ子の合併も葉の照合順で数え、括弧の構造で課金を増やさない。
+		const pause = state.first ? false : tick();
+		state.first = false;
+		const matched = matchesOuter(check, value);
 		if (pause) yield;
-		if (matched) return true;
+		return matched;
+	}
+	for (const part of check.types) {
+		if (yield* matchesShallow(part, value, tick, state)) return true;
 	}
 	return false;
 }

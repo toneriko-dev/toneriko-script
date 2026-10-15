@@ -46,6 +46,7 @@ export class Interpreter {
 	public stepCount = 0;
 	public evaluationFrameCount = 0;
 	private readonly synchronousNodes = new WeakMap<A.Statement | A.Expression, Synchronous | null>();
+	private readonly synchronousCallbacks = new WeakMap<ScriptFunction, ((args: Value[], execution: Execution, pos: A.Pos) => Value) | null>();
 	private readonly maxCallDepth: number;
 	private readonly global: Environment;
 	private readonly services: RuntimeServices;
@@ -436,6 +437,35 @@ export class Interpreter {
 		return result;
 	}
 
+	/** 呼び出し全体が32ステップ以内なら、引数と本体のフレームを作らず同じ予算で評価します。 */
+	private callback(fn: Value, args: Value[], receiver: Value, execution: Execution, pos: A.Pos): Frame | Ready {
+		if (!isScriptFunction(fn)) return this.invoke(fn, args, receiver, execution, pos);
+		if (!this.synchronousCallbacks.has(fn)) {
+			const params = fn.params;
+			const expression = fn.body.type !== 'BlockStatement' ? this.synchronous(fn.body) : null;
+			const statements = fn.body.type === 'BlockStatement' ? fn.body.body.map(node => this.synchronous(node)) : null;
+			// 宣言の準備には別のステップが要るため、ブロックは宣言のない短い本体に限定します。
+			const valid = params.every(param => param.type === 'Identifier') && (expression !== null || (statements !== null && statements.every(Boolean) && fn.body.type === 'BlockStatement' && fn.body.body.every(node => node.type !== 'VariableDeclaration' && node.type !== 'FunctionDeclaration')));
+			const cost = 1 + params.length * 2 + (expression?.cost ?? statements?.reduce((sum, part) => sum + (part?.cost ?? 33), 0) ?? 33);
+			this.synchronousCallbacks.set(fn, valid && cost <= 32 ? (values, current, at) => {
+				this.tick(current, at);
+				if (current.callDepth >= this.maxCallDepth) throw runtimeError('CALL_DEPTH_EXCEEDED', at, { limit: this.maxCallDepth }, 'RangeError');
+				current.callDepth++;
+				try {
+					const parameters = new Environment(fn.environment as Environment);
+					for (const param of params) { this.tick(current, param.loc.start); parameters.declare((param as A.Identifier).name, true); }
+					for (let i = 0; i < params.length; i++) { const param = params[i]!; this.tick(current, param.loc.start); parameters.write((param as A.Identifier).name, values[i] ?? null, param.loc.start, true); }
+					if (expression) return expression.evaluate(parameters, current);
+					const body = new Environment(parameters);
+					for (const statement of statements!) { const result = statement!.evaluate(body, current) as Completion | null; if (result) return result.kind === 'return' ? result.value : null; }
+					return null;
+				} finally { current.callDepth--; }
+			} : null);
+		}
+		const synchronous = this.synchronousCallbacks.get(fn);
+		return synchronous ? { ready: synchronous(args, execution, pos) } : this.invoke(fn, args, receiver, execution, pos);
+	}
+
 	private *invoke(fn: Value, args: Value[], receiver: Value, execution: Execution, pos: A.Pos): Frame {
 		this.tick(execution, pos);
 		if (isStdFunction(fn)) {
@@ -445,7 +475,7 @@ export class Interpreter {
 				parallel: (callback, arguments_) => this.run(this.invoke(callback, arguments_, null, execution, pos), execution, true),
 				tick: () => this.tick(execution, pos),
 				checkpoint: () => this.checkpoint(),
-				call: (callback, arguments_, target = null) => this.invoke(callback, arguments_, target, execution, pos),
+				call: (callback, arguments_, target = null) => this.callback(callback, arguments_, target, execution, pos),
 			};
 			validateArguments(context, fn[STANDARD_FUNCTION], args);
 			const result = yield fn[STANDARD_FUNCTION].implementation(context, receiver, args);

@@ -100,6 +100,14 @@ describe('オブジェクトと JSON の標準関数', () => {
 		await expect(execute('structuredClone(sparse);', { sparse: new Array(3) })).rejects.toMatchObject({ code: 'SPARSE_ARRAY' });
 		expect(await execute('out(deepEqual(short, long));', { short: new Array(1), long: new Array(2) })).toEqual([false]);
 	});
+	test('非列挙の配列要素は Node で疎な結果になるため拒否する', async () => {
+		const source = 'const input = [1]; Object.defineProperty(input, "0", { enumerable: false }); const copy = structuredClone(input); console.log(JSON.stringify([copy.length, Object.keys(copy)]));';
+		const reference = spawnSync(nodeExecutable, ['-e', source], { encoding: 'utf8' });
+		expect(reference.status, reference.stderr).toBe(0);
+		expect(JSON.parse(reference.stdout)).toEqual([1, []]);
+		const value = [1]; Object.defineProperty(value, '0', { enumerable: false });
+		await expect(execute('structuredClone(value);', { value })).rejects.toMatchObject({ code: 'SPARSE_ARRAY' });
+	});
 	test('例外の追加プロパティも禁止値を深く検査する', async () => {
 		const fn = Object.assign(new Error('x'), { extra: { child: () => 1 } });
 		const proto = Object.assign(new Error('x'), { extra: JSON.parse('{"nested":{"__proto__":1}}') });
@@ -132,8 +140,18 @@ describe('オブジェクトと JSON の標準関数', () => {
 		}
 		expect(await execute('out(JSON.stringify(new Error("x"), ["name", "message"]));')).toEqual(['{"name":"Error","message":"x"}']);
 	});
+	test('DOMException は未対応の複製として明示的に拒否する', async () => {
+		const error = new DOMException('host message', 'AbortError');
+		for (const value of [error, { nested: [error] }]) await expect(execute('structuredClone(value);', { value })).rejects.toMatchObject({ name: 'DataCloneError', code: 'STDLIB_ARGUMENT_TYPE' });
+	});
 	test('deepEqual はキー順を無視し配列順序と関数同一性を区別する', async () => {
 		expect(await execute('let fn = () => 1; out([deepEqual({a: 1, b: 2}, {b: 2, a: 1}), deepEqual([1, 2], [2, 1]), deepEqual(0, -0), deepEqual(0/0, 0/0), deepEqual(fn, fn), deepEqual(fn, () => 1)]);')).toEqual([[true, false, false, true, true, false]]);
 		for (const value of fc.sample(json, { seed: 424242, numRuns: 100 })) expect(await execute(`let x = ${literal(value)}; out(deepEqual(x, structuredClone(x))); out(deepEqual(x, x));`)).toEqual([true, true]);
 	});
+});
+
+
+test('内部反復子の複製は DataCloneError', async () => {
+	const vm = new Interpreter();
+	await expect(vm.exec(parse('structuredClone([1].entries());').program)).rejects.toMatchObject({ name: 'DataCloneError' });
 });

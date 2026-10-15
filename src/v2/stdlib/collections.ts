@@ -61,7 +61,7 @@ function *readKey(ctx: StdContext, value: Value, schema: KeySchema, work: Work):
 }
 
 // 同値では左側を先に取り、比較関数を常に一つずつ待ちます。
-function *mergeSort(ctx: StdContext, input: Item[], compare: (left: Item, right: Item) => StdFrame, work: Work): StdFrame {
+function *mergeSort(ctx: StdContext, input: Item[], compare: (left: Item, right: Item) => StdFrame | { ready: Value }, work: Work): StdFrame {
 	let source = input;
 	let target: Item[] = [];
 	for (let width = 1; width < source.length; width *= 2) {
@@ -71,7 +71,11 @@ function *mergeSort(ctx: StdContext, input: Item[], compare: (left: Item, right:
 			for (let i = start; i < end; i++) {
 				if (left >= middle) target[i] = source[right++]!;
 				else if (right >= end) target[i] = source[left++]!;
-				else target[i] = (yield compare(source[left]!, source[right]!)) as number <= 0 ? source[left++]! : source[right++]!;
+				else {
+					const compared = compare(source[left]!, source[right]!);
+					const order = requireNumber(ctx, 'ready' in compared ? compared.ready : yield compared);
+					target[i] = Number.isNaN(order) || order <= 0 ? source[left++]! : source[right++]!;
+				}
 				if (step(ctx, work)) yield ctx.checkpoint();
 			}
 		}
@@ -110,10 +114,9 @@ export const collectionDefinitions: StdDefinition[] = [
 				}
 				items.push({ value, key }); if (step(ctx, work)) yield ctx.checkpoint();
 			}
-			const sorted = (yield* mergeSort(ctx, items, function *(left, right) {
-				if (name === 'sortBy' || fn === undefined) return yield* compareKeys(ctx, left.key, right.key, work);
-				const order = requireNumber(ctx, yield ctx.call(fn, [left.value, right.value]));
-				return Number.isNaN(order) ? 0 : order;
+			const sorted = (yield* mergeSort(ctx, items, (left, right) => {
+				if (name === 'sortBy' || fn === undefined) return compareKeys(ctx, left.key, right.key, work);
+				return ctx.call(fn, [left.value, right.value]);
 			}, work)) as Item[];
 			const result = name === 'toSorted' ? scriptObject([] as Value[]) : array;
 			for (let i = 0; i < sorted.length; i++) { ctx.properties.set(result, i, sorted[i]!.value, ctx.pos); if (step(ctx, work)) yield ctx.checkpoint(); }
@@ -168,6 +171,7 @@ export const collectionDefinitions: StdDefinition[] = [
 			const key = yield ctx.call(fn, [ctx.properties.get(array, i, ctx.pos), i, array]);
 			if (typeof key !== 'number' && typeof key !== 'string') throw runtimeError('STDLIB_ARGUMENT_TYPE', ctx.pos, { expected: 'number | string' }, 'TypeError');
 			if (typeof key === 'number' && Number.isNaN(key)) rangeError(ctx);
+			if (key === '__proto__') throw runtimeError('STDLIB_FORBIDDEN_KEY', ctx.pos, {}, 'TypeError');
 			const name = ctx.properties.key(key, ctx.pos);
 			ctx.properties.set(result, name, (ctx.properties.get(result, name, ctx.pos) as number | null ?? 0) + 1, ctx.pos);
 			if (step(ctx, work)) yield ctx.checkpoint();

@@ -1,11 +1,11 @@
-import { type StdDefinition, type StdContext, type StdFrame, requireArray, requireNumber, isStdFunction, makeFunction } from './core.js';
+import { type StdFunction, type StdDefinition, type StdContext, type StdFrame, requireArray, requireNumber, isStdFunction, makeFunction } from './core.js';
 import { scriptObject, isScriptFunction, type Value } from '../runtime/brands.js';
 import type { PropertyAccess } from '../runtime/values.js';
 import { runtimeError } from '../runtime/errors.js';
 import type { Pos } from '../ast.js';
 
 const iteratorStates = new WeakMap<object, { array: Value[]; index: number; done: boolean }>();
-export function isArrayIterator(value: unknown): value is object { return typeof value === 'object' && value !== null && iteratorStates.has(value); }
+export function isArrayIterator(value: unknown): value is { readonly next: StdFunction } { return typeof value === 'object' && value !== null && iteratorStates.has(value); }
 export function nextArrayIterator(value: object, properties: PropertyAccess, pos: Pos): { value: Value; done: boolean } {
 	const state = iteratorStates.get(value)!;
 	if (state.done || state.index >= state.array.length) { state.done = true; return scriptObject(Object.assign(Object.create(null), { value: null, done: true })); }
@@ -13,13 +13,14 @@ export function nextArrayIterator(value: object, properties: PropertyAccess, pos
 	return scriptObject(Object.assign(Object.create(null), { value: scriptObject([index, properties.get(state.array, index, pos)]), done: false }));
 }
 const nextDefinition: StdDefinition = {
-	name: 'ArrayIterator.next', receiver: 'global', args: [], returns: 'any',
+	name: 'next', receiver: 'iterator', args: [], returns: 'any',
 	description: { ja: '配列の次の添字と値を返します。', en: 'Returns the next array index and value.' },
 	*implementation(ctx, receiver) {
 		if (!isArrayIterator(receiver)) throw runtimeError('INVALID_RECEIVER', ctx.pos, {}, 'TypeError');
 		return nextArrayIterator(receiver, ctx.properties, ctx.pos);
 	},
 };
+export const iteratorDefinitions = [nextDefinition];
 function iterator(array: Value[]): Value {
 	const value = scriptObject(Object.create(null));
 	iteratorStates.set(value, { array, index: 0, done: false });

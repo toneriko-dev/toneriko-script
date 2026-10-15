@@ -20,7 +20,8 @@ function opaqueFunction(value: unknown): boolean {
 
 const domExceptionPrototype = typeof DOMException === 'undefined' ? undefined : DOMException.prototype;
 const domExceptionName = domExceptionPrototype && Object.getOwnPropertyDescriptor(domExceptionPrototype, 'name')?.get;
-const hiddenErrorKeys = new Set(['stack', 'sourceURL', 'line', 'column', 'originalLine', 'originalColumn', 'fileName', 'lineNumber', 'columnNumber']);
+// 固定名は配列で照合し、ホストのハッシュ表に由来する長い同期処理を避けます。
+const hiddenErrorKeys = ['stack', 'sourceURL', 'line', 'column', 'originalLine', 'originalColumn', 'fileName', 'lineNumber', 'columnNumber'];
 
 const errorConstructorNames = new Set(['Error', 'TypeError', 'RangeError', 'ReferenceError', 'SyntaxError', 'EvalError', 'URIError', 'AggregateError', 'DOMException']);
 const errorPrototypes = new Set<object>([
@@ -33,7 +34,7 @@ export function errorValue(value: unknown, pos: AST.Pos = { line: 1, column: 1 }
 
 /** 隠すキーでは、原型を外された DOMException のブランドも確かめます。 */
 function propertyError(value: unknown, key: string, pos: AST.Pos): value is object {
-	return classifyError(value, pos, hiddenErrorKeys.has(key) ? 'all' : false);
+	return classifyError(value, pos, hiddenErrorKeys.includes(key) ? 'all' : false);
 }
 
 /** 原型は毎回確かめ、利用者の toStringTag の getter は呼びません。 */
@@ -86,7 +87,7 @@ function classifyError(value: unknown, pos: AST.Pos, domProbe: false | 'detached
 }
 
 function hiddenErrorKey(value: object, key: string): boolean {
-	return isScriptErrorValue(value) ? key === 'stack' : hiddenErrorKeys.has(key);
+	return isScriptErrorValue(value) ? key === 'stack' : hiddenErrorKeys.includes(key);
 }
 
 function registeredMethod(type: 'array' | 'string' | 'number', key: string, pos: AST.Pos): Value {
@@ -212,6 +213,13 @@ export class PropertyAccess {
 		const descriptor = Object.getOwnPropertyDescriptor(value, key);
 		if (descriptor && !('value' in descriptor)) throw runtimeError('ACCESSOR_PROPERTY', pos, { key }, 'TypeError');
 		if (descriptor?.writable === false) throw runtimeError('READONLY_PROPERTY', pos, { key }, 'TypeError');
+		// 既存の書き込み可能な要素は属性も length も変えず、数値添字で更新できます。
+		// 文字列キーでの属性定義に伴う、ホスト内部の長い同期処理を避けます。
+		const arrayIndex = Array.isArray(value) ? indexOf(key) : null;
+		if (arrayIndex !== null && descriptor) {
+			(value as Value[])[arrayIndex] = normalized;
+			return normalized;
+		}
 		if (!descriptor) {
 			let prototype = Object.getPrototypeOf(value);
 			while (prototype) {
@@ -272,7 +280,7 @@ export class PropertyAccess {
 		errorValue(value, pos);
 		for (const key of Object.keys(Object(value))) {
 			this.onStep();
-			if (hiddenErrorKeys.has(key) && propertyError(value, key, pos) && hiddenErrorKey(value, key)) continue;
+			if (hiddenErrorKeys.includes(key) && propertyError(value, key, pos) && hiddenErrorKey(value, key)) continue;
 			this.key(key, pos);
 			yield [key, this.get(value, key, pos)];
 		}

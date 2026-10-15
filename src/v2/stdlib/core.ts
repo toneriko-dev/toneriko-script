@@ -12,11 +12,11 @@ export interface StdContext {
 	properties: PropertyAccess;
 	tick(): void;
 	checkpoint(): StdFrame;
-	call(fn: Value, args: Value[], receiver?: Value): StdFrame;
+	call(fn: Value, args: Value[], receiver?: Value): StdFrame | { ready: Value };
 }
 export interface StdDefinition {
 	name: string;
-	receiver: 'global' | 'array' | 'string' | 'number';
+	receiver: 'global' | 'array' | 'string' | 'number' | 'iterator';
 	args: { name: string; type: string; optional?: boolean; rest?: boolean }[];
 	returns: string;
 	description: { ja: string; en: string };

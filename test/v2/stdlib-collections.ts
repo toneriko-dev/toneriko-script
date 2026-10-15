@@ -162,7 +162,7 @@ describe('追加した配列メソッド', () => {
 	test('countBy は原型なしで数と文字列を集計し禁止キーと配列キーを拒否する', async () => {
 		const result = await invoke('countBy', [1, '1', 'constructor', 'toString'], [(x: Value) => x]);
 		expect(Object.getPrototypeOf(result)).toBeNull(); expect(result).toEqual({ 1: 2, constructor: 1, toString: 1 });
-		await expect(invoke('countBy', [1], [() => '__proto__'])).rejects.toMatchObject({ code: 'FORBIDDEN_PROPERTY' });
+		await expect(invoke('countBy', [1], [() => '__proto__'])).rejects.toMatchObject({ code: 'STDLIB_FORBIDDEN_KEY' });
 		await expect(invoke('countBy', [1], [() => [1]])).rejects.toMatchObject({ name: 'TypeError' });
 	});
 

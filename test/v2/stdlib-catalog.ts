@@ -40,3 +40,20 @@ describe('標準ライブラリの単一定義', () => {
 		await expect(interpreter.exec(parse('const a = []; a.push(...values);').program)).rejects.toMatchObject({ code: 'STEP_LIMIT_EXCEEDED' });
 	});
 });
+
+
+test('設計書の全公開名が一覧にあり、内部反復子の next も単一定義を使う', async () => {
+	const expected = {
+		array: 'push pop shift unshift slice splice concat join indexOf includes find findIndex filter map flatMap flat reduce some every forEach sort reverse toSorted toReversed at fill entries shuffle sample sampleBy sortBy unique uniqueBy sum minBy maxBy countBy mapConcurrent',
+		string: 'slice substring at indexOf includes startsWith endsWith padStart padEnd trim toUpperCase toLowerCase split replace replaceAll repeat dedent',
+		number: 'toFixed toString', iterator: 'next',
+		global: 'Error Number String parseInt parseFloat Number.isInteger Array.isArray Array.from Object.keys Object.values Object.entries Object.fromEntries Object.groupBy JSON.parse JSON.stringify structuredClone encodeURIComponent decodeURIComponent Date.now Date.parts Date.format console.log sleep range setTimeout setInterval clearTimeout clearInterval deepEqual',
+	};
+	for (const [receiver, names] of Object.entries(expected)) {
+		const actual = catalog.filter(d => d.receiver === receiver && !d.name.startsWith('Math.')).map(d => d.name).sort();
+		expect(actual).toEqual(names.split(' ').sort());
+	}
+	const interpreter = new Interpreter();
+	await interpreter.exec(parse('const iter = [1].entries(); const next = iter.next;').program);
+	expect(interpreter.getGlobal('next')[STANDARD_FUNCTION]).toBe(definitions.find(d => d.receiver === 'iterator' && d.name === 'next'));
+});

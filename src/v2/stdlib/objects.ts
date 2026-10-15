@@ -1,3 +1,4 @@
+import { isArrayIterator } from './arrays.js';
 import { type StdContext, type StdDefinition, type StdFrame, requireString } from './core.js';
 import { runtimeError, createScriptError } from '../runtime/errors.js';
 import { valueTypeof, scriptObject, type Value } from '../runtime/brands.js';
@@ -214,6 +215,8 @@ function* clone(ctx: StdContext, original: Value): StdFrame {
 	const tasks: { value: Value; target: object; name: string; enumerable?: boolean }[] = [{ value: original, target: root, name: '' }];
 	while (tasks.length) {
 		const { value, target, name, enumerable = true } = tasks.pop()!; yield* step(ctx); key(ctx, name);
+		if (isArrayIterator(value)) throw runtimeError('STDLIB_ARGUMENT_TYPE', ctx.pos, { expected: 'cloneable value' }, 'DataCloneError');
+		if (typeof DOMException !== 'undefined' && value instanceof DOMException) throw runtimeError('STDLIB_ARGUMENT_TYPE', ctx.pos, { expected: 'cloneable value' }, 'DataCloneError');
 		if (callable(value)) throw runtimeError('STDLIB_CLONE_FUNCTION', ctx.pos, {}, 'DataCloneError');
 		let copy = value;
 		if (value !== null && typeof value === 'object') {
@@ -229,7 +232,7 @@ function* clone(ctx: StdContext, original: Value): StdFrame {
 					for (const [childKey, child] of yield* own(ctx, value)) { tasks.push({ value: child, target: ignored, name: childKey }); yield* step(ctx); }
 					if (Object.hasOwn(value, 'cause')) tasks.push({ value: ctx.properties.get(value, 'cause', ctx.pos), target: copy as object, name: 'cause', enumerable: false });
 				} else {
-					if (Array.isArray(value)) for (let i = 0; i < value.length; i++) { if (!Object.hasOwn(value, i)) throw runtimeError('SPARSE_ARRAY', ctx.pos); yield* step(ctx); }
+					if (Array.isArray(value)) for (let i = 0; i < value.length; i++) { if (!Object.getOwnPropertyDescriptor(value, i)?.enumerable) throw runtimeError('SPARSE_ARRAY', ctx.pos); yield* step(ctx); }
 					const prototype = Object.getPrototypeOf(value);
 					if (!Array.isArray(value) && prototype !== null && prototype !== Object.prototype) throw runtimeError('STDLIB_ARGUMENT_TYPE', ctx.pos, { expected: 'object | any[]' }, 'DataCloneError');
 					copy = Array.isArray(value) ? scriptObject([]) : dictionary(); memo.set(value, copy);

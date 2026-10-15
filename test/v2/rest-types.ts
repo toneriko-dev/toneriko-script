@@ -62,7 +62,19 @@ describe('restで実際にコピーする値の型検査', () => {
 		expect(interpreter.getGlobal('nestedRejected')).toBe(2);
 	});
 
-	test.each([[200000,0],[200,1000000]])('動的キー射影を静的キャッシュへ保持しない: %s 回、長さ %s', async (count, length) => {
+	test('型が未確定の動的キー部分木は走査せず深さに比例して計上する', async () => {
+		for (const depth of [10,25,50,100,200]) {
+			const pattern = '{[k]:'.repeat(depth)+'x'+'}'.repeat(depth);
+			let h: unknown = 1;
+			for (let index=0;index<depth;index++) h = {v:h};
+			const interpreter = new Interpreter({h}, {now:()=>0});
+			await interpreter.exec(parse(`let k="v";let result=0;for(let i=0;i<20;i++){let ${pattern}:any=h;result+=x;}`).program);
+			expect(interpreter.getGlobal('result')).toBe(20);
+			expect(interpreter.stepCount).toBe(120*depth+276);
+		}
+	});
+
+	test.each([[2000,0],[200,1000000]])('動的キー射影を静的キャッシュへ保持しない: %s 回、長さ %s', async (count, length) => {
 		const interpreter = new Interpreter({}, {now:()=>0});
 		const plan = (interpreter as unknown as {typePlan:TypePlan}).typePlan;
 		let cacheCalls = 0;

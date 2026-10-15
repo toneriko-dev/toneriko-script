@@ -50,53 +50,51 @@ const groups = [
 type Input = fc.ArbitraryValue<typeof input>;
 type Result = { output: unknown[]; reached: number; error: string | null };
 
-test('Node モジュールとの差分: 固定 seed 5 個・本体到達 5000 件・成功比較 4000 件', async () => {
+for (const group of groups) test.each(seeds)(`Node モジュールとの差分: ${group.name} seed %s・100 件`, async seed => {
 	const started = performance.now();
 	let reached = 0;
 	let compared = 0;
 	let exceptions = 0;
-	for (const group of groups) {
-		const cases = seeds.flatMap(seed => fc.sample(input, { seed, numRuns: 100 })
-			.map((value, index) => ({ seed, index, source: group.make(value) })));
-		const reference = spawnSync(nodeExecutable, ['--max-old-space-size=768', '--experimental-vm-modules', fileURLToPath(new URL('../../scripts/v2-reference.mjs', import.meta.url))], {
-			input: JSON.stringify(cases.map(item => item.source)), encoding: 'utf8', timeout: 60_000, maxBuffer: 16 * 1024 * 1024,
-		});
-		assert.equal(reference.status, 0, `${group.name}: Node 参照実行失敗 ${reference.error ?? reference.stderr}`);
-		const expected = JSON.parse(reference.stdout) as Result[];
-		assert.equal(expected.length, cases.length);
-		let groupReached = 0;
-		for (const [index, item] of cases.entries()) {
-			const context = `${group.name} seed=${item.seed} sample=${item.index}\n${item.source}`;
-			const output: unknown[] = [];
-			let hits = 0;
-			let error: unknown;
-			// パース失敗も v2 の予想外の例外も、試行の除外にはしません。
-			const program = parse(item.source).program;
-			try {
-				await new Interpreter({ out: (value: unknown) => { output.push(snapshot(value)); }, reach: () => { hits++; } }, { maxSteps: 1_000_000 }).exec(program);
-			} catch (caught) { error = caught; }
-			const node = expected[index]!;
-			assert.equal(node.reached, 1, context);
-			assert.equal(hits, 1, context);
-			reached++;
-			groupReached++;
-			if (group.error) {
-				assert.notEqual(node.error, null, context);
-				assert.ok(error, context);
-				assert.equal((error as Error).name, node.error, context);
-				exceptions++;
-			} else {
-				assert.equal(node.error, null, context);
-				assert.equal(error, undefined, `${context}\n${String(error)}`);
-				assert.deepEqual(output, node.output, context);
-				compared++;
-			}
+	const cases = fc.sample(input, { seed, numRuns: 100 })
+		.map((value, index) => ({ seed, index, source: group.make(value) }));
+	const reference = spawnSync(nodeExecutable, ['--max-old-space-size=768', '--experimental-vm-modules', fileURLToPath(new URL('../../scripts/v2-reference.mjs', import.meta.url))], {
+		input: JSON.stringify(cases.map(item => item.source)), encoding: 'utf8', timeout: 60_000, maxBuffer: 16 * 1024 * 1024,
+	});
+	assert.equal(reference.status, 0, `${group.name}: Node 参照実行失敗 ${reference.error ?? reference.stderr}`);
+	const expected = JSON.parse(reference.stdout) as Result[];
+	assert.equal(expected.length, cases.length);
+	let groupReached = 0;
+	for (const [index, item] of cases.entries()) {
+		const context = `${group.name} seed=${item.seed} sample=${item.index}\n${item.source}`;
+		const output: unknown[] = [];
+		let hits = 0;
+		let error: unknown;
+		// パース失敗も v2 の予想外の例外も、試行の除外にはしません。
+		const program = parse(item.source).program;
+		try {
+			await new Interpreter({ out: (value: unknown) => { output.push(snapshot(value)); }, reach: () => { hits++; } }, { maxSteps: 1_000_000 }).exec(program);
+		} catch (caught) { error = caught; }
+		const node = expected[index]!;
+		assert.equal(node.reached, 1, context);
+		assert.equal(hits, 1, context);
+		reached++;
+		groupReached++;
+		if (group.error) {
+			assert.notEqual(node.error, null, context);
+			assert.ok(error, context);
+			assert.equal((error as Error).name, node.error, context);
+			exceptions++;
+		} else {
+			assert.equal(node.error, null, context);
+			assert.equal(error, undefined, `${context}\n${String(error)}`);
+			assert.deepEqual(output, node.output, context);
+			compared++;
 		}
-		assert.equal(groupReached, 500, group.name);
 	}
-	assert.ok(reached >= 5000, `到達 ${reached}`);
-	assert.ok(compared >= 4000, `成功比較 ${compared}`);
-	assert.ok(exceptions >= 1000, `例外 ${exceptions}`);
+	assert.equal(groupReached, 100, group.name);
+	assert.equal(reached, 100, `到達 ${reached}`);
+	assert.equal(compared, group.error ? 0 : 100, `成功比較 ${compared}`);
+	assert.equal(exceptions, group.error ? 100 : 0, `例外 ${exceptions}`);
 	console.info(`v2 差分: 到達=${reached} 成功比較=${compared} 例外=${exceptions} 秒=${((performance.now() - started) / 1000).toFixed(2)}`);
 }, 120_000);
 
@@ -252,42 +250,40 @@ function structuralProgram(choices: readonly number[], profile: number): string 
 }
 
 const structuralChoices = fc.array(fc.integer({ min: 0, max: 65535 }), { minLength: 256, maxLength: 512 });
-test('構造を組み合わせた Node 差分: 8 群・本体到達と成功比較 3200 件', async () => {
+for (const [profile, name] of structuralProfiles.entries()) test.each(seeds.slice(0,4))(`構造を組み合わせた Node 差分: ${name} seed %s・100 件`, async seed => {
 	const started = performance.now();
 	let reached = 0;
 	let compared = 0;
-	for (const [profile, name] of structuralProfiles.entries()) {
-		const cases = seeds.slice(0, 4).flatMap(seed => fc.sample(structuralChoices, { seed: seed + profile, numRuns: 100 })
-			.map((choices, index) => ({ seed: seed + profile, index, source: structuralProgram(choices, profile) })));
-		const child = spawnSync(nodeExecutable, ['--max-old-space-size=768', '--experimental-vm-modules', fileURLToPath(new URL('../../scripts/v2-reference.mjs', import.meta.url))], {
-			input: JSON.stringify(cases.map(item => item.source)), encoding: 'utf8', timeout: 30_000, maxBuffer: 32 * 1024 * 1024,
-		});
-		assert.equal(child.status, 0, `${name}: ${child.error ?? child.stderr}`);
-		const references = JSON.parse(child.stdout) as Result[];
-		assert.equal(references.length, 400);
-		let groupReached = 0;
-		let groupCompared = 0;
-		for (const [index, item] of cases.entries()) {
-			const context = `${name} seed=${item.seed} sample=${item.index}\n${item.source}`;
-			const reference = references[index]!;
-			assert.equal(reference.error, null, context);
-			assert.equal(reference.reached, 1, context);
-			const output: unknown[] = [];
-			let hits = 0;
-			const interpreter = new Interpreter({ out: (value: unknown) => { output.push(snapshot(value)); }, reach: () => { hits++; } }, { maxSteps: 1_000_000 });
-			try { await interpreter.exec(parse(item.source).program); }
-			catch (error) { assert.fail(`${context}\n${String(error)}`); }
-			assert.equal(hits, 1, context);
-			groupReached++;
-			assert.deepEqual(output, reference.output, context);
-			groupCompared++;
-		}
-		assert.equal(groupReached, 400, name);
-		assert.equal(groupCompared, 400, name);
-		reached += groupReached;
-		compared += groupCompared;
+	const cases = fc.sample(structuralChoices, { seed: seed + profile, numRuns: 100 })
+		.map((choices, index) => ({ seed: seed + profile, index, source: structuralProgram(choices, profile) }));
+	const child = spawnSync(nodeExecutable, ['--max-old-space-size=768', '--experimental-vm-modules', fileURLToPath(new URL('../../scripts/v2-reference.mjs', import.meta.url))], {
+		input: JSON.stringify(cases.map(item => item.source)), encoding: 'utf8', timeout: 30_000, maxBuffer: 32 * 1024 * 1024,
+	});
+	assert.equal(child.status, 0, `${name}: ${child.error ?? child.stderr}`);
+	const references = JSON.parse(child.stdout) as Result[];
+	assert.equal(references.length, 100);
+	let groupReached = 0;
+	let groupCompared = 0;
+	for (const [index, item] of cases.entries()) {
+		const context = `${name} seed=${item.seed} sample=${item.index}\n${item.source}`;
+		const reference = references[index]!;
+		assert.equal(reference.error, null, context);
+		assert.equal(reference.reached, 1, context);
+		const output: unknown[] = [];
+		let hits = 0;
+		const interpreter = new Interpreter({ out: (value: unknown) => { output.push(snapshot(value)); }, reach: () => { hits++; } }, { maxSteps: 1_000_000 });
+		try { await interpreter.exec(parse(item.source).program); }
+		catch (error) { assert.fail(`${context}\n${String(error)}`); }
+		assert.equal(hits, 1, context);
+		groupReached++;
+		assert.deepEqual(output, reference.output, context);
+		groupCompared++;
 	}
-	assert.ok(reached >= 3200, `構造の本体到達 ${reached}`);
-	assert.ok(compared >= 3200, `構造の成功比較 ${compared}`);
+	assert.equal(groupReached, 100, name);
+	assert.equal(groupCompared, 100, name);
+	reached += groupReached;
+	compared += groupCompared;
+	assert.equal(reached, 100, `構造の本体到達 ${reached}`);
+	assert.equal(compared, 100, `構造の成功比較 ${compared}`);
 	console.info(`v2 構造差分: 到達=${reached} 成功比較=${compared} 秒=${((performance.now() - started) / 1000).toFixed(2)}`);
 }, 60_000);

@@ -26,8 +26,8 @@ const methods: Record<string, (v: fc.ArbitraryValue<typeof sample>) => unknown[]
 	split: v => [v.search, v.count], replace: v => [v.search, v.replacement], replaceAll: v => [v.search, v.replacement], repeat: v => [v.count],
 };
 describe('文字列標準関数', () => {
-	for (const [method, args] of Object.entries(methods)) test(`${method}: Node 差分 5 seed × 100 件`, async () => {
-		const cases = seeds.flatMap(seed => fc.sample(sample, { seed, numRuns: 100 })).map(v => `reach(); out(${JSON.stringify(v.text)}.${method}(${args(v).map(x => JSON.stringify(x)).join(',')}) ?? null);`);
+	for (const [method, args] of Object.entries(methods)) test.each(seeds)(`${method}: Node 差分 seed %s × 100 件`, async seed => {
+		const cases = fc.sample(sample, { seed, numRuns: 100 }).map(v => `reach(); out(${JSON.stringify(v.text)}.${method}(${args(v).map(x => JSON.stringify(x)).join(',')}) ?? null);`);
 		const reference = spawnSync(nodeExecutable, ['--experimental-vm-modules', fileURLToPath(new URL('../../scripts/v2-reference.mjs', import.meta.url))], { input: JSON.stringify(cases), encoding: 'utf8', timeout: 60_000, maxBuffer: 16 * 1024 * 1024 });
 		expect(reference.status, reference.stderr).toBe(0);
 		const expected = JSON.parse(reference.stdout);
@@ -39,7 +39,7 @@ describe('文字列標準関数', () => {
 			expect(actual.map(snapshot), cases[i]).toEqual(expected[i].output);
 			compared++;
 		}
-		expect(reached).toBe(500); expect(compared).toBe(500);
+		expect(reached).toBe(100); expect(compared).toBe(100);
 	}, 60_000);
 
 	test('絵文字・結合・CRLF・国旗を書記素として操作する', async () => {

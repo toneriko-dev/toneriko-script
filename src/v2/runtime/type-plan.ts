@@ -74,6 +74,8 @@ export class TypePlan {
 				projection.set(part, {check, explicit:!!annotation, transient:true});
 				yield* prepareType(check, step);
 			}
+			// 動的キーの子はキーの評価後に射影するため、型が未確定の部分木は準備しない。
+			if (!check) return;
 			if (part.type === 'AssignmentPattern') yield* build(part.left, check);
 			else if (part.type === 'RestElement') yield* build(part.argument, check);
 			else if (part.type === 'ArrayPattern') {

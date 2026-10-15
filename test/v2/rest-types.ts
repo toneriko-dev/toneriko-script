@@ -1,8 +1,87 @@
 import { describe, expect, test } from 'vitest';
 import { Interpreter } from '../../src/v2/interpreter.js';
 import { parse } from '../../src/v2/parser/index.js';
+import type { TypePlan } from '../../src/v2/runtime/type-plan.js';
+import type * as A from '../../src/v2/ast.js';
 
 describe('restで実際にコピーする値の型検査', () => {
+	test.each(['loop','function'])('object内のrest射影は型と経路ごとに一度だけ展開する: %s', async mode => {
+		const measure = async (width: number, repetitions: number) => {
+			const annotation = ['{v:number[]}',...Array.from({length:width-1},(_,index)=>`{v:{k${index}:number}[]}`)].join('|');
+			const source = mode === 'loop'
+				? `for(let i=0;i<${repetitions};i++){let {v:[,...r]}:${annotation}={v:[1,2]};}`
+				: `function f({v:[,...r]}:${annotation}){}for(let i=0;i<${repetitions};i++){f({v:[1,2]});}`;
+			const program = parse(source).program;
+			const interpreter = new Interpreter();
+			interpreter.prepareProgram(program);
+			const plan = (interpreter as unknown as {typePlan:TypePlan}).typePlan;
+			const pending: A.Node[] = [program];
+			let visits = 0;
+			while (pending.length) {
+				const node = pending.pop()!;
+				if (node.type === 'ObjectPattern' && node.typeAnnotation) {
+					const check = plan.patterns.get(node)!.check;
+					if (check.kind !== 'union') throw new Error('union expected');
+					check.types = new Proxy(check.types, {get(target,key,receiver) {
+						if (typeof key === 'string' && /^(0|[1-9][0-9]*)$/.test(key)) visits++;
+						return Reflect.get(target,key,receiver);
+					}});
+				}
+				for (const [key,value] of Object.entries(node)) {
+					if (key === 'loc' || key === 'typeAnnotation') continue;
+					if (Array.isArray(value)) {
+						for (const child of value) if (child && typeof child === 'object' && 'type' in child) pending.push(child);
+					} else if (value && typeof value === 'object' && 'type' in value) pending.push(value as A.Node);
+				}
+			}
+			await interpreter.exec(program);
+			return {visits,steps:interpreter.stepCount};
+		};
+		const once = await measure(100,1);
+		const repeated = await measure(100,20);
+		const wider = await measure(200,20);
+		expect(repeated.visits - once.visits).toBe(19);
+		expect(wider.visits - repeated.visits).toBe(100);
+		expect(wider.steps).toBe(repeated.steps);
+		const large = await measure(2000,500);
+		expect(large.steps).toBe(mode === 'loop' ? 10508 : 12010);
+		expect(large.visits).toBe(2500);
+	});
+
+	test('動的キーのrest射影キャッシュはキーごとに型を分離する', async () => {
+		const interpreter = new Interpreter();
+		await interpreter.exec(parse('function f(key,bad){let {[key]:[,...r]}:{a:number[],b:string[]}={a:[1,2],b:["x","y"]};if(bad)r=[true];return r;}let a=f("a",false);let b=f("b",false);let again=f("a",false);let rejected=0;try{f("a",true);}catch(e){rejected++;}try{f("b",true);}catch(e){rejected++;}').program);
+		expect(interpreter.getGlobal('a')).toEqual([2]);
+		expect(interpreter.getGlobal('b')).toEqual(['y']);
+		expect(interpreter.getGlobal('again')).toEqual([2]);
+		expect(interpreter.getGlobal('rejected')).toBe(2);
+		await interpreter.exec(parse('function g(key,bad){let {[key]:{v:[,...r]}}:{a:{v:number[]},b:{v:string[]}}={a:{v:[1,2]},b:{v:["x","y"]}};if(bad)r=[true];return r;}let nestedA=g("a",false);let nestedB=g("b",false);let nestedAgain=g("a",false);let nestedRejected=0;try{g("a",true);}catch(e){nestedRejected++;}try{g("b",true);}catch(e){nestedRejected++;}').program);
+		expect(interpreter.getGlobal('nestedA')).toEqual([2]);
+		expect(interpreter.getGlobal('nestedB')).toEqual(['y']);
+		expect(interpreter.getGlobal('nestedAgain')).toEqual([2]);
+		expect(interpreter.getGlobal('nestedRejected')).toBe(2);
+	});
+
+	test('異なる動的キーの広い射影準備は実行予算に含める', async () => {
+		const annotation = ['{v:number[]}',...Array.from({length:1999},(_,index)=>`{v:{k${index}:number}[]}`)].join('|');
+		const h = Object.fromEntries([['v',[1,2]],...Array.from({length:20},(_,index)=>[`k${index}`,[1,2]])]);
+		const interpreter = new Interpreter({h}, {maxSteps:10000,now:()=>0});
+		await expect(interpreter.exec(parse(`for(let i=0;i<20;i++){let {["k"+i]:[,...r]}:${annotation}=h;}`).program)).rejects.toMatchObject({code:'STEP_LIMIT_EXCEEDED'});
+		expect(interpreter.stepCount).toBe(10001);
+	});
+
+	test('動的キーの広い射影準備は途中で譲って中断する', async () => {
+		const annotation = ['{v:number[]}',...Array.from({length:1999},(_,index)=>`{v:{k${index}:number}[]}`)].join('|');
+		let clock = 0;
+		let yielded = 0;
+		const interpreter = new Interpreter({h:{v:[1,2]}}, {
+			now:()=>clock++,yieldInterval:1,maxBusyTime:1000000,
+			yieldToHost:async()=>{if (++yielded === 2) interpreter.abort();},
+		});
+		await expect(interpreter.exec(parse(`let key="v";let {[key]:[,...r]}:${annotation}=h;`).program)).rejects.toMatchObject({code:'EXECUTION_ABORTED'});
+		expect(interpreter.stepCount).toBeLessThan(256);
+	});
+
 	test.each([
 		['親検査済みprefixの変異', 'let [...r]:number[]=h;', 0, 64],
 		['prefix付きrestの変異', 'let [a,...r]:number[]=h;', 1, 64],

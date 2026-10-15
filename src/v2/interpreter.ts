@@ -8,7 +8,7 @@ import { Environment, boundNames, type Binding } from './runtime/environment.js'
 import { ExecutionStopped, RuntimeError, runtimeError, scriptErrorDiagnostic, createScriptError } from './runtime/errors.js';
 import { PropertyAccess, SCRIPT_FUNCTION, isScriptFunction, valueTypeof, errorValue, scriptObject } from './runtime/values.js';
 import type { Value, ScriptFunction } from './runtime/values.js';
-import { TypePlan, projectType, restType, type PatternCheck } from './runtime/type-plan.js';
+import { TypePlan, projectType, type PatternCheck } from './runtime/type-plan.js';
 import { checkValue, checkScalar, checkCopiedElement, copiedArrayType, isComposite, type TypeCheck } from './runtime/type-checks.js';
 export { RuntimeError, ExecutionStopped } from './runtime/errors.js';
 export type { Value } from './runtime/values.js';
@@ -557,8 +557,7 @@ export class Interpreter {
 				if (property.type === 'RestElement') {
 					const target: Reference | null = yield this.bindingReference(property, env, execution);
 					const rest = scriptObject(Object.create(null));
-					const check = dynamic ? undefined : restType(plan.check, excluded);
-					if (initialize && check) this.registerPattern(property.argument, env, this.typePlan.project(property.argument, check));
+					if (initialize && !dynamic) this.registerPattern(property.argument, env, this.typePlan.project(property.argument, plan.check, excluded));
 					for (const [key, item] of execution.properties.entriesIterator(value, pos)) {
 						if (!excluded.has(key)) rest[key] = item;
 						if (execution.clock >= 64) yield this.checkpoint();
@@ -568,8 +567,13 @@ export class Interpreter {
 					const key = property.computed ? yield this.evaluate(property.key as A.Expression, env, execution) : property.key.type === 'Identifier' ? property.key.name : (property.key as A.Literal).value;
 					const validated = execution.properties.key(key, property.loc.start);
 					excluded.add(validated);
-					const check = projectType(plan.check, validated);
-					if (initialize && check) this.registerPattern(property.value as A.Pattern, env, this.typePlan.project(property.value as A.Pattern, check));
+					if (initialize) {
+						const projection = this.typePlan.project(property.value as A.Pattern, plan.check, validated);
+						if (property.computed && property.key.type !== 'Literal') {
+							for (const _ of this.typePlan.prepareProjection(property.value as A.Pattern, projection, () => this.tick(execution, pos))) yield this.checkpoint();
+						}
+						this.registerPattern(property.value as A.Pattern, env, projection);
+					}
 					const target: Reference | null = yield this.bindingReference(property.value as A.Pattern, env, execution);
 					yield this.bind(property.value as A.Pattern, execution.properties.get(value, validated, property.loc.start), env, execution, initialize, target);
 				}

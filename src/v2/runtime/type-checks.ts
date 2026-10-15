@@ -85,6 +85,11 @@ function* resolveType(check: TypeCheck, tick: () => boolean): Generator<void, Ty
 	return result;
 }
 
+/** 動的キーで初めて必要になった射影の展開にも実行予算を使う。 */
+export function* prepareType(check: TypeCheck, tick: () => boolean): Generator<void, void> {
+	yield* resolveType(check, tick);
+}
+
 function resolvedType(check: TypeCheck): TypeCheck {
 	const iterator = resolveType(check, () => false);
 	let result = iterator.next();

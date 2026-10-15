@@ -55,6 +55,8 @@ const mutations=[
 	["union-copy-double-check", "src/v2/interpreter.ts", "yield this.bindTyped(part, rest, env, execution, initialize, target, copiedCheck);", "yield this.bindTyped(part, rest, env, execution, initialize, target, undefined);", "test/v2/rest-types.ts", "union restの実照合枝をステップに含める: 要素unionの先頭string混在"],
 	["union-copy-budget", "src/v2/interpreter.ts", "if (copiedCheck) checkCopiedElement(copiedCheck.element, next.value, label, index, pos, diagnosticName, copyStep);", "if (copiedCheck) checkCopiedElement(copiedCheck.element, next.value, label, index, pos, diagnosticName, () => { void copyStep; });", "test/v2/rest-types.ts", "restコピーの広い合併は2つ目以降の照合枝を課金する: 10 枝"],
 	["union-first-branch-free", "src/v2/runtime/type-checks.ts", "const pause = state.first ? false : tick();", "const pause = tick();", "test/v2/rest-types.ts", "restコピーの入れ子合併は成功した枝で短絡する: 1"],
+	["object-rest-projection-cache", "src/v2/runtime/type-plan.ts", "if (cached) return cached;", "if (cached && Boolean(0)) return cached;", "test/v2/rest-types.ts", "object内のrest射影は型と経路ごとに一度だけ展開する: loop"],
+	["dynamic-projection-budget", "src/v2/interpreter.ts", "this.typePlan.prepareProjection(property.value as A.Pattern, projection, () => this.tick(execution, pos))", "this.typePlan.prepareProjection(property.value as A.Pattern, projection, () => {})", "test/v2/rest-types.ts", "異なる動的キーの広い射影準備は実行予算に含める"],
 ].map(([name,file,before,after,testFile,testName])=>({name,file,before,after,testFile,testName}));
 const selected=process.env.V2_TYPES_MUTATIONS ? mutations.filter(item=>process.env.V2_TYPES_MUTATIONS.split(',').includes(item.name)) : mutations;
 assert.ok(selected.length,'対象の変異がありません');

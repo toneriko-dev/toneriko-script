@@ -1,6 +1,6 @@
 import type * as A from '../ast.js';
 import { parsedTypeAnnotations } from '../type-metadata.js';
-import { compileType, isComposite, type TypeCheck } from './type-checks.js';
+import { compileType, isComposite, prepareType, type TypeCheck } from './type-checks.js';
 
 export type PatternCheck = { check: TypeCheck; explicit: boolean };
 const nullable = (check: TypeCheck): TypeCheck => ({ kind: 'union', types: [check, { kind: 'null' }] });
@@ -18,6 +18,8 @@ export class TypePlan {
 	readonly returns = new WeakMap<A.FunctionDeclaration | A.ArrowFunctionExpression, TypeCheck>();
 	readonly compositeNames = new Set<string>();
 	private readonly programs = new WeakSet<A.Program>();
+	private readonly preparedProjections = new WeakSet<WeakMap<A.Pattern | A.MemberExpression, PatternCheck>>();
+	private readonly projections = new WeakMap<A.Pattern | A.MemberExpression, WeakMap<TypeCheck, Map<string | null, WeakMap<A.Pattern | A.MemberExpression, PatternCheck>>>>();
 	hasTypes = false;
 
 	/** 構文木は変更せず、明示注釈から得た型だけを束縛へ対応付ける。 */
@@ -44,10 +46,36 @@ export class TypePlan {
 		return true;
 	}
 
-	project(pattern: A.Pattern | A.MemberExpression, check: TypeCheck): WeakMap<A.Pattern | A.MemberExpression, PatternCheck> {
+	project(pattern: A.Pattern | A.MemberExpression, source: TypeCheck, key: string | ReadonlySet<string>): WeakMap<A.Pattern | A.MemberExpression, PatternCheck> {
+		let sources = this.projections.get(pattern);
+		if (!sources) { sources = new WeakMap(); this.projections.set(pattern, sources); }
+		let paths = sources.get(source);
+		if (!paths) { paths = new Map(); sources.set(source, paths); }
+		// rest は静的キーだけのパターンに限り、除外するキー集合が構文から決まる。
+		const path = typeof key === 'string' ? key : null;
+		const cached = paths.get(path);
+		if (cached) return cached;
 		const projected = new TypePlan();
-		projected.pattern(pattern, check);
+		projected.pattern(pattern, typeof key === 'string' ? projectType(source, key) : restType(source, key));
+		paths.set(path, projected.patterns);
 		return projected.patterns;
+	}
+
+	*prepareProjection(pattern: A.Pattern | A.MemberExpression, projection: WeakMap<A.Pattern | A.MemberExpression, PatternCheck>, tick: () => void): Generator<void, void> {
+		if (this.preparedProjections.has(projection)) return;
+		let steps = 0;
+		const step = () => { tick(); return ++steps % 64 === 0; };
+		const pending = [pattern];
+		while (pending.length) {
+			const part = pending.pop()!;
+			const check = projection.get(part)?.check;
+			if (check) yield* prepareType(check, step);
+			if (part.type === 'AssignmentPattern') pending.push(part.left);
+			else if (part.type === 'RestElement') pending.push(part.argument);
+			else if (part.type === 'ArrayPattern') { for (const item of part.elements) if (item) pending.push(item); }
+			else if (part.type === 'ObjectPattern') { for (const property of part.properties) pending.push(property.type === 'RestElement' ? property.argument : property.value as A.Pattern); }
+		}
+		this.preparedProjections.add(projection);
 	}
 
 	private names(pattern: A.Pattern | A.MemberExpression): string[] {

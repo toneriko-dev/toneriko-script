@@ -1,5 +1,8 @@
+import { Interpreter } from '../../src/v2/interpreter.js';
+import { parse } from '../../src/v2/parser/index.js';
+import { isStdFunction } from '../../src/v2/stdlib/core.js';
 import { describe, expect, test } from 'vitest';
-import { PropertyAccess, isBuiltinMethod, SCRIPT_FUNCTION } from '../../src/v2/runtime/values.js';
+import { PropertyAccess, SCRIPT_FUNCTION } from '../../src/v2/runtime/values.js';
 
 const pos = { line: 2, column: 4 };
 
@@ -126,20 +129,19 @@ describe('v2 の値とプロパティ', () => {
 		expect([...properties.entriesIterator({ b: 1, 2: 2 }, pos)]).toEqual([['2', 2], ['b', 1]]);
 	});
 
-	test('メソッドは同じ関数値を返し、受け手を呼び出し時に確認する', () => {
+	test('メソッドは同じ関数値を返し、受け手を呼び出し時に確認する', async () => {
 		const properties = new PropertyAccess();
 		const array: unknown[] = [];
 		const push = properties.get(array, 'push', pos);
 		expect(push).toBe(properties.get([], 'push', pos));
-		expect(isBuiltinMethod(push)).toBe(true);
-		if (!isBuiltinMethod(push)) throw new Error('push');
-		expect(properties.callMethod(push, array, [1, 2], pos)).toBe(2);
+		expect(isStdFunction(push)).toBe(true);
+		const interpreter = new Interpreter({ array });
+		await interpreter.exec(parse('const length = array.push(1, 2); const first = "👩🏽a".at(-2); const missing = "👩🏽a".at(8);').program);
+		expect(interpreter.getGlobal('length')).toBe(2);
 		expect(array).toEqual([1, 2]);
-		expect(() => properties.callMethod(push, null, [], pos)).toThrow(expect.objectContaining({ code: 'INVALID_RECEIVER' }));
-		const at = properties.get('👩🏽a', 'at', pos);
-		if (!isBuiltinMethod(at)) throw new Error('at');
-		expect(properties.callMethod(at, '👩🏽a', [-2], pos)).toBe('👩🏽');
-		expect(properties.callMethod(at, '👩🏽a', [8], pos)).toBeNull();
+		await expect(interpreter.call(push, [])).rejects.toMatchObject({ code: 'INVALID_RECEIVER' });
+		expect(interpreter.getGlobal('first')).toBe('👩🏽');
+		expect(interpreter.getGlobal('missing')).toBeNull();
 	});
 
 	test('関数の標準プロパティは未対応として拒否し内部情報を削除しない', () => {

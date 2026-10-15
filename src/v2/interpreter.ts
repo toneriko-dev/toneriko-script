@@ -1,8 +1,10 @@
+import { standardGlobals } from './stdlib/index.js';
+import { isStdFunction, STANDARD_FUNCTION, validateArguments, type StdContext } from './stdlib/core.js';
 import type * as A from './ast.js';
 import { defaultYieldToHost, macrotaskTick } from '../interpreter/host-yield.js';
 import { Environment, boundNames } from './runtime/environment.js';
 import { ExecutionStopped, RuntimeError, runtimeError, scriptErrorDiagnostic, createScriptError } from './runtime/errors.js';
-import { PropertyAccess, SCRIPT_FUNCTION, isScriptFunction, isBuiltinMethod, valueTypeof, errorValue, scriptObject } from './runtime/values.js';
+import { PropertyAccess, SCRIPT_FUNCTION, isScriptFunction, valueTypeof, errorValue, scriptObject } from './runtime/values.js';
 import type { Value, ScriptFunction } from './runtime/values.js';
 export { RuntimeError, ExecutionStopped } from './runtime/errors.js';
 export type { Value } from './runtime/values.js';
@@ -70,6 +72,10 @@ export class Interpreter {
 		const builtins = new Environment();
 		builtins.declare('Error', false);
 		builtins.write('Error', errorConstructor, origin, true);
+		for (const [name, value] of Object.entries(standardGlobals())) {
+			builtins.declare(name, false);
+			builtins.write(name, value, origin, true);
+		}
 		const host = new Environment(builtins);
 		const properties = new PropertyAccess();
 		for (const [name, value] of Object.entries(globals)) {
@@ -438,17 +444,17 @@ export class Interpreter {
 	private *invoke(fn: Value, args: Value[], receiver: Value, execution: Execution, pos: A.Pos): Frame {
 		this.tick(execution, pos);
 		if (fn === errorConstructor) return this.createError(args, execution, pos);
-		if (isBuiltinMethod(fn)) {
-			if (fn.receiverType === 'array' && fn.name === 'push' && Array.isArray(receiver)) {
-				yield this.prepared(receiver, execution, pos);
-				for (const item of args) {
-					this.tick(execution, pos);
-					execution.properties.set(receiver, receiver.length, item, pos);
-					if (execution.clock >= 64) yield this.checkpoint();
-				}
-				return receiver.length;
-			}
-			return execution.properties.callMethod(fn, receiver, args, pos);
+		if (isStdFunction(fn)) {
+			const context: StdContext = {
+				pos, properties: execution.properties,
+				tick: () => this.tick(execution, pos),
+				checkpoint: () => this.checkpoint(),
+				call: (callback, arguments_, target = null) => this.invoke(callback, arguments_, target, execution, pos),
+			};
+			validateArguments(context, fn[STANDARD_FUNCTION], args);
+			const result = yield fn[STANDARD_FUNCTION].implementation(context, receiver, args);
+			yield this.prepared(result, execution, pos);
+			return execution.properties.normalize(result, pos);
 		}
 		if (isScriptFunction(fn)) {
 			if (execution.callDepth >= this.maxCallDepth) throw runtimeError('CALL_DEPTH_EXCEEDED', pos, { limit: this.maxCallDepth }, 'RangeError');

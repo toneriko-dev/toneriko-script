@@ -6,6 +6,9 @@ function entry(message: string, hint: string, english: string, englishHint: stri
 }
 
 export const runtimeMessages = {
+	STDLIB_ARGUMENT_RANGE: entry('引数の値が範囲外です。', '引数に許される範囲を確認します。', 'Argument value is out of range.', 'Check the accepted argument range.'),
+	STDLIB_ARGUMENT_TYPE: entry('引数には {expected} を渡します。', '引数の型を確認します。', 'Expected an argument of type {expected}.', 'Check the argument type.'),
+	STDLIB_ARGUMENT_COUNT: entry('{name} には少なくとも {count} 個の引数が必要です。', '必要な引数を渡します。', '{name} requires at least {count} arguments.', 'Provide the required arguments.'),
 	UNCAUGHT_EXCEPTION: entry('例外が捕捉されずに実行が終了しました。', 'try/catch で例外を処理します。', 'Execution ended with an uncaught exception.', 'Handle the exception with try/catch.'),
 	TDZ_ACCESS: entry("{name} はまだ初期化されていません。", "宣言の後で使います。", "{name} is not initialized.", "Use it after its declaration."),
 	UNBOUND_IDENTIFIER: entry("{name} は宣言されていません。", "使う前に宣言します。", "{name} is not declared.", "Declare it before use."),

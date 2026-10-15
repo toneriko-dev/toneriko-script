@@ -9,6 +9,7 @@ export default defineConfig({
 	platform: 'browser',
 	target: 'es2022',
 	outDir: 'built',
+	onSuccess: 'node scripts/v2-stdlib-catalog.mjs',
 	// package.json の exports が指す .js と .d.ts の名前で出す
 	fixedExtension: false,
 	sourcemap: true,

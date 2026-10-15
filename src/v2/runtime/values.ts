@@ -1,3 +1,5 @@
+import { standardMethod } from '../stdlib/index.js';
+import { isStdFunction } from '../stdlib/core.js';
 import type * as AST from '../ast.js';
 import { runtimeError, isScriptErrorValue, scriptErrorName } from './errors.js';
 import { GraphemeCache } from './strings.js';
@@ -11,28 +13,12 @@ export interface ScriptFunction {
 	body: AST.BlockStatement | AST.Expression;
 	environment: unknown;
 }
-export const BUILTIN_METHOD = Symbol('builtin method');
-export interface BuiltinMethod {
-	[BUILTIN_METHOD]: true;
-	receiverType: 'array' | 'string';
-	name: string;
-}
 export function isScriptFunction(value: unknown): value is ScriptFunction {
 	return typeof value === 'object' && value !== null && Object.getOwnPropertyDescriptor(value, SCRIPT_FUNCTION)?.value === true;
 }
-export function isBuiltinMethod(value: unknown): value is BuiltinMethod {
-	return typeof value === 'object' && value !== null && Object.getOwnPropertyDescriptor(value, BUILTIN_METHOD)?.value === true;
-}
 export function valueTypeof(value: Value): string {
-	return isScriptFunction(value) || isBuiltinMethod(value) ? 'function' : typeof value;
+	return isScriptFunction(value) || isStdFunction(value) ? 'function' : typeof value;
 }
-
-const arrayPush: BuiltinMethod = Object.freeze({ [BUILTIN_METHOD]: true as const, receiverType: 'array', name: 'push' });
-const stringAt: BuiltinMethod = Object.freeze({ [BUILTIN_METHOD]: true as const, receiverType: 'string', name: 'at' });
-const methods: Record<'array' | 'string', Readonly<Record<string, BuiltinMethod>>> = {
-	array: Object.assign(Object.create(null), { push: arrayPush }),
-	string: Object.assign(Object.create(null), { at: stringAt }),
-};
 
 function indexOf(key: string): number | null {
 	const index = Number(key);
@@ -40,7 +26,7 @@ function indexOf(key: string): number | null {
 }
 
 function opaqueFunction(value: unknown): boolean {
-	return typeof value === 'function' || isScriptFunction(value) || isBuiltinMethod(value);
+	return typeof value === 'function' || isScriptFunction(value) || isStdFunction(value);
 }
 
 const domExceptionPrototype = typeof DOMException === 'undefined' ? undefined : DOMException.prototype;
@@ -122,10 +108,10 @@ function hiddenErrorKey(value: object, key: string): boolean {
 	return isScriptErrorValue(value) ? key === 'stack' : hiddenErrorKeys.has(key);
 }
 
-function registeredMethod(type: 'array' | 'string', key: string, pos: AST.Pos): BuiltinMethod | null {
-	const method = methods[type][key];
+function registeredMethod(type: 'array' | 'string' | 'number', key: string, pos: AST.Pos): Value {
+	const method = standardMethod(type, key);
 	if (method) return method;
-	if (Object.hasOwn(type === 'array' ? Array.prototype : String.prototype, key)) throw runtimeError('METHOD_NOT_AVAILABLE', pos, { key });
+	if (Object.hasOwn(type === 'array' ? Array.prototype : type === 'string' ? String.prototype : Number.prototype, key)) throw runtimeError('METHOD_NOT_AVAILABLE', pos, { key });
 	return null;
 }
 
@@ -187,6 +173,12 @@ export class PropertyAccess {
 			const index = indexOf(key);
 			if (index !== null) return this.strings.at(value, index) ?? null;
 			return registeredMethod('string', key, pos);
+		}
+		if (typeof value === 'number') return registeredMethod('number', key, pos);
+		if (isStdFunction(value)) {
+			const own = Object.getOwnPropertyDescriptor(value, key);
+			if (own && 'value' in own) return this.normalize(own.value, pos);
+			throw runtimeError('UNSUPPORTED_VALUE', pos, { key }, 'TypeError');
 		}
 		if (Array.isArray(value)) {
 			const index = indexOf(key);
@@ -323,24 +315,4 @@ export class PropertyAccess {
 		}
 	}
 
-	callMethod(method: BuiltinMethod, receiver: unknown, args: Value[], pos: AST.Pos): Value {
-		if (method === arrayPush) {
-			if (!Array.isArray(receiver)) throw runtimeError('INVALID_RECEIVER', pos, {}, 'TypeError');
-			for (const value of args) {
-				this.onStep();
-				this.set(receiver, receiver.length, value, pos);
-			}
-			return receiver.length;
-		}
-		if (method === stringAt) {
-			if (typeof receiver !== 'string') throw runtimeError('INVALID_RECEIVER', pos, {}, 'TypeError');
-			const input = args[0] ?? 0;
-			if (typeof input !== 'number') throw runtimeError('INVALID_PROPERTY_KEY', pos, {}, 'TypeError');
-			const info = this.stringInfo(receiver);
-			const integer = Number.isNaN(input) ? 0 : Math.trunc(input);
-			const index = integer < 0 ? info.length + integer : integer;
-			return this.strings.at(receiver, index) ?? null;
-		}
-		throw runtimeError('INVALID_RECEIVER', pos, {}, 'TypeError');
-	}
 }

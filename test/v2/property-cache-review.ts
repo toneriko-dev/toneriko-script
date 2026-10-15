@@ -7,6 +7,23 @@ import { PropertyAccess, errorValue } from '../../src/v2/runtime/values.js';
 const pos = { line: 1, column: 1 };
 
 describe('ホストとスクリプトのエラー判定', () => {
+	test.each([
+		['オブジェクトのプロパティ', 'const o = { c: { x: 1 } };', 'o.c.x', 100],
+		['配列の要素', 'const a = [{ x: 1 }, { x: 2 }];', 'a[i % 2].x', 150],
+		['分割代入の残り', 'const { ignored, ...c } = { ignored: 0, x: 1 }; const o = { c };', 'o.c.x', 100],
+	] as const)('スクリプトの%sを繰り返し読んでもDOMExceptionのブランド検査をしない', async (_name, setup, read, expected) => {
+		const program = parse(`${setup} let s = 0; for (let i = 0; i < 100; i++) { s += ${read}; } out(s);`).program;
+		const output: unknown[] = [];
+		const interpreter = new Interpreter({ out: (value: unknown) => { output.push(value); } }, { now: () => 0 });
+		const getter = Object.getOwnPropertyDescriptor(DOMException.prototype, 'name')!.get;
+		const apply = vi.spyOn(Reflect, 'apply');
+		try {
+			await interpreter.exec(program);
+			expect(output).toEqual([expected]);
+			expect(apply.mock.calls.filter(([fn]) => fn === getter)).toHaveLength(0);
+		} finally { apply.mockRestore(); }
+	});
+
 	for (const kind of ['object', 'array', 'error'] as const) {
 		test(`${kind}のプロパティ操作ごとにホストの原型を確かめる`, () => {
 			const target = Object.assign(kind === 'array' ? [] : kind === 'error' ? new Error('x') : {}, { a: 1 });

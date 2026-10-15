@@ -5,9 +5,20 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
-// label=clone を指定します。入力と計測範囲は rv9/hostperf.mjs・perf3.mjs・perf.mjs に合わせます。
+// label=clone を指定します。RUNTIME=node|bun、CASES=課題名のカンマ区切りで対象を選べます。
+// 入力と計測範囲は rv9/hostperf.mjs・perf3.mjs・perf.mjs と rv10/nperf.mjs に合わせます。
 const script = fileURLToPath(import.meta.url);
-const names = ['hostClass', 'perf3-10000', 'perf3-100000', 'parenChain'];
+const runtime = process.env.RUNTIME ?? 'node';
+assert.ok(runtime === 'node' || runtime === 'bun', 'RUNTIME は node または bun を指定してください');
+const programs = {
+	hostClass: ['let s = 0; for (let i = 0; i < 100000; i++) { s += h.x; } out(s);', 100000],
+	nestedObj: ['const o = { c: { x: 1 } }; let s = 0; for (let i = 0; i < 100000; i++) { s += o.c.x; } out(s);', 100000],
+	arrOfObj: ['const a = [{ x: 1 }, { x: 2 }]; let s = 0; for (let i = 0; i < 100000; i++) { s += a[i % 2].x; } out(s);', 150000],
+};
+const availableNames = [...Object.keys(programs), 'perf3-10000', 'perf3-100000', 'parenChain'];
+const names = process.env.CASES?.split(',') ?? availableNames;
+assert.ok(names.length > 0 && names.every(name => availableNames.includes(name)), 'CASES に使用できない課題名があります');
+assert.equal(new Set(names).size, names.length, 'CASES の課題名が重複しています');
 const failure = error => ({ name: error?.name, message: String(error?.message ?? error), stack: error?.stack });
 const sourceFor = name => name === 'parenChain'
 	? 'out(' + '('.repeat(255) + Array(20_000).fill('a').join(' + ') + ')'.repeat(255) + ')'
@@ -43,18 +54,19 @@ if (process.argv[2] === '--worker') {
 	const { parse, Interpreter } = await import(pathToFileURL(process.argv[3]).href);
 	const name = process.argv[4];
 	const records = [];
-	if (name === 'hostClass') {
+	if (Object.hasOwn(programs, name)) {
 		class H { constructor() { this.x = 1; this.child = { y: 2 }; } }
-		const { program } = parse('let s = 0; for (let i = 0; i < 100000; i++) { s += h.x; } out(s);');
+		const [source, expected] = programs[name];
+		const { program } = parse(source);
 		for (let trial = 0; trial < 5; trial++) {
 			const output = [];
 			globalThis.gc?.();
-			const interpreter = new Interpreter({ h: new H(), out: value => { output.push(value); } }, { maxBusyTime: 60_000, maxSteps: 1e8 });
+			const interpreter = new Interpreter({ ...(name === 'hostClass' ? { h: new H() } : {}), out: value => { output.push(value); } }, { maxBusyTime: 60_000, maxSteps: 1e8 });
 			const started = performance.now();
 			try {
 				await interpreter.exec(program);
 				const ms = performance.now() - started;
-				assert.deepEqual(output, [100000]);
+				assert.deepEqual(output, [expected]);
 				records.push({ trial, ms, output, steps: interpreter.stepCount, ok: true });
 			} catch (error) { records.push({ trial, ms: performance.now() - started, output, ok: false, error: failure(error) }); }
 		}
@@ -80,7 +92,7 @@ if (process.argv[2] === '--worker') {
 			} catch (error) { records.push({ trial, warmup: trial < 0, ms: performance.now() - started, ok: false, error: failure(error) }); }
 		}
 	}
-	console.log(JSON.stringify({ runtime: `Node ${process.versions.node}`, records, maxRssKiB: process.resourceUsage().maxRSS }));
+	console.log(JSON.stringify({ runtime: process.versions.bun ? `Bun ${process.versions.bun}` : `Node ${process.versions.node}`, records, maxRssKiB: process.resourceUsage().maxRSS }));
 } else {
 	const root = resolve(dirname(script), '..');
 	const directory = await mkdtemp(join(root, '.git', 'v2-review-performance-'));
@@ -90,13 +102,13 @@ if (process.argv[2] === '--worker') {
 		return { label: argument.slice(0, at), root: resolve(argument.slice(at + 1)) };
 	});
 	assert.ok(versions.length > 0);
-	const report = { runtime: 'Node', processesPerCasePerVersion: 3, measuredTrialsPerProcess: { hostClass: 5, perf3: 2, parenChain: 5 }, warmupPerProcess: { perf3: 1 }, excluded: 0, records: [], failures: [] };
+	const report = { runtime, cases: names, processesPerCasePerVersion: 3, measuredTrialsPerProcess: { hostClass: 5, nestedObj: 5, arrOfObj: 5, perf3: 2, parenChain: 5 }, warmupPerProcess: { perf3: 1 }, excluded: 0, records: [], failures: [] };
 	try {
 		for (const [index, version] of versions.entries()) {
 			const entry = join(directory, `entry-${index}.ts`);
 			await writeFile(entry, `export { parse } from ${JSON.stringify(join(version.root, 'src/v2/parser/index.ts'))};\nexport { Interpreter } from ${JSON.stringify(join(version.root, 'src/v2/interpreter.ts'))};\n`);
 			version.bundle = join(directory, `bundle-${index}.mjs`);
-			const built = spawnSync('bun', ['build', entry, '--target=node', '--format=esm', '--outfile', version.bundle], { encoding: 'utf8' });
+			const built = spawnSync('bun', ['build', entry, `--target=${runtime}`, '--format=esm', '--outfile', version.bundle], { encoding: 'utf8' });
 			assert.equal(built.status, 0, built.stderr);
 		}
 		for (let round = 0; round < report.processesPerCasePerVersion; round++) {
@@ -104,7 +116,9 @@ if (process.argv[2] === '--worker') {
 				for (let i = 0; i < versions.length; i++) {
 					const version = versions[(i + round) % versions.length];
 					const started = performance.now();
-					const child = spawnSync(process.env.NODE_EXECUTABLE ?? 'node', ['--expose-gc', '--max-old-space-size=3072', script, '--worker', version.bundle, name], { encoding: 'utf8', timeout: 240_000, maxBuffer: 8 * 1024 * 1024 });
+					const executable = runtime === 'bun' ? process.env.BUN_EXECUTABLE ?? 'bun' : process.env.NODE_EXECUTABLE ?? 'node';
+					const flags = runtime === 'bun' ? ['--expose-gc'] : ['--expose-gc', '--max-old-space-size=3072'];
+					const child = spawnSync(executable, [...flags, script, '--worker', version.bundle, name], { encoding: 'utf8', timeout: 240_000, maxBuffer: 8 * 1024 * 1024 });
 					const elapsedMs = performance.now() - started;
 					if (child.status !== 0) {
 						report.failures.push({ label: version.label, name, round, elapsedMs, status: child.status, signal: child.signal, error: String(child.error ?? ''), stdout: child.stdout, stderr: child.stderr });
@@ -122,7 +136,7 @@ if (process.argv[2] === '--worker') {
 	} finally { await rm(directory, { recursive: true, force: true }); }
 	for (const name of names) {
 		const rows = report.records.filter(row => row.name === name && row.ok);
-		const signatures = [...new Set(rows.map(row => name === 'hostClass' ? JSON.stringify([row.output, row.steps]) : row.astHash))];
+		const signatures = [...new Set(rows.map(row => Object.hasOwn(programs, name) ? JSON.stringify([row.output, row.steps]) : row.astHash))];
 		if (signatures.length !== 1) report.failures.push({ name, error: '出力・ステップ数または構文木が一致しませんでした', signatures });
 	}
 	report.failures.push(...report.records.filter(record => !record.ok));

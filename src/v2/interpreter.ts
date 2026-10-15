@@ -2,7 +2,7 @@ import type * as A from './ast.js';
 import { defaultYieldToHost, macrotaskTick } from '../interpreter/host-yield.js';
 import { Environment, boundNames } from './runtime/environment.js';
 import { ExecutionStopped, RuntimeError, runtimeError, scriptErrorDiagnostic, createScriptError } from './runtime/errors.js';
-import { PropertyAccess, SCRIPT_FUNCTION, isScriptFunction, isBuiltinMethod, valueTypeof, errorValue } from './runtime/values.js';
+import { PropertyAccess, SCRIPT_FUNCTION, isScriptFunction, isBuiltinMethod, valueTypeof, errorValue, scriptObject } from './runtime/values.js';
 import type { Value, ScriptFunction } from './runtime/values.js';
 export { RuntimeError, ExecutionStopped } from './runtime/errors.js';
 export type { Value } from './runtime/values.js';
@@ -310,7 +310,7 @@ export class Interpreter {
 					let item: Value = null;
 					if (i >= items.length) exhausted = true;
 					if (part?.type === 'RestElement') {
-						const rest: Value[] = [];
+						const rest: Value[] = scriptObject([]);
 						if (!exhausted) for (let index = i; index < items.length; index++) {
 							this.tick(execution, pos); rest.push(execution.properties.get(items, index, pos));
 							if (execution.clock >= 64) yield this.checkpoint();
@@ -328,7 +328,7 @@ export class Interpreter {
 				for (const property of pattern.properties) {
 					if (property.type === 'RestElement') {
 						const target: Reference | null = yield this.bindingReference(property, env, execution);
-						const rest = Object.create(null);
+						const rest = scriptObject(Object.create(null));
 						yield this.prepared(value, execution, pos);
 						for (const [key, item] of execution.properties.entriesIterator(value, pos)) {
 							if (!excluded.has(key)) rest[key] = item;
@@ -460,7 +460,7 @@ export class Interpreter {
 				}
 				for (let i = 0; i < fn.params.length; i++) {
 					const pattern = fn.params[i]!;
-					yield this.bind(pattern, pattern.type === 'RestElement' ? args.slice(i) : args[i] ?? null, parameters, execution, true);
+					yield this.bind(pattern, pattern.type === 'RestElement' ? scriptObject(args.slice(i)) : args[i] ?? null, parameters, execution, true);
 				}
 				if (fn.body.type !== 'BlockStatement') return yield this.evaluate(fn.body, parameters, execution);
 				// 既定引数の閉包からは本体の宣言が見えません。
@@ -777,7 +777,7 @@ export class Interpreter {
 				return result;
 			}
 			case 'ArrayExpression': {
-				const result: Value[] = [];
+				const result: Value[] = scriptObject([]);
 				for (const element of node.elements) {
 					if (!element) throw runtimeError('SPARSE_ARRAY', pos);
 					if (element.type === 'SpreadElement') {
@@ -789,7 +789,7 @@ export class Interpreter {
 				return result;
 			}
 			case 'ObjectExpression': {
-				const result = Object.create(null);
+				const result = scriptObject(Object.create(null));
 				for (const property of node.properties) {
 					if (property.type === 'SpreadElement') {
 						const source = yield this.evaluate(property.argument, env, execution);

@@ -52,6 +52,13 @@ const errorPrototypes = new Set<object>([
 	Error.prototype, TypeError.prototype, RangeError.prototype, ReferenceError.prototype,
 	SyntaxError.prototype, EvalError.prototype, URIError.prototype, AggregateError.prototype,
 ]);
+const scriptObjects = new WeakSet<object>();
+
+/** 通常の辞書と配列の作成元だけを記録し、ホストへ渡した後も現在の原型を別に確かめます。 */
+export function scriptObject<T extends object>(value: T): T {
+	scriptObjects.add(value);
+	return value;
+}
 
 export function errorValue(value: unknown, pos: AST.Pos = { line: 1, column: 1 }): value is object {
 	return classifyError(value, pos, 'detached');
@@ -63,10 +70,13 @@ function propertyError(value: unknown, key: string, pos: AST.Pos): value is obje
 }
 
 /** 原型は毎回確かめ、利用者の toStringTag の getter は呼びません。 */
+// ホスト値は JSON で表せる値・クラスのインスタンス・この realm の Error/DOMException・Promise を前提にします。
+// 別 realm・Proxy・原型変更・エラー偽装はホストの責任で避け、前提外の値の判定結果は保証しません。
 function classifyError(value: unknown, pos: AST.Pos, domProbe: false | 'detached' | 'all'): value is object {
 	if (typeof value !== 'object' || value === null) return false;
-	if (isScriptErrorValue(value)) return true;
 	const prototype = Object.getPrototypeOf(value);
+	if (prototype === null && scriptObjects.has(value)) return false;
+	if (isScriptErrorValue(value)) return true;
 	let tag = Object.getOwnPropertyDescriptor(value, Symbol.toStringTag);
 	let object: object | null = prototype;
 	let local = false;

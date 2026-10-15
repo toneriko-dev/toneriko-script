@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-labelledby="title">
+	<title id="title">Toneriko</title>
+	<defs>
+		<!-- 葉脈は塗りを抜いて作る。マスク可能アイコンで切られないよう、葉は中心から半径 51 の円に収める。 -->
+		<mask id="tk-veins" maskUnits="userSpaceOnUse" x="0" y="0" width="128" height="128">
+			<rect width="128" height="128" fill="#fff"/>
+			<g fill="none" stroke="#000" stroke-linecap="round">
+				<path d="M45 86L83 48" stroke-width="8"/>
+				<path d="M57.2 73.8V56.8M64 67H81" stroke-width="7"/>
+			</g>
+		</mask>
+	</defs>
+	<rect width="128" height="128" rx="28" fill="#171f25"/>
+	<path d="M97 30C65 24 29 40 29 68C29 77 32 84 38 89L30 97L36 103L46 94C49 95 51 95 53 95C82 95 100 61 97 30Z" fill="#6fabd2" mask="url(#tk-veins)"/>
+</svg>

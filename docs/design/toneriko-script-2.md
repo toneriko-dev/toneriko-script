@@ -193,7 +193,7 @@ JavaScript と同じ名前、同じ引数、同じ結果にします(文字列�
 |---|---|
 | 値 | `Math`(全部)、`JSON.parse`/`stringify`、`Number()`、`String()`、`parseInt`、`parseFloat`、`Number.isInteger`、`Array.isArray`、`Array.from`、`Object.keys`/`values`/`entries`/`fromEntries`/`groupBy`、`structuredClone`、`encodeURIComponent`、`decodeURIComponent` |
 | 配列 | `length`、`push pop shift unshift slice splice concat join indexOf includes find findIndex filter map flatMap flat reduce some every forEach sort reverse toSorted toReversed at fill entries` |
-| 文字列 | `length`、`slice at indexOf includes startsWith endsWith padStart padEnd trim toUpperCase toLowerCase split replace replaceAll repeat` |
+| 文字列 | `length`、`slice substring at indexOf includes startsWith endsWith padStart padEnd trim toUpperCase toLowerCase split replace replaceAll repeat` |
 | 数 | `toFixed`、`toString(radix)` |
 | 時間 | `Date.now()`、`setTimeout`、`setInterval`、`clearTimeout`、`clearInterval` |
 | 出力 | `console.log`(今の `<:` と `print`) |
@@ -235,6 +235,14 @@ JavaScript と同じ名前、同じ引数、同じ結果にします(文字列�
 初期状態の 4 ワードは、番号 byte 0〜3 をそれぞれ種の byte 列の先頭に付け、FNV-1a（初期値 0x811c9dc5、素数 0x01000193、32 bit 桁あふれ）で作ります。全ワードが 0 の場合は先頭を 1 にします。xoshiro128** の rotate は出力側 7、状態側 11、shift は 9、出力乗数は 5 と 9 です。乱数一つは連続した出力 a,b から `((a >>> 5) * 2^26 + (b >>> 6)) / 2^53` として作り、範囲は [0,1) です。9 種の先頭 32 個と 4096 個の列の SHA-256 をテストで固定します。
 
 `Math.randomInt(min,max)` は両端を含む安全整数を返し、逆順や安全に扱えない幅はエラーです。`Math.clamp(x,min,max)` は範囲に収め、逆順はエラーです。明示的な Number/String の変換は基本値を受け、配列・オブジェクト・関数はエラーにします。
+
+### 文字列の操作
+
+`substring` は書記素単位で、負数を 0 に丸め、start と end が逆なら入れ替えます。検索・接頭辞・接尾辞・区切り文字・置換は書記素の途中では一致させません。位置を取る引数と置換関数へ渡す位置も書記素数です。空の検索文字列は各書記素の境界に一致します。`replace` は最初の一件、`replaceAll` は全件を置き換え、JavaScript の置換記号を扱います。
+
+書記素の準備は実行内のキャッシュを共有し、CRLF のない ASCII は直接添字を使います。検索は KMP で入力と検索文字列の長さに対して線形に処理し、処理の途中で評価器へ制御を返します。連結境界によって書記素が結合した場合は、padding の指定長と結果の書記素数が異なることがあります。単一の巨大書記素の Intl.Segmenter 内部は中断できません。
+
+`dedent` は空白だけの行を共通字下げの計算から除き、残る行の共通の行頭空白・タブ列を取り除きます。タブを空白へ展開しません。
 
 ### 関数を呼ぶ順
 

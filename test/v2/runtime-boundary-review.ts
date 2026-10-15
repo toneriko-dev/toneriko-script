@@ -83,7 +83,7 @@ describe('関数と未実装メソッド', () => {
 	test('登録済みメソッドの存在は true、未実装メソッドは明示的に拒否する', () => {
 		const properties = new PropertyAccess();
 		expect(properties.has([], 'push', pos)).toBe(true);
-		for (const [value, key] of [[[], 'map'], [[], 'sort'], ['', 'slice'], ['', 'includes']] as const) {
+		for (const [value, key] of [[[], 'reduceRight'], [[], 'copyWithin'], ['', 'charAt'], ['', 'normalize']] as const) {
 			expect(() => properties.get(value, key, pos)).toThrow(expect.objectContaining({ code: 'METHOD_NOT_AVAILABLE' }));
 			if (Array.isArray(value)) expect(() => properties.has(value, key, pos)).toThrow(expect.objectContaining({ code: 'METHOD_NOT_AVAILABLE' }));
 		}

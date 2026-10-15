@@ -97,7 +97,7 @@ export class Interpreter {
 	getGlobal(name: string): Value { return this.global.read(name, origin); }
 	async call(fn: Value, args: Value[]): Promise<Value> {
 		const execution = this.execution();
-		return this.run(this.invoke(fn, args, null, execution, origin), execution);
+		return this.run(this.invokeHost(fn, args, execution, origin), execution);
 	}
 	abort(): void { this.stop('EXECUTION_ABORTED', origin); }
 
@@ -469,6 +469,17 @@ export class Interpreter {
 		return synchronous ? { ready: synchronous(args, execution, pos) } : this.invoke(fn, args, receiver, execution, pos);
 	}
 
+	private *invokeHost(fn: Value, args: Value[], execution: Execution, pos: A.Pos): Frame {
+		// ホストの引数は own data property から密な配列に写し、残余引数にも穴や accessor を渡しません。
+		const values: Value[] = [];
+		for (let i = 0; i < args.length; i++) {
+			values.push(execution.properties.get(args, i, pos));
+			this.tick(execution, pos);
+			if (i % 64 === 63) yield this.checkpoint();
+		}
+		return yield this.invoke(fn, values, null, execution, pos);
+	}
+
 	private *invoke(fn: Value, args: Value[], receiver: Value, execution: Execution, pos: A.Pos): Frame {
 		this.tick(execution, pos);
 		if (isStdFunction(fn)) {
@@ -509,7 +520,7 @@ export class Interpreter {
 		const context: HostContext = {
 			call: (callback, arguments_) => {
 				this.resume();
-				return this.run(this.invoke(callback, arguments_, null, execution, pos), execution, true);
+				return this.run(this.invokeHost(callback, arguments_, execution, pos), execution, true);
 			},
 			signal: this.controller.signal,
 		};

@@ -50,7 +50,7 @@ function* copy(ctx: StdContext, array: Value[], start = 0, end = array.length): 
 const checkedHostArrays = new WeakSet<object>();
 function* nativeArray(ctx: StdContext, xs: Value[]): Generator<any, boolean, any> {
 	if (scriptObjects.has(xs) || checkedHostArrays.has(xs)) return true;
-	if (Object.getPrototypeOf(xs) !== Array.prototype) throw runtimeError('UNSUPPORTED_VALUE', ctx.pos, {}, 'TypeError');
+	if (Object.getPrototypeOf(xs) !== Array.prototype) return false;
 	let mutable = Object.getOwnPropertyDescriptor(xs, 'length')!.writable === true && Object.isExtensible(xs);
 	for (let i = 0; i < xs.length; i++) {
 		const descriptor = Object.getOwnPropertyDescriptor(xs, String(i));

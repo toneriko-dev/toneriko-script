@@ -27,13 +27,29 @@ describe('配列の組み込み操作とホスト境界', () => {
 		test(`${method}: ホストの穴のある配列を拒否する`, async () => {
 			await expect(execute(`make().${method};`, { make: () => [1,,3] })).rejects.toMatchObject({ code: 'SPARSE_ARRAY' });
 		});
-		test(`${method}: 異なる原型の getter に届かない`, async () => {
+		test(`${method}: 派生配列は添字で操作し原型の getter を呼ばない`, async () => {
 			let calls = 0;
 			class HostArray extends Array { get secret() { calls++; return 99; } }
-			await expect(execute(`make().${method};`, { make: () => new HostArray(1,2) })).rejects.toMatchObject({ code: 'UNSUPPORTED_VALUE' });
+			const array = new HostArray(1,2);
+			expect((await execute(`out(a.${method}); out(a.slice()); out(a.secret);`, { a:array })).output).toEqual(method === 'shift()' ? [1,[2],null] : [3,[9,1,2],null]);
+			expect(calls).toBe(0);
+		});
+		test(`${method}: 派生配列の原型の数値 accessor を呼ばない`, async () => {
+			let calls = 0;
+			class HostArray extends Array {}
+			Object.defineProperty(HostArray.prototype, '1', { get:()=>{calls++;return 99;}, set:()=>{calls++;}, configurable:true });
+			const a = new HostArray(3); Object.defineProperty(a,'0',{value:1,writable:true,configurable:true}); Object.defineProperty(a,'2',{value:3,writable:true,configurable:true});
+			await expect(execute(`a.${method};`,{a})).rejects.toMatchObject({code:'SPARSE_ARRAY'});
 			expect(calls).toBe(0);
 		});
 	}
+	test('派生配列の unshift は新しい添字の原型 setter を呼ばない', async () => {
+		let calls=0;
+		class HostArray extends Array {}
+		Object.defineProperty(HostArray.prototype,'2',{set:()=>{calls++;},configurable:true});
+		await expect(execute('a.unshift(0);',{a:new HostArray(1,2)})).rejects.toMatchObject({code:'ACCESSOR_PROPERTY'});
+		expect(calls).toBe(0);
+	});
 	for (const route of ['nested','async','reenter','parallel','public-call','throw']) test(`${route}: ホストから受け取る accessor 配列は呼ばずに拒否する`, async () => {
 		let calls = 0;
 		const make = () => { const a = [1,2]; Object.defineProperty(a,'0',{ get: () => { calls++; return 7; }, configurable:true }); return a; };
@@ -99,5 +115,32 @@ for (const origin of ['script','host']) for (const mode of ['control','out','con
 			expect(vm.stepCount).toBeLessThan(size*80);
 		}
 		expect(steps[1]!).toBeLessThan(steps[0]!*2.05);
+	});
+}
+
+for (const route of ['Interpreter.call','HostContext.call']) {
+	async function call(source: string, args: any[]) {
+		const work = hostFunction((callbacks,ctx) => ctx.call(callbacks[0]!, args));
+		const vm = new Interpreter({work});
+		try {
+			await vm.exec(parse(source + (route === 'HostContext.call' ? '; const result=work(sh);' : '')).program);
+			return route === 'Interpreter.call' ? await vm.call(vm.getGlobal('sh'), args) : vm.getGlobal('result');
+		} finally { vm.abort(); }
+	}
+	test(`${route}: 残余引数の穴を使用前に拒否する`, async () => {
+		await expect(call('function sh(...xs){xs.shift();return xs.shift();}',[1,,3])).rejects.toMatchObject({code:'SPARSE_ARRAY'});
+	});
+	for (const declaration of ['function sh(x){return x;}', 'function sh(...xs){return xs.shift();}']) test(`${route}: ${declaration} の引数 getter を呼ばない`, async () => {
+		let reads=0; const args=[1,2]; Object.defineProperty(args,'0',{get:()=>{reads++;return 99;}});
+		await expect(call(declaration,args)).rejects.toMatchObject({code:'ACCESSOR_PROPERTY'});
+		expect(reads).toBe(0);
+	});
+	test(`${route}: 未使用の末尾引数の setter も呼び出し前に拒否する`, async () => {
+		let calls=0; const args=[1,2]; Object.defineProperty(args,'1',{set:()=>{calls++;}});
+		await expect(call('function sh(x){return x;}',args)).rejects.toMatchObject({code:'ACCESSOR_PROPERTY'});
+		expect(calls).toBe(0);
+	});
+	test(`${route}: 密な引数の順序と残余引数を保つ`, async () => {
+		expect(await call('function sh(first,...xs){xs.shift();return [first,xs.shift()];}',[1,2,3])).toEqual([1,3]);
 	});
 }

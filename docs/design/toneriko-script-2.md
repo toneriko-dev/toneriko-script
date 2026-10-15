@@ -142,6 +142,8 @@ JavaScript として書いたコードが、違う結果になる所と、構文
 
 ホストは、スクリプトから受け取った値と、スクリプトに渡した値を、後から書き換えないことを約束します。accessor の追加、原型の変更、配列の穴の作成なども含みます。ホストによる `Array.prototype` の変更も前提の外です。
 
+`Interpreter.call` と `HostContext.call` の引数配列は、呼び出しごとに使用前に一度、各添字を検査して密な配列へコピーします。穴は SPARSE_ARRAY、accessor は ACCESSOR_PROPERTY として拒否し、getter は呼びません。
+
 前提の外の値では、見えないはずのキーが見えたり、エラーになったりすることがあります。
 
 ## 型注釈
@@ -375,4 +377,4 @@ AiScript の `let` は再代入できない変数なので、そのまま動き�
 
 `shift` と `unshift` はモジュール読み込み時に保存した Array.prototype の関数を使います。受け手の同名プロパティは再参照しません。`unshift` は引数を末尾側から最大 4096 個ずつ挿入し、追加する要素ごとにステップを数えます。
 
-スクリプトが作った配列は accessor と穴を持たないため、常に高速な経路を使います。ホストの配列は先頭操作で初めて使うときに原型が Array.prototype であること、各添字が own data property であること、値が対応する型であることを検査します。accessor は呼ばず ACCESSOR_PROPERTY、穴は SPARSE_ARRAY、異なる原型は UNSUPPORTED_VALUE として拒否します。密で変更可能な配列は WeakSet に記録し、ホストの約束に基づいて以後の再検査を省きます。変更できない属性を持つ配列は PropertyAccess を通す既存の経路で扱います。ホスト呼び出し、console.log、待機や譲渡による検査結果の失効はありません。
+スクリプトが作った配列は accessor と穴を持たないため、常に高速な経路を使います。ホストの配列は先頭操作で初めて使うときに原型が Array.prototype であること、各添字が own data property であること、値が対応する型であることを検査します。accessor は呼ばず ACCESSOR_PROPERTY、穴は SPARSE_ARRAY として拒否します。Array の派生クラスなど異なる原型の配列は、高速な経路を使わず PropertyAccess で添字を読み書きします。密で変更可能な配列は WeakSet に記録し、ホストの約束に基づいて以後の再検査を省きます。変更できない属性を持つ配列は PropertyAccess を通す既存の経路で扱います。ホスト呼び出し、console.log、待機や譲渡による検査結果の失効はありません。

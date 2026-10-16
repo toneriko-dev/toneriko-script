@@ -107,6 +107,9 @@ describe('const と名前解決', () => {
 	test('名前空間を局所の名前で隠した位置では、名前空間付きの名前を提案しない', () => {
 		for (const source of ['const Math = {}; floor(1);', 'function f(Number) { return isNaN(1); }']) assert.notEqual(diagnostics(source)[0]!.params.suggestion, source.includes('Math') ? 'Math.floor' : 'Number.isNaN');
 	});
+	test('スクリプトが書き換える名前空間の名前は提案しない', () => {
+		for (const source of ['delete Math.floor; floor(1.5);', 'Math.floor = null; floor(1.5);']) assert.notEqual(diagnostics(source).find(item => item.code.startsWith('UNBOUND'))?.params.suggestion, 'Math.floor');
+	});
 	test('入れ子の名前空間は末尾の名前で完全な名前を提案する', () => {
 		const nested = [{ ...hostCatalog[0]!, name: 'Api.users.fetch' }];
 		assert.equal(diagnostics('fetch();', { hostCatalog: nested })[0]!.params.suggestion, 'Api.users.fetch');

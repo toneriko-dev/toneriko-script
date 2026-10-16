@@ -5,6 +5,7 @@ import { arrayDefinitions, iteratorDefinitions } from './arrays.js';
 import { stringDefinitions } from './strings.js';
 import { numberDefinitions, mathConstants } from './numbers.js';
 import { basicDefinitions } from './basics.js';
+import { javascriptNamespaceMembers } from './js-names.js';
 import { catalogOf, makeFunction, registerNamespace, type StdDefinition, type StdFunction } from './core.js';
 import type { Value } from '../runtime/values.js';
 
@@ -44,6 +45,7 @@ export function standardGlobals(): Record<string, Value> {
 		if (name === undefined) globals[namespace!] = definition.value;
 		else Object.defineProperty(globals[namespace!]!, name, { value: definition.value, enumerable: false, writable: false, configurable: false });
 	}
-	for (const [name, value] of Object.entries(globals)) if (value !== null && typeof value === 'object') registerNamespace(value, name);
+	// parseInt や Error のような名前空間でない標準関数は登録せず、無いプロパティの読み取りを UNSUPPORTED_VALUE のままにします。
+	for (const name of Object.keys(javascriptNamespaceMembers)) if (globals[name] !== null && typeof globals[name] === 'object') registerNamespace(globals[name], name);
 	return globals;
 }

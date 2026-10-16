@@ -450,6 +450,11 @@ describe('標準の数と変換', () => {
 			await expect(new Interpreter({}).exec(parse(`${source};`).program)).rejects.toMatchObject({ code: 'METHOD_NOT_AVAILABLE', params: { key } });
 		}
 	});
+	test('名前空間でない標準関数のプロパティは、今までどおり読めない', async () => {
+		for (const source of ['parseInt.length', 'Error.prototype', 'structuredClone.name', 'range.foo ?? 1', 'Math.floor.length']) {
+			await expect(new Interpreter({}).exec(parse(`${source};`).program)).rejects.toMatchObject({ code: 'UNSUPPORTED_VALUE' });
+		}
+	});
 	test('名前空間にも ECMAScript 2025 にも無い名前は、実行環境の組み込みにあっても null を返す', async () => {
 		const result: unknown[] = [];
 		const vm = new Interpreter({ out: (value: unknown) => { result.push(value); } });

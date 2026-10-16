@@ -189,8 +189,9 @@ export function check(program: A.Program, options: CheckOptions = {}): Diagnosti
 	function reference(node: A.Identifier, scope: Scope): void {
 		if (collecting || scope.resolve(node.name)) return;
 		// isNaN や floor のように名前空間の中の名前を単独で書いたときは、名前空間付きの名前を案内します。
+		// スクリプトが書き換える名前空間は、案内した名前が呼べるとは限らないので除きます。
 		const member = namespaceMembers.get(node.name);
-		if (member && scope.resolve(member.root)?.global) return emit('UNBOUND_IDENTIFIER_SUGGESTION', node, { name: node.name, suggestion: member.path });
+		if (member && scope.resolve(member.root)?.global && !unsafe.has(member.root)) return emit('UNBOUND_IDENTIFIER_SUGGESTION', node, { name: node.name, suggestion: member.path });
 		const threshold = node.name.length < 4 ? 1 : 2;
 		const candidates = scope.names().filter(name => Math.abs(name.length - node.name.length) <= threshold && name.length <= 128 && node.name.length <= 128).map(name => ({ name, difference: distance(name, node.name) })).filter(item => item.difference <= threshold).sort((a, b) => a.difference - b.difference || a.name.localeCompare(b.name));
 		if (candidates[0]) emit('UNBOUND_IDENTIFIER_SUGGESTION', node, { name: node.name, suggestion: candidates[0].name });

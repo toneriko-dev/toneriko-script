@@ -92,6 +92,19 @@ describe('const と名前解決', () => {
 		assert.deepEqual(result.map(item => item.code), ['UNBOUND_IDENTIFIER_SUGGESTION', 'UNBOUND_IDENTIFIER']);
 		assert.equal(result[0]!.params.suggestion, 'count');
 	});
+	test('名前空間の中の名前を単独で書くと、名前空間付きの名前を提案する', () => {
+		for (const [name, suggestion] of [['isNaN', 'Number.isNaN'], ['isFinite', 'Number.isFinite'], ['floor', 'Math.floor'], ['api', 'Mk.api']]) {
+			const result = diagnostics(`${name}(1);`, { hostCatalog });
+			assert.equal(result[0]!.code, 'UNBOUND_IDENTIFIER_SUGGESTION');
+			assert.equal(result[0]!.params.suggestion, suggestion);
+		}
+	});
+	test('複数の名前空間にある名前は名前空間付きで提案しない', () => {
+		const result = diagnostics('floor(1);', { hostCatalog: [{ ...hostCatalog[0]!, name: 'Mk.floor' }] });
+		assert.notEqual(result[0]!.params.suggestion, 'Math.floor');
+		assert.notEqual(result[0]!.params.suggestion, 'Mk.floor');
+	});
+	test('宣言した名前は名前空間の中の名前より優先する', () => assert.deepEqual(codes('const floor = Math.floor; floor(1);'), []));
 	test('外側から内側の名前を提案しない', () => assert.equal(diagnostics('{let hidden = 1;} hidde;')[0]!.code, 'UNBOUND_IDENTIFIER'));
 	test('引数既定値から関数本体の名前は見えない', () => assert.ok(codes('function f(x = local) { let local = 1; }').includes('UNBOUND_IDENTIFIER')));
 	test('計算キー・既定値・右辺も参照として検査', () => assert.equal(diagnostics('let {[missing]: x = other} = source;').length, 3));

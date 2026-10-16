@@ -23,7 +23,7 @@ export const runtimeMessages = {
 	CONST_ASSIGNMENT: entry("{name} は再代入できません。", "値を変える変数は let で宣言します。", "Cannot reassign {name}.", "Use let for a mutable binding."),
 	IMPLICIT_COERCION: entry("この演算では暗黙の型変換を使えません。", "数どうし、または文字列どうしで演算します。", "Implicit coercion is not supported for this operation.", "Use operands of the appropriate matching types."),
 	INVALID_STRING_CONVERSION: entry("この値は文字列に連結できません。", "JSON.stringify(x) または x ?? \"\" を使います。", "This value cannot be concatenated with a string.", "Use JSON.stringify(x) or x ?? \"\"."),
-	METHOD_NOT_AVAILABLE: entry("このメソッドはまだ使えません。", "対応するメソッドかホストの関数を使います。", "This method is not available yet.", "Use a supported method or a host function."),
+	METHOD_NOT_AVAILABLE: entry("{key} はまだ使えません。", "標準ライブラリにある関数かホストの関数を使います。", "{key} is not available yet.", "Use a standard library function or a host function."),
 	NOT_CALLABLE: entry("この値は関数ではありません。", "呼び出す値を確認します。", "This value is not callable.", "Check the value being called."),
 	PROTOTYPE_METHOD_CALL: entry("原型のメソッドは使えません。", "k in obj か Object.hasOwn(obj, k) を使います。", "Prototype methods are not available.", "Use k in obj or Object.hasOwn(obj, k)."),
 	CALL_DEPTH_EXCEEDED: entry("関数呼び出しの深さが上限 {limit} を超えました。", "再帰の深さを減らします。", "The call depth limit of {limit} was exceeded.", "Reduce the recursion depth."),

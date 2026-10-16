@@ -197,7 +197,7 @@ let picked: string | null = null
 - **実行前:**
   - 型の違うリテラルを入れたとき(`let x: number = "text"`)
   - `const` への再代入
-  - 宣言されていない変数(似た名前を「もしかして」で出す)
+  - 宣言されていない変数(似た名前を「もしかして」で出す。`isNaN` や `floor` のように名前空間の中の名前を単独で書いたときは `Number.isNaN`、`Math.floor` を出す。複数の名前空間にある名前は出さない)
   - 標準の関数とホストの関数に渡す引数の数
   - 中身のある `case` が `break` や `return` なしに次の `case` へ進むとき(警告)
 
@@ -430,13 +430,15 @@ JavaScript と同じ名前、同じ引数、同じ結果にします(文字列�
 
 | 分類 | 入れるもの |
 |---|---|
-| 値 | `NaN`、`Infinity`、`Math`(全部)、`JSON.parse`/`stringify`、`Number()`、`String()`、`parseInt`、`parseFloat`、`Number.isInteger`、`Array.isArray`、`Array.from`、`Object.keys`/`values`/`entries`/`fromEntries`/`groupBy`、`structuredClone`、`encodeURIComponent`、`decodeURIComponent` |
+| 値 | `NaN`、`Infinity`、`Math`(全部)、`JSON.parse`/`stringify`、`Number()`、`String()`、`parseInt`、`parseFloat`、`Number.isInteger`/`isNaN`/`isFinite`、`Number.MAX_SAFE_INTEGER`/`MIN_SAFE_INTEGER`、`Array.isArray`、`Array.from`、`Object.keys`/`values`/`entries`/`fromEntries`/`groupBy`、`structuredClone`、`encodeURIComponent`、`decodeURIComponent` |
 | 配列 | `length`、`push pop shift unshift slice splice concat join indexOf includes find findIndex filter map flatMap flat reduce some every forEach sort reverse toSorted toReversed at fill entries` |
 | 文字列 | `length`、`slice substring at indexOf includes startsWith endsWith padStart padEnd trim toUpperCase toLowerCase split replace replaceAll repeat` |
 | 数 | `toFixed`、`toString(radix)` |
 | 時間 | `Date.now()`、`setTimeout`、`setInterval`、`clearTimeout`、`clearInterval` |
 | 出力 | `console.log`(今の `<:` と `print`) |
 | エラー | `new Error(message)`、`error.message` |
+
+`Math`、`Number`、`Object` などの名前空間に無く、JavaScript の同じ名前の組み込みにはある名前(`Number.EPSILON`、`Object.assign` など)を読むと、`Number.EPSILON はまだ使えません。` のエラーにします。どちらにも無い名前は `null` です。
 
 `replace` は JavaScript と同じく最初の 1 つだけを置き換えます。今の `replace` は全部を置き換えるので、`replaceAll` を使うよう書き換えが要ります。`str.to_num()` の誤り(`"3.14"` を 3 にする)は、`Number()` と `parseFloat` を JavaScript と同じにすることで無くなります。
 

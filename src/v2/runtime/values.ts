@@ -1,6 +1,6 @@
 import { isArrayIterator, nextArrayIterator } from '../stdlib/arrays.js';
 import { standardMethod } from '../stdlib/index.js';
-import { isStdFunction } from '../stdlib/core.js';
+import { isNamespace, isStdFunction, unavailableNamespaceMember } from '../stdlib/core.js';
 import type * as AST from '../ast.js';
 import { runtimeError, isScriptErrorValue, scriptErrorName } from './errors.js';
 import { GraphemeCache, type GraphemeSearchInfo } from './strings.js';
@@ -97,6 +97,13 @@ function registeredMethod(type: 'array' | 'string' | 'number', key: string, pos:
 	return null;
 }
 
+/** 名前空間に無い名前は、JavaScript の組み込みにあればまだ使えないと案内し、どちらにも無ければ null を返す。 */
+function namespaceMember(value: object, key: string, pos: AST.Pos): null {
+	const name = unavailableNamespaceMember(value, key);
+	if (name !== null) throw runtimeError('METHOD_NOT_AVAILABLE', pos, { key: name });
+	return null;
+}
+
 /** getter の許可は値のタグではなく、この realm の組み込み原型の同一性で決める。 */
 function inheritedErrorDescriptor(value: object, key: string): { owner: object; descriptor: PropertyDescriptor } | undefined {
 	let owner: object | null = Object.getPrototypeOf(value);
@@ -164,6 +171,7 @@ export class PropertyAccess {
 		if (isStdFunction(value)) {
 			const own = Object.getOwnPropertyDescriptor(value, key);
 			if (own && 'value' in own) return this.normalize(own.value, pos);
+			if (!own && isNamespace(value)) return namespaceMember(value, key, pos);
 			throw runtimeError('UNSUPPORTED_VALUE', pos, { key }, 'TypeError');
 		}
 		if (Array.isArray(value)) {
@@ -182,6 +190,7 @@ export class PropertyAccess {
 			if ('value' in own) return this.normalize(own.value, pos);
 			throw runtimeError('ACCESSOR_PROPERTY', pos, { key }, 'TypeError');
 		}
+		if (isNamespace(value as object)) return namespaceMember(value as object, key, pos);
 		if (error) {
 			if (isScriptErrorValue(value) && (key === 'name' || key === 'message')) return key === 'name' ? scriptErrorName(value) : '';
 			const inherited = inheritedErrorDescriptor(value, key);

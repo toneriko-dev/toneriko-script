@@ -47,7 +47,7 @@ test('設計書の全公開名が一覧にあり、内部反復子の next も�
 		array: 'push pop shift unshift slice splice concat join indexOf includes find findIndex filter map flatMap flat reduce some every forEach sort reverse toSorted toReversed at fill entries shuffle sample sampleBy sortBy unique uniqueBy sum minBy maxBy countBy mapConcurrent',
 		string: 'slice substring at indexOf includes startsWith endsWith padStart padEnd trim toUpperCase toLowerCase split replace replaceAll repeat dedent',
 		number: 'toFixed toString', iterator: 'next',
-		global: 'NaN Infinity Error Number String parseInt parseFloat Number.isInteger Array.isArray Array.from Object.keys Object.values Object.entries Object.fromEntries Object.groupBy JSON.parse JSON.stringify structuredClone encodeURIComponent decodeURIComponent Date.now Date.parts Date.format console.log sleep range setTimeout setInterval clearTimeout clearInterval deepEqual',
+		global: 'NaN Infinity Error Number String parseInt parseFloat Number.isInteger Number.isNaN Number.isFinite Number.MAX_SAFE_INTEGER Number.MIN_SAFE_INTEGER Array.isArray Array.from Object.keys Object.values Object.entries Object.fromEntries Object.groupBy JSON.parse JSON.stringify structuredClone encodeURIComponent decodeURIComponent Date.now Date.parts Date.format console.log sleep range setTimeout setInterval clearTimeout clearInterval deepEqual',
 	};
 	for (const [receiver, names] of Object.entries(expected)) {
 		const actual = catalog.filter(d => d.receiver === receiver && !d.name.startsWith('Math.')).map(d => d.name).sort();

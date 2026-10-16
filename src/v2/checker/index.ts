@@ -172,12 +172,14 @@ export function check(program: A.Program, options: CheckOptions = {}): Diagnosti
 	const globals = new Scope();
 	for (const entry of [...catalog, ...(options.hostCatalog ?? [])]) if (entry.receiver === 'global') globals.bindings.set(entry.name.split('.')[0]!, { mutable: false, global: true });
 	for (const name of options.globals ?? []) globals.bindings.set(name, { mutable: false, global: true });
-	// 複数の名前空間にある名前 (parse など) は、どれを指すか決まらないので案内しません。
-	const namespaceMembers = new Map<string, string | null>();
+	// 複数の名前空間にある名前 (Math.log と console.log の log など) は、どれを指すか決まらないので案内しません。
+	const namespaceMembers = new Map<string, { root: string; path: string } | null>();
 	for (const entry of entries.values()) {
 		if (entry.receiver !== 'global') continue;
-		const [namespace, name] = entry.name.split('.');
-		if (name !== undefined) namespaceMembers.set(name, namespaceMembers.has(name) ? null : `${namespace}.${name}`);
+		const parts = entry.name.split('.');
+		if (parts.length < 2) continue;
+		const name = parts.at(-1)!;
+		namespaceMembers.set(name, namespaceMembers.has(name) ? null : { root: parts[0]!, path: entry.name });
 	}
 	const unsafe = new Set<string>();
 	let collecting = true;
@@ -188,7 +190,7 @@ export function check(program: A.Program, options: CheckOptions = {}): Diagnosti
 		if (collecting || scope.resolve(node.name)) return;
 		// isNaN や floor のように名前空間の中の名前を単独で書いたときは、名前空間付きの名前を案内します。
 		const member = namespaceMembers.get(node.name);
-		if (member) return emit('UNBOUND_IDENTIFIER_SUGGESTION', node, { name: node.name, suggestion: member });
+		if (member && scope.resolve(member.root)?.global) return emit('UNBOUND_IDENTIFIER_SUGGESTION', node, { name: node.name, suggestion: member.path });
 		const threshold = node.name.length < 4 ? 1 : 2;
 		const candidates = scope.names().filter(name => Math.abs(name.length - node.name.length) <= threshold && name.length <= 128 && node.name.length <= 128).map(name => ({ name, difference: distance(name, node.name) })).filter(item => item.difference <= threshold).sort((a, b) => a.difference - b.difference || a.name.localeCompare(b.name));
 		if (candidates[0]) emit('UNBOUND_IDENTIFIER_SUGGESTION', node, { name: node.name, suggestion: candidates[0].name });

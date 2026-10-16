@@ -104,6 +104,14 @@ describe('const と名前解決', () => {
 		assert.notEqual(result[0]!.params.suggestion, 'Math.floor');
 		assert.notEqual(result[0]!.params.suggestion, 'Mk.floor');
 	});
+	test('名前空間を局所の名前で隠した位置では、名前空間付きの名前を提案しない', () => {
+		for (const source of ['const Math = {}; floor(1);', 'function f(Number) { return isNaN(1); }']) assert.notEqual(diagnostics(source)[0]!.params.suggestion, source.includes('Math') ? 'Math.floor' : 'Number.isNaN');
+	});
+	test('入れ子の名前空間は末尾の名前で完全な名前を提案する', () => {
+		const nested = [{ ...hostCatalog[0]!, name: 'Api.users.fetch' }];
+		assert.equal(diagnostics('fetch();', { hostCatalog: nested })[0]!.params.suggestion, 'Api.users.fetch');
+		assert.notEqual(diagnostics('users();', { hostCatalog: nested })[0]!.params.suggestion, 'Api.users');
+	});
 	test('宣言した名前は名前空間の中の名前より優先する', () => assert.deepEqual(codes('const floor = Math.floor; floor(1);'), []));
 	test('外側から内側の名前を提案しない', () => assert.equal(diagnostics('{let hidden = 1;} hidde;')[0]!.code, 'UNBOUND_IDENTIFIER'));
 	test('引数既定値から関数本体の名前は見えない', () => assert.ok(codes('function f(x = local) { let local = 1; }').includes('UNBOUND_IDENTIFIER')));

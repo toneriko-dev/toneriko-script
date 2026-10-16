@@ -3,6 +3,7 @@ import type { RuntimeServices } from './services.js';
 import type { Pos } from '../ast.js';
 import type { PropertyAccess, Value } from '../runtime/values.js';
 import { runtimeError } from '../runtime/errors.js';
+import { javascriptNamespaceMembers } from './js-names.js';
 
 export type StdFrame = Generator<any, Value, any>;
 export interface StdContext {
@@ -28,18 +29,18 @@ export function isStdFunction(value: unknown): value is StdFunction {
 export function makeFunction(definition: StdDefinition): StdFunction {
 	return Object.assign(Object.create(null), { [STANDARD_FUNCTION]: definition });
 }
-// 標準の名前空間から、名前と同じ名前の JavaScript の組み込みへの対応です。組み込みにだけある名前を読んだときに、まだ使えないと案内します。
-const namespaces = new WeakMap<object, { name: string; origin: object }>();
-export function registerNamespace(namespace: object, name: string, origin: object): void {
-	namespaces.set(namespace, { name, origin });
+// 標準の名前空間の値から、その名前空間の名前への対応です。JavaScript にだけある名前を読んだときに、まだ使えないと案内します。
+const namespaces = new WeakMap<object, string>();
+export function registerNamespace(namespace: object, name: string): void {
+	namespaces.set(namespace, name);
 }
 export function isNamespace(value: object): boolean {
 	return namespaces.has(value);
 }
-/** 組み込みにだけある名前なら、案内に使う名前空間付きの名前を返します。 */
+/** JavaScript の標準にある名前なら、案内に使う名前空間付きの名前を返します。 */
 export function unavailableNamespaceMember(value: object, key: string): string | null {
-	const namespace = namespaces.get(value);
-	return namespace !== undefined && Object.hasOwn(namespace.origin, key) ? `${namespace.name}.${key}` : null;
+	const name = namespaces.get(value);
+	return name !== undefined && Object.hasOwn(javascriptNamespaceMembers, name) && javascriptNamespaceMembers[name]!.has(key) ? `${name}.${key}` : null;
 }
 export function requireNumber(ctx: StdContext, value: unknown): number {
 	if (typeof value !== 'number') throw runtimeError('STDLIB_ARGUMENT_TYPE', ctx.pos, { expected: 'number' }, 'TypeError');

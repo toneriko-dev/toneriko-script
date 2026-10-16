@@ -1,6 +1,7 @@
 import { isArrayIterator, nextArrayIterator } from '../stdlib/arrays.js';
 import { standardMethod } from '../stdlib/index.js';
 import { isNamespace, isStdFunction, unavailableNamespaceMember } from '../stdlib/core.js';
+import { javascriptMethods } from '../stdlib/js-names.js';
 import type * as AST from '../ast.js';
 import { runtimeError, isScriptErrorValue, scriptErrorName } from './errors.js';
 import { GraphemeCache, type GraphemeSearchInfo } from './strings.js';
@@ -93,11 +94,11 @@ function hiddenErrorKey(value: object, key: string): boolean {
 function registeredMethod(type: 'array' | 'string' | 'number', key: string, pos: AST.Pos): Value {
 	const method = standardMethod(type, key);
 	if (method) return method;
-	if (Object.hasOwn(type === 'array' ? Array.prototype : type === 'string' ? String.prototype : Number.prototype, key)) throw runtimeError('METHOD_NOT_AVAILABLE', pos, { key });
+	if (javascriptMethods[type].has(key)) throw runtimeError('METHOD_NOT_AVAILABLE', pos, { key });
 	return null;
 }
 
-/** 名前空間に無い名前は、JavaScript の組み込みにあればまだ使えないと案内し、どちらにも無ければ null を返す。 */
+/** 名前空間に無い名前は、JavaScript の標準にあればまだ使えないと案内し、どちらにも無ければ null を返す。 */
 function namespaceMember(value: object, key: string, pos: AST.Pos): null {
 	const name = unavailableNamespaceMember(value, key);
 	if (name !== null) throw runtimeError('METHOD_NOT_AVAILABLE', pos, { key: name });

@@ -445,17 +445,16 @@ describe('標準の数と変換', () => {
 		expect(result).toEqual([Number.MAX_SAFE_INTEGER, Number.MIN_SAFE_INTEGER, 'METHOD_NOT_AVAILABLE']);
 		await expect(new Interpreter({}).exec(parse('Number.MAX_SAFE_INTEGER = 1;').program)).rejects.toBeTruthy();
 	});
-	test('名前空間に無く JavaScript の組み込みにある名前は、名前空間付きの名前でまだ使えないと案内する', async () => {
-		for (const [source, key] of [['Number.EPSILON', 'Number.EPSILON'], ['Number.parseInt("1")', 'Number.parseInt'], ['Object.assign({}, {})', 'Object.assign'], ['Array.of(1)', 'Array.of'], ['Math.sumPrecise', 'Math.sumPrecise'], ['JSON.rawJSON', 'JSON.rawJSON'], ['String.raw', 'String.raw']] as const) {
-			if (!Object.hasOwn(globalThis[key.split('.')[0] as 'Math'], key.split('.')[1]!)) continue;
+	test('名前空間に無く JavaScript の標準にある名前は、名前空間付きの名前でまだ使えないと案内する', async () => {
+		for (const [source, key] of [['Number.EPSILON', 'Number.EPSILON'], ['Number.parseInt("1")', 'Number.parseInt'], ['Object.assign({}, {})', 'Object.assign'], ['Array.of(1)', 'Array.of'], ['String.raw', 'String.raw'], ['Date.UTC(2020)', 'Date.UTC'], ['console.warn("x")', 'console.warn']] as const) {
 			await expect(new Interpreter({}).exec(parse(`${source};`).program)).rejects.toMatchObject({ code: 'METHOD_NOT_AVAILABLE', params: { key } });
 		}
 	});
-	test('名前空間にも JavaScript の組み込みにも無い名前は null を返す', async () => {
+	test('名前空間にも ECMAScript 2025 にも無い名前は、実行環境の組み込みにあっても null を返す', async () => {
 		const result: unknown[] = [];
 		const vm = new Interpreter({ out: (value: unknown) => { result.push(value); } });
-		await vm.exec(parse('out(Number.missing); out(Math.missing); out(Object.missing); out(Number.isNaN?.(1)); const M = Math; out(M.floor(1.5));').program);
-		expect(result).toEqual([null, null, null, false, 1]);
+		await vm.exec(parse('out(Number.missing); out(Math.missing); out(Object.missing); out(Number.isNaN?.(1)); const M = Math; out(M.floor(1.5)); out(Math.sumPrecise ?? "fallback"); out(JSON.rawJSON); out(Array.fromAsync); out(Number.name);').program);
+		expect(result).toEqual([null, null, null, false, 1, 'fallback', null, null, null]);
 	});
 	test('登録した数の API を評価器から呼べる', async () => {
 		const result: unknown[] = [];

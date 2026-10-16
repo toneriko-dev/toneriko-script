@@ -29,8 +29,6 @@ for (const definition of definitions) {
 export function standardMethod(type: 'array' | 'string' | 'number' | 'iterator', name: string): StdFunction | null {
 	return methods[type]![name] ?? null;
 }
-// 読み込み時の組み込みを保存し、後からホストが globalThis を書き換えても案内の対象を変えません。
-const builtins: Record<string, object | undefined> = Object.fromEntries(['Number', 'String', 'Math', 'Object', 'Array', 'JSON', 'Date', 'Promise', 'console'].map(name => [name, (globalThis as Record<string, unknown>)[name] as object | undefined]));
 export function standardGlobals(): Record<string, Value> {
 	const globals: Record<string, Value> = Object.create(null);
 	// 呼べる名前空間を先に作り、同じ値に静的な関数を登録します。
@@ -46,9 +44,6 @@ export function standardGlobals(): Record<string, Value> {
 		if (name === undefined) globals[namespace!] = definition.value;
 		else Object.defineProperty(globals[namespace!]!, name, { value: definition.value, enumerable: false, writable: false, configurable: false });
 	}
-	for (const [name, value] of Object.entries(globals)) {
-		const origin = builtins[name];
-		if (origin !== undefined && value !== null && typeof value === 'object') registerNamespace(value, name, origin);
-	}
+	for (const [name, value] of Object.entries(globals)) if (value !== null && typeof value === 'object') registerNamespace(value, name);
 	return globals;
 }

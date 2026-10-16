@@ -438,7 +438,7 @@ JavaScript と同じ名前、同じ引数、同じ結果にします(文字列�
 | 出力 | `console.log`(今の `<:` と `print`) |
 | エラー | `new Error(message)`、`error.message` |
 
-`Math`、`Number`、`Object` などの名前空間に無く、JavaScript の同じ名前の組み込みにはある名前(`Number.EPSILON`、`Object.assign` など)を読むと、`Number.EPSILON はまだ使えません。` のエラーにします。どちらにも無い名前は `null` です。
+`Math`、`Number`、`Object` などの名前空間に無く、ECMAScript 2025 と Console 標準にはある名前(`Number.EPSILON`、`Object.assign` など)を読むと、`Number.EPSILON はまだ使えません。` のエラーにします。配列・文字列・数のメソッドも同じ一覧で判定します。どちらにも無い名前は `null` です。一覧は `src/v2/stdlib/js-names.ts` に固定し、実行環境の組み込みからは調べません。調べると `Math.sumPrecise` のように、エンジンと版によって例外になったり `null` になったりするためです。一覧にある名前は `?.` や `??` を付けても例外になるので、`Object.assign ?? fallback` のような存在確認には使えません。
 
 `replace` は JavaScript と同じく最初の 1 つだけを置き換えます。今の `replace` は全部を置き換えるので、`replaceAll` を使うよう書き換えが要ります。`str.to_num()` の誤り(`"3.14"` を 3 にする)は、`Number()` と `parseFloat` を JavaScript と同じにすることで無くなります。
 
